@@ -1,0 +1,22 @@
+services:
+  musiclab-backend:
+    build: ./backend
+    container_name: musiclab-backend
+    ports:
+      - "8091:8091"
+    volumes:
+      - /volume1/DS420/Musik:/music
+      - /volume1/docker/musiclab/data:/data
+    environment:
+      - MUSIC_ROOT=/music
+      - DB_PATH=/data/musiclab.sqlite
+    restart: unless-stopped
+
+  musiclab-frontend:
+    build: ./frontend
+    container_name: musiclab-frontend
+    ports:
+      - "8092:80"
+    depends_on:
+      - musiclab-backend
+    restart: unless-stopped
