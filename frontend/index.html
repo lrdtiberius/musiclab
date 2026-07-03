@@ -1,17 +1,89 @@
-<!doctype html><html lang="de"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>MusicLab</title>
-<style>
-body{margin:0;background:#0f1115;color:#e8e8e8;font-family:-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif}header{padding:18px 28px;background:#171a21;border-bottom:1px solid #2b2f3a;display:flex;justify-content:space-between;align-items:center}.app{display:grid;grid-template-columns:320px 1fr;gap:18px;padding:18px}.card{background:#171a21;border:1px solid #2b2f3a;border-radius:14px;padding:16px}button,input{background:#242936;color:#fff;border:1px solid #3a4050;border-radius:9px;padding:10px}button{cursor:pointer}button:hover{background:#303748}.stats{display:flex;gap:12px}.stat{background:#242936;border-radius:12px;padding:14px;min-width:120px}.list{max-height:70vh;overflow:auto}.item{padding:10px;border-bottom:1px solid #2b2f3a;cursor:pointer}.item:hover,.active{background:#242936}.bar{height:12px;background:#333;border-radius:9px;overflow:hidden}.fill{height:12px;background:#4caf50;width:0}table{width:100%;border-collapse:collapse}td,th{border-bottom:1px solid #2b2f3a;padding:8px;text-align:left}.muted{color:#a6adbb}h1,h2,h3{margin-top:0}</style></head><body>
-<header><h1>🎵 MusicLab <span class="muted">v0.1</span></h1><button onclick="scan()">Bibliothek scannen</button></header>
-<div class="app"><div class="card"><input id="search" placeholder="Interpret suchen..." style="width:92%" oninput="loadArtists()"><h3>Interpreten</h3><div id="artists" class="list"></div></div>
-<div><div class="card"><div class="stats"><div class="stat"><b id="sArtists">0</b><br><span class="muted">Interpreten</span></div><div class="stat"><b id="sAlbums">0</b><br><span class="muted">Alben</span></div><div class="stat"><b id="sTracks">0</b><br><span class="muted">Titel</span></div><div class="stat"><b id="sDuration">0h</b><br><span class="muted">Dauer</span></div></div><br><div class="bar"><div id="fill" class="fill"></div></div><p id="status" class="muted">Bereit</p></div><br>
-<div class="card"><h2 id="selectedArtist">Albumliste</h2><div id="albums"></div></div><br><div class="card"><h2 id="selectedAlbum">Titel</h2><div id="tracks"></div></div></div></div>
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>MusicLab</title>
+  <style>
+    :root{--bg:#0f1115;--panel:#171a21;--panel2:#242936;--line:#2b2f3a;--text:#e8e8e8;--muted:#a6adbb;--green:#4caf50;--blue:#4f7cff;--warn:#ffcc66}
+    *{box-sizing:border-box} body{margin:0;background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif}
+    header{padding:18px 28px;background:var(--panel);border-bottom:1px solid var(--line);display:flex;justify-content:space-between;align-items:center;position:sticky;top:0;z-index:5}
+    .app{display:grid;grid-template-columns:330px 1fr;gap:18px;padding:18px}.card{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:16px}
+    button,input{background:var(--panel2);color:#fff;border:1px solid #3a4050;border-radius:9px;padding:10px}button{cursor:pointer}button:hover{background:#303748}
+    .stats{display:flex;gap:12px;flex-wrap:wrap}.stat{background:var(--panel2);border-radius:12px;padding:14px;min-width:135px}.stat b{font-size:20px}
+    .list{max-height:74vh;overflow:auto}.item{padding:10px;border-bottom:1px solid var(--line);cursor:pointer;border-radius:8px}.item:hover,.active{background:var(--panel2)}
+    .bar{height:12px;background:#333;border-radius:9px;overflow:hidden}.fill{height:12px;background:var(--green);width:0;transition:width .2s}
+    table{width:100%;border-collapse:collapse}td,th{border-bottom:1px solid var(--line);padding:8px;text-align:left;vertical-align:top}.muted{color:var(--muted)}h1,h2,h3{margin-top:0}
+    .pill{display:inline-block;background:var(--panel2);border:1px solid var(--line);border-radius:999px;padding:2px 8px;color:var(--muted);font-size:12px}.path{font-size:12px;color:var(--muted);max-width:520px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.small{font-size:13px;color:var(--muted)}
+  </style>
+</head>
+<body>
+<header>
+  <h1>🎵 MusicLab <span class="muted">v0.2</span></h1>
+  <div><button onclick="scan()">Bibliothek neu scannen</button></div>
+</header>
+<div class="app">
+  <div class="card">
+    <input id="search" placeholder="Interpret suchen..." style="width:100%" oninput="loadArtists()">
+    <h3>Interpreten</h3>
+    <div id="artists" class="list"></div>
+  </div>
+  <div>
+    <div class="card">
+      <div class="stats">
+        <div class="stat"><b id="sArtists">0</b><br><span class="muted">Interpreten</span></div>
+        <div class="stat"><b id="sAlbums">0</b><br><span class="muted">Alben</span></div>
+        <div class="stat"><b id="sTracks">0</b><br><span class="muted">Titel</span></div>
+        <div class="stat"><b id="sDuration">0h</b><br><span class="muted">Dauer</span></div>
+        <div class="stat"><b id="sSchema">-</b><br><span class="muted">DB Schema</span></div>
+      </div>
+      <br><div class="bar"><div id="fill" class="fill"></div></div>
+      <p id="status" class="muted">Bereit</p>
+    </div>
+    <br>
+    <div class="card">
+      <h2 id="selectedArtist">Albumliste</h2>
+      <div id="albums"></div>
+    </div>
+    <br>
+    <div class="card">
+      <h2 id="selectedAlbum">Titel</h2>
+      <div id="tracks"></div>
+    </div>
+  </div>
+</div>
 <script>
-const API='http://'+location.hostname+':8091/api'; let currentArtist='';
+const API='http://'+location.hostname+':8091/api';
+let currentArtist='';
+function esc(s){return String(s??'').replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]))}
 function fmtDur(s){s=Math.round(s||0);let h=Math.floor(s/3600),m=Math.floor((s%3600)/60);return h?`${h}h ${m}m`:`${m}m`}
-async function scan(){await fetch(API+'/scan',{method:'POST'});}
-async function refresh(){let st=await fetch(API+'/status').then(r=>r.json());let pct=st.total?Math.round(st.done/st.total*100):0;fill.style.width=pct+'%';status.innerText=`${st.message} ${st.done}/${st.total} ${st.current||''}`;let s=await fetch(API+'/stats').then(r=>r.json());sArtists.innerText=s.artists;sAlbums.innerText=s.albums;sTracks.innerText=s.tracks;sDuration.innerText=fmtDur(s.duration)}
-async function loadArtists(){let q=search.value;let arr=await fetch(API+'/artists?q='+encodeURIComponent(q)).then(r=>r.json());artists.innerHTML=arr.map(a=>`<div class="item" onclick="loadAlbums('${encodeURIComponent(a.artist)}')"><b>${a.artist}</b><br><span class="muted">${a.albums} Alben · ${a.tracks} Titel</span></div>`).join('')}
-async function loadAlbums(a){currentArtist=decodeURIComponent(a);selectedArtist.innerText=currentArtist;let arr=await fetch(API+'/albums?artist='+a).then(r=>r.json());albums.innerHTML=arr.map(x=>`<div class="item" onclick="loadTracks('${encodeURIComponent(x.album)}')"><b>${x.album}</b><br><span class="muted">${x.tracks} Titel · ${fmtDur(x.duration)}</span></div>`).join('')}
-async function loadTracks(alb){let album=decodeURIComponent(alb);selectedAlbum.innerText=album;let arr=await fetch(API+`/tracks?artist=${encodeURIComponent(currentArtist)}&album=${alb}`).then(r=>r.json());tracks.innerHTML='<table><tr><th>#</th><th>Titel</th><th>Dauer</th><th>Codec</th><th>Bitrate</th></tr>'+arr.map(t=>`<tr><td>${t.track_no||''}</td><td>${t.title}</td><td>${fmtDur(t.duration)}</td><td>${t.codec}</td><td>${t.bitrate?Math.round(t.bitrate/1000)+' kb/s':''}</td></tr>`).join('')+'</table>'}
-setInterval(refresh,2000);refresh();loadArtists();
-</script></body></html>
+function fmtTrack(t){let d=t.disc_number && t.disc_number>1 ? t.disc_number+'.' : ''; return (t.track_number? d+t.track_number : (t.track_raw||''));}
+async function scan(){ if(confirm('Die Datenbank wird neu aufgebaut. Fortfahren?')) await fetch(API+'/scan',{method:'POST'}); }
+async function refresh(){
+  let st=await fetch(API+'/status').then(r=>r.json()).catch(()=>({total:0,done:0,message:'Backend nicht erreichbar'}));
+  let pct=st.total?Math.round(st.done/st.total*100):0; fill.style.width=pct+'%';
+  status.innerText=`${st.message||''} ${st.done||0}/${st.total||0} ${st.current||''}`;
+  let s=await fetch(API+'/stats').then(r=>r.json()).catch(()=>({artists:0,albums:0,tracks:0,duration:0,schema_version:'-'}));
+  sArtists.innerText=s.artists; sAlbums.innerText=s.albums; sTracks.innerText=s.tracks; sDuration.innerText=fmtDur(s.duration); sSchema.innerText=s.schema_version||'-';
+}
+async function loadArtists(){
+  let q=search.value;
+  let arr=await fetch(API+'/artists?q='+encodeURIComponent(q)).then(r=>r.json()).catch(()=>[]);
+  artists.innerHTML=arr.map(a=>`<div class="item" onclick="loadAlbums('${encodeURIComponent(a.artist)}')"><b>${esc(a.artist)}</b><br><span class="muted">${a.albums} Alben · ${a.tracks} Titel · ${fmtDur(a.duration)}</span></div>`).join('') || '<p class="muted">Keine Interpreten gefunden.</p>';
+}
+async function loadAlbums(a){
+  currentArtist=decodeURIComponent(a); selectedArtist.innerText=currentArtist;
+  let arr=await fetch(API+'/albums?artist='+a).then(r=>r.json()).catch(()=>[]);
+  albums.innerHTML=arr.map(x=>`<div class="item" onclick="loadTracks('${encodeURIComponent(x.album)}')"><b>${esc(x.album)}</b><br><span class="muted">${x.tracks} Titel · ${fmtDur(x.duration)}</span></div>`).join('') || '<p class="muted">Keine Alben gefunden.</p>';
+  tracks.innerHTML=''; selectedAlbum.innerText='Titel';
+}
+async function loadTracks(alb){
+  let album=decodeURIComponent(alb); selectedAlbum.innerText=album;
+  let arr=await fetch(API+`/tracks?artist=${encodeURIComponent(currentArtist)}&album=${alb}`).then(r=>r.json()).catch(()=>[]);
+  tracks.innerHTML='<table><tr><th>#</th><th>Titel</th><th>Dauer</th><th>Codec</th><th>Bitrate</th><th>Pfad</th></tr>'+
+    arr.map(t=>`<tr><td>${esc(fmtTrack(t))}</td><td><b>${esc(t.title)}</b><br><span class="small">Datei: ${esc(t.filename)}</span></td><td>${fmtDur(t.duration)}</td><td><span class="pill">${esc(t.codec)}</span></td><td>${t.bitrate?Math.round(t.bitrate/1000)+' kb/s':''}</td><td><div class="path" title="${esc(t.path)}">${esc(t.path)}</div></td></tr>`).join('')+'</table>';
+}
+setInterval(refresh,2000); refresh(); loadArtists();
+</script>
+</body>
+</html>
