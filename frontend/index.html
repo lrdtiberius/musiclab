@@ -19,7 +19,7 @@
 </head>
 <body>
 <header>
-  <h1>🎵 MusicLab <span class="muted">v0.2</span></h1>
+  <h1>🎵 MusicLab <span class="muted">v0.2.1</span></h1>
   <div><button onclick="scan()">Bibliothek neu scannen</button></div>
 </header>
 <div class="app">
@@ -57,7 +57,17 @@ const API='http://'+location.hostname+':8091/api';
 let currentArtist='';
 function esc(s){return String(s??'').replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]))}
 function fmtDur(s){s=Math.round(s||0);let h=Math.floor(s/3600),m=Math.floor((s%3600)/60);return h?`${h}h ${m}m`:`${m}m`}
-function fmtTrack(t){let d=t.disc_number && t.disc_number>1 ? t.disc_number+'.' : ''; return (t.track_number? d+t.track_number : (t.track_raw||''));}
+function fmtTrack(t){
+  let base = '';
+  if (t.track_number) {
+    const total = Number(t.track_total || 0);
+    base = total > 0 ? `${t.track_number}/${total}` : String(t.track_number);
+  } else {
+    base = (t.track_raw || '').replace(/\/0$/, '');
+  }
+  if (t.disc_number && t.disc_number > 1) base = `${t.disc_number}.${base}`;
+  return base;
+}
 async function scan(){ if(confirm('Die Datenbank wird neu aufgebaut. Fortfahren?')) await fetch(API+'/scan',{method:'POST'}); }
 async function refresh(){
   let st=await fetch(API+'/status').then(r=>r.json()).catch(()=>({total:0,done:0,message:'Backend nicht erreichbar'}));
