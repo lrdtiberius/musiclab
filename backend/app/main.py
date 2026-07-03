@@ -1,8 +1,10 @@
 import os
 import re
+import json
 import sqlite3
 import time
 import threading
+import subprocess
 from pathlib import Path
 from typing import Optional, Tuple
 
@@ -13,9 +15,9 @@ from mutagen import File as MutagenFile
 MUSIC_ROOT = Path(os.getenv("MUSIC_ROOT", "/music"))
 DB_PATH = Path(os.getenv("DB_PATH", "/data/musiclab.sqlite"))
 EXTS = {".mp3", ".m4a", ".aac", ".flac", ".ogg"}
-SCHEMA_VERSION = 3
+SCHEMA_VERSION = 4
 
-app = FastAPI(title="MusicLab API", version="0.2.1")
+app = FastAPI(title="MusicLab API", version="0.3.0")
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -25,6 +27,7 @@ app.add_middleware(
 
 state = {
     "running": False,
+    "mode": "idle",
     "done": 0,
     "total": 0,
     "current": "",
@@ -55,10 +58,10 @@ def init_db():
         current = con.execute("SELECT value FROM meta WHERE key='schema_version'").fetchone()
         current_version = int(current["value"]) if current else 0
 
-        # v0.2 uses a clean schema. During early development we rebuild if the old table is present.
+        # Tracks schema: rebuild only during these early versions if it is incompatible.
         cols = table_columns(con, "tracks")
         expected = {"path", "artist", "album", "title", "track_number", "disc_number", "duration", "codec", "bitrate", "sample_rate"}
-        if current_version != SCHEMA_VERSION or (cols and not expected.issubset(cols)):
+        if cols and not expected.issubset(cols):
             con.execute("DROP TABLE IF EXISTS tracks")
             con.execute("DELETE FROM meta WHERE key='schema_version'")
 
@@ -91,6 +94,25 @@ def init_db():
         con.execute("CREATE UNIQUE INDEX IF NOT EXISTS ux_tracks_path ON tracks(path)")
         con.execute("CREATE INDEX IF NOT EXISTS idx_tracks_artist ON tracks(artist COLLATE NOCASE)")
         con.execute("CREATE INDEX IF NOT EXISTS idx_tracks_album ON tracks(artist COLLATE NOCASE, album COLLATE NOCASE)")
+
+        # v0.3: EBU R128 / loudnorm analysis cache.
+        con.execute(
+            """
+            CREATE TABLE IF NOT EXISTS analysis (
+                track_id INTEGER PRIMARY KEY,
+                input_i REAL,
+                input_tp REAL,
+                input_lra REAL,
+                input_thresh REAL,
+                target_offset REAL,
+                analyzed_at REAL,
+                status TEXT NOT NULL DEFAULT 'ok',
+                error TEXT,
+                FOREIGN KEY(track_id) REFERENCES tracks(id) ON DELETE CASCADE
+            )
+            """
+        )
+        con.execute("CREATE INDEX IF NOT EXISTS idx_analysis_status ON analysis(status)")
         con.execute("INSERT OR REPLACE INTO meta(key,value) VALUES('schema_version', ?)", (str(SCHEMA_VERSION),))
         con.commit()
 
@@ -123,8 +145,7 @@ def parse_number_pair(raw: Optional[str]) -> Tuple[Optional[int], Optional[int]]
     """Parse '01', '1/12', '01/00', '2 of 10' -> (number,total)."""
     if not raw:
         return None, None
-    text = str(raw).strip()
-    text = text.replace("of", "/")
+    text = str(raw).strip().replace("of", "/")
     m = re.search(r"(\d+)(?:\s*/\s*(\d+))?", text)
     if not m:
         return None, None
@@ -240,6 +261,7 @@ def scan_worker(full_rebuild: bool = True):
     files = [p for p in MUSIC_ROOT.rglob("*") if p.is_file() and p.suffix.lower() in EXTS and ".tmp" not in p.name]
     state.update({
         "running": True,
+        "mode": "scan",
         "done": 0,
         "total": len(files),
         "current": "",
@@ -250,6 +272,7 @@ def scan_worker(full_rebuild: bool = True):
     })
     with db() as con:
         if full_rebuild:
+            con.execute("DELETE FROM analysis")
             con.execute("DELETE FROM tracks")
             con.commit()
         for p in files:
@@ -265,7 +288,110 @@ def scan_worker(full_rebuild: bool = True):
             if state["done"] % 100 == 0:
                 con.commit()
         con.commit()
-    state.update({"running": False, "current": "", "message": "Scan fertig", "last_scan_finished": time.time()})
+    state.update({"running": False, "mode": "idle", "current": "", "message": "Scan fertig", "last_scan_finished": time.time()})
+
+
+def parse_loudnorm_json(stderr: str) -> Optional[dict]:
+    matches = re.findall(r"\{[\s\S]*?\}", stderr)
+    if not matches:
+        return None
+    try:
+        return json.loads(matches[-1])
+    except Exception:
+        return None
+
+
+def analyze_track_file(path: Path) -> dict:
+    cmd = [
+        "ffmpeg", "-hide_banner", "-nostats",
+        "-i", str(path),
+        "-af", "loudnorm=print_format=json",
+        "-f", "null", "-"
+    ]
+    res = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, timeout=600)
+    data = parse_loudnorm_json(res.stderr)
+    if not data:
+        raise RuntimeError((res.stderr or "Keine loudnorm-Daten")[-1200:])
+    return {
+        "input_i": float(data["input_i"]),
+        "input_tp": float(data["input_tp"]),
+        "input_lra": float(data["input_lra"]),
+        "input_thresh": float(data["input_thresh"]),
+        "target_offset": float(data.get("target_offset", 0)),
+    }
+
+
+def upsert_analysis(con: sqlite3.Connection, track_id: int, result: Optional[dict], error: Optional[str] = None):
+    if result:
+        con.execute(
+            """
+            INSERT INTO analysis(track_id, input_i, input_tp, input_lra, input_thresh, target_offset, analyzed_at, status, error)
+            VALUES (?, ?, ?, ?, ?, ?, ?, 'ok', NULL)
+            ON CONFLICT(track_id) DO UPDATE SET
+                input_i=excluded.input_i,
+                input_tp=excluded.input_tp,
+                input_lra=excluded.input_lra,
+                input_thresh=excluded.input_thresh,
+                target_offset=excluded.target_offset,
+                analyzed_at=excluded.analyzed_at,
+                status='ok',
+                error=NULL
+            """,
+            (track_id, result["input_i"], result["input_tp"], result["input_lra"], result["input_thresh"], result["target_offset"], time.time()),
+        )
+    else:
+        con.execute(
+            """
+            INSERT INTO analysis(track_id, analyzed_at, status, error)
+            VALUES (?, ?, 'error', ?)
+            ON CONFLICT(track_id) DO UPDATE SET analyzed_at=excluded.analyzed_at, status='error', error=excluded.error
+            """,
+            (track_id, time.time(), (error or "Unbekannter Fehler")[:2000]),
+        )
+
+
+def analysis_worker(artist: Optional[str] = None, album: Optional[str] = None):
+    init_db()
+    where = []
+    args = []
+    if artist:
+        where.append("artist=?")
+        args.append(artist)
+    if album:
+        where.append("album=?")
+        args.append(album)
+    sql = "SELECT id, path, title FROM tracks"
+    if where:
+        sql += " WHERE " + " AND ".join(where)
+    sql += " ORDER BY artist COLLATE NOCASE, album COLLATE NOCASE, COALESCE(disc_number,1), COALESCE(track_number,9999), title COLLATE NOCASE"
+
+    with db() as con:
+        rows = [dict(r) for r in con.execute(sql, args).fetchall()]
+
+    label = f"{artist or 'Bibliothek'}" + (f" / {album}" if album else "")
+    state.update({
+        "running": True,
+        "mode": "analysis",
+        "done": 0,
+        "total": len(rows),
+        "current": "",
+        "message": f"Analyse läuft: {label}",
+        "errors": 0,
+    })
+
+    with db() as con:
+        for row in rows:
+            state["current"] = row["path"]
+            try:
+                result = analyze_track_file(MUSIC_ROOT / row["path"])
+                upsert_analysis(con, row["id"], result)
+            except Exception as e:
+                state["errors"] += 1
+                upsert_analysis(con, row["id"], None, str(e))
+                print("analysis error", row["path"], e, flush=True)
+            state["done"] += 1
+            con.commit()
+    state.update({"running": False, "mode": "idle", "current": "", "message": "Analyse fertig"})
 
 
 @app.on_event("startup")
@@ -275,13 +401,20 @@ def startup():
 
 @app.get("/api/health")
 def health():
-    return {"ok": True, "version": "0.2.1", "music_root": str(MUSIC_ROOT), "db": str(DB_PATH)}
+    return {"ok": True, "version": "0.3.0", "music_root": str(MUSIC_ROOT), "db": str(DB_PATH)}
 
 
 @app.post("/api/scan")
 def scan():
     if not state["running"]:
         threading.Thread(target=scan_worker, kwargs={"full_rebuild": True}, daemon=True).start()
+    return state
+
+
+@app.post("/api/analyze")
+def analyze(artist: Optional[str] = None, album: Optional[str] = None):
+    if not state["running"]:
+        threading.Thread(target=analysis_worker, kwargs={"artist": artist, "album": album}, daemon=True).start()
     return state
 
 
@@ -298,6 +431,7 @@ def stats():
             "albums": con.execute("SELECT COUNT(*) c FROM (SELECT artist, album FROM tracks GROUP BY artist, album)").fetchone()["c"],
             "tracks": con.execute("SELECT COUNT(*) c FROM tracks").fetchone()["c"],
             "duration": con.execute("SELECT COALESCE(SUM(duration),0) c FROM tracks").fetchone()["c"],
+            "analyzed": con.execute("SELECT COUNT(*) c FROM analysis WHERE status='ok'").fetchone()["c"],
             "schema_version": SCHEMA_VERSION,
         }
 
@@ -325,14 +459,19 @@ def get_albums(artist: str):
     with db() as con:
         return [dict(r) for r in con.execute(
             """
-            SELECT album,
+            SELECT t.album,
                    COUNT(*) tracks,
-                   COALESCE(SUM(duration),0) duration,
-                   MIN(path) sample_path
-            FROM tracks
-            WHERE artist=?
-            GROUP BY album
-            ORDER BY album COLLATE NOCASE
+                   COALESCE(SUM(t.duration),0) duration,
+                   MIN(t.path) sample_path,
+                   COUNT(a.track_id) analyzed,
+                   ROUND(AVG(a.input_i), 2) avg_lufs,
+                   ROUND(MAX(a.input_tp), 2) max_true_peak,
+                   ROUND(AVG(a.input_lra), 2) avg_lra
+            FROM tracks t
+            LEFT JOIN analysis a ON a.track_id=t.id AND a.status='ok'
+            WHERE t.artist=?
+            GROUP BY t.album
+            ORDER BY t.album COLLATE NOCASE
             """,
             (artist,),
         ).fetchall()]
@@ -343,19 +482,41 @@ def get_tracks(artist: str, album: str):
     with db() as con:
         return [dict(r) for r in con.execute(
             """
-            SELECT id, title, track_raw, track_number, track_total, disc_raw, disc_number, disc_total,
-                   duration, codec, bitrate, sample_rate, channels, path, filename
-            FROM tracks
-            WHERE artist=? AND album=?
-            ORDER BY COALESCE(disc_number, 1), COALESCE(track_number, 9999), title COLLATE NOCASE, path COLLATE NOCASE
+            SELECT t.id, t.title, t.track_raw, t.track_number, t.track_total, t.disc_raw, t.disc_number, t.disc_total,
+                   t.duration, t.codec, t.bitrate, t.sample_rate, t.channels, t.path, t.filename,
+                   a.input_i, a.input_tp, a.input_lra, a.status AS analysis_status
+            FROM tracks t
+            LEFT JOIN analysis a ON a.track_id=t.id
+            WHERE t.artist=? AND t.album=?
+            ORDER BY COALESCE(t.disc_number, 1), COALESCE(t.track_number, 9999), t.title COLLATE NOCASE, t.path COLLATE NOCASE
             """,
             (artist, album),
         ).fetchall()]
 
 
+@app.get("/api/album_analysis")
+def album_analysis(artist: str, album: str):
+    with db() as con:
+        r = con.execute(
+            """
+            SELECT COUNT(t.id) tracks,
+                   COUNT(a.track_id) analyzed,
+                   ROUND(AVG(a.input_i), 2) avg_lufs,
+                   ROUND(MIN(a.input_i), 2) min_lufs,
+                   ROUND(MAX(a.input_i), 2) max_lufs,
+                   ROUND(MAX(a.input_tp), 2) max_true_peak,
+                   ROUND(AVG(a.input_lra), 2) avg_lra
+            FROM tracks t
+            LEFT JOIN analysis a ON a.track_id=t.id AND a.status='ok'
+            WHERE t.artist=? AND t.album=?
+            """,
+            (artist, album),
+        ).fetchone()
+        return dict(r) if r else {}
+
+
 @app.get("/api/duplicates")
 def duplicates(limit: int = 50):
-    """Potential duplicates: same artist+album+title with multiple file paths."""
     with db() as con:
         return [dict(r) for r in con.execute(
             """

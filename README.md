@@ -1,20 +1,35 @@
-# MusicLab v0.2.1
+# MusicLab v0.3.0
 
-Stabilisierungs-Patch für die Bibliotheksanzeige.
+LUFS-Analyse (EBU R128) als nächster großer Schritt.
 
-## Änderungen
+## Neu
 
-- Anzeige von Tracknummern korrigiert: `1/0` wird als `1` angezeigt.
-- `1/12` bleibt weiterhin `1/12`.
-- UI-Version auf v0.2.1 aktualisiert.
-- Schema-Version angehoben, damit die Datenbank beim Rebuild sauber neu aufgebaut wird.
+- Analyse-Tabelle in SQLite (`analysis`)
+- `ffmpeg loudnorm=print_format=json` pro Titel
+- Albumanalyse über Button **Album analysieren**
+- Gesamtanalyse über **Alles analysieren**
+- Anzeige pro Track:
+  - Integrated LUFS
+  - True Peak
+  - LRA
+- Album-Zusammenfassung:
+  - analysiert x/y
+  - Durchschnitts-LUFS
+  - Max True Peak
+  - Durchschnitts-LRA
+- Docker Compose mountet Frontend und Backend-Code direkt zum leichteren Entwickeln.
 
-## Installation auf Synology
+## Wichtig
 
-1. Inhalt dieser ZIP nach `/volume1/docker/musiclab` kopieren.
+Die Analyse ist noch lesend. Es wird noch nichts normalisiert oder überschrieben.
+
+## Installation Synology
+
+1. Inhalt der ZIP nach `/volume1/docker/musiclab` kopieren.
 2. Container Manager: Projekt stoppen.
 3. Bereinigen.
-4. Falls DSM cached: alte Images löschen.
-5. Projekt neu erstellen/starten.
-6. Browser hart neu laden: `Cmd + Shift + R`.
-7. Bibliothek neu scannen.
+4. Neu erstellen/starten.
+5. Browser hart neu laden: `Cmd + Shift + R` oder `http://NAS-IP:8092/?v=030`.
+6. Ein Album auswählen und **Album analysieren** klicken.
+
+Falls Backend-Code nicht aktualisiert wirkt: Backend-Container neu starten.
