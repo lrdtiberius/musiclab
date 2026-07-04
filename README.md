@@ -1,16 +1,24 @@
-# MusicLab v0.9.3
+# MusicLab v1.0.0
 
-Neu in v0.9.3:
+Stabile Version mit Batch-Analyse, Batch-Normalisierung, Referenzalbum, Logexport, Stop-Button, Parallel-Analyse und Historie/Wiederherstellen.
 
-- Parallel-Analyse für einzelne Alben, Alles analysieren und Batch-Analyse.
-- Einstellbare Parallelität im UI: 1, 2, 3, 4 oder 6 parallele ffmpeg-Prozesse.
-- Standard bleibt konservativ auf 2, damit die DS923+ nicht unnötig überlastet wird.
-- Stop-Button zum Abbrechen laufender Jobs.
-- Scan, Analyse, Batch-Analyse, Normalisierung und Batch-Normalisierung reagieren auf den Stop-Befehl.
-- Laufende ffmpeg-Prozesse werden nicht hart gekillt; der Abbruch erfolgt sauber nach dem aktuellen Titel bzw. nach den aktuell laufenden Analyse-Jobs.
-- Backend-Version 0.9.3, DB-Schema 10.
-- data/ ist enthalten.
+## Installation Synology
 
-Hinweis zur Parallelität:
+1. Ordner nach `/volume1/docker/musiclab` kopieren.
+2. Im Container Manager Projekt aus diesem Ordner erstellen oder aktualisieren.
+3. Wichtig bei Synology: alte Images/Container ggf. löschen, wenn Änderungen nicht sichtbar werden.
+4. Frontend ist auf Port `8092`, Backend auf Port `8091`.
 
-Für die DS923+ empfehle ich zunächst 2 oder 3. Bei 4 kann es deutlich schneller werden, erzeugt aber mehr CPU- und Festplattenlast. 6 ist nur zum Testen gedacht.
+## Neu in v1.0.0
+
+- Einstellungen über Zahnrad-Dialog.
+- Hauptansicht aufgeräumt: Zielwerte/Backup/Parallelität werden kompakt angezeigt.
+- Historie für Normalisierungen.
+- Wiederherstellen aus Backups direkt aus MusicLab.
+- Backup-Modus bleibt wählbar: `/data/backups`, `.bak daneben`, oder aus.
+- Schnellscan bleibt erhalten: unveränderte Analysewerte werden nicht gelöscht.
+- Keine Statistik-Seite.
+
+## Hinweis
+
+Wiederherstellen funktioniert nur für Normalisierungen, bei denen ein Backup erstellt wurde.

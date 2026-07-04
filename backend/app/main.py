@@ -20,9 +20,9 @@ LOG_DIR = Path(os.getenv("LOG_DIR", str(DB_PATH.parent / "logs")))
 LOG_PATH = LOG_DIR / "musiclab.log"
 LOG_MAX_BYTES = int(os.getenv("LOG_MAX_BYTES", str(10 * 1024 * 1024)))
 EXTS = {".mp3", ".m4a", ".aac", ".flac", ".ogg"}
-SCHEMA_VERSION = 10
+SCHEMA_VERSION = 11
 
-app = FastAPI(title="MusicLab API", version="0.9.3")
+app = FastAPI(title="MusicLab API", version="1.0.0")
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
 
 stop_event = threading.Event()
@@ -155,6 +155,32 @@ def init_db():
             )
             """
         )
+        con.execute(
+            """
+            CREATE TABLE IF NOT EXISTS history (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                job_id TEXT NOT NULL,
+                created_at REAL NOT NULL,
+                artist TEXT,
+                album TEXT NOT NULL,
+                path TEXT NOT NULL,
+                backup_path TEXT,
+                backup_mode TEXT,
+                target_lufs TEXT,
+                true_peak TEXT,
+                lra TEXT,
+                before_i REAL,
+                before_tp REAL,
+                before_lra REAL,
+                after_i REAL,
+                after_tp REAL,
+                after_lra REAL,
+                restored_at REAL
+            )
+            """
+        )
+        con.execute("CREATE INDEX IF NOT EXISTS idx_history_job ON history(job_id)")
+        con.execute("CREATE INDEX IF NOT EXISTS idx_history_created ON history(created_at)")
         defaults = {"target_lufs": "-16", "true_peak": "-1.5", "lra": "11", "backup_mode": "on", "parallel_analysis": "2"}
         for k, v in defaults.items():
             con.execute("INSERT OR IGNORE INTO settings(key,value) VALUES(?,?)", (k, v))
@@ -513,7 +539,7 @@ def selected_rows(artist: Optional[str], album: Optional[str]):
     if album:
         where.append("album=?")
         args.append(album)
-    sql = "SELECT id,path,title FROM tracks"
+    sql = "SELECT id,path,title,artist,album FROM tracks"
     if where:
         sql += " WHERE " + " AND ".join(where)
     sql += " ORDER BY artist COLLATE NOCASE, album COLLATE NOCASE, COALESCE(disc_number,1), COALESCE(track_number,9999), title COLLATE NOCASE"
@@ -618,8 +644,34 @@ def normalize_file(rel_path: str, settings: dict, backup_mode: Optional[str] = N
             tmp.unlink()
         raise RuntimeError(res.stderr[-2000:])
     tmp.replace(file)
-    return True
+    return backup_path
 
+
+
+def history_job_id() -> str:
+    return time.strftime("%Y%m%d-%H%M%S") + f"-{int(time.time()*1000)%100000:05d}"
+
+
+def insert_history(con, job_id: str, row, album_artist: Optional[str], album_name: str, backup_path: Optional[str], backup_mode: str, settings: dict, before: Optional[dict], after: Optional[dict]):
+    con.execute(
+        """
+        INSERT INTO history(job_id,created_at,artist,album,path,backup_path,backup_mode,target_lufs,true_peak,lra,
+        before_i,before_tp,before_lra,after_i,after_tp,after_lra,restored_at)
+        VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,NULL)
+        """,
+        (
+            job_id, time.time(), album_artist, album_name, row["path"], backup_path, backup_mode,
+            str(settings.get("target_lufs", "")), str(settings.get("true_peak", "")), str(settings.get("lra", "")),
+            (before or {}).get("input_i"), (before or {}).get("input_tp"), (before or {}).get("input_lra"),
+            (after or {}).get("input_i"), (after or {}).get("input_tp"), (after or {}).get("input_lra"),
+        ),
+    )
+
+
+def analyze_and_store(con, track_id: int, rel_path: str) -> dict:
+    result = analyze_track_file(MUSIC_ROOT / rel_path)
+    upsert_analysis(con, track_id, result)
+    return result
 
 def normalize_worker(artist: Optional[str] = None, album: Optional[str] = None, backup_mode: Optional[str] = None):
     init_db()
@@ -635,6 +687,7 @@ def normalize_worker(artist: Optional[str] = None, album: Optional[str] = None, 
         add_log(f"Normalisierung abgebrochen: {artist or 'global'} - {album} ist nicht vollständig analysiert", True)
         return
 
+    job_id = history_job_id()
     begin_job("normalize", len(rows), f"Normalisiere auf {settings.get('target_lufs')} LUFS")
     add_log(f"Normalisierung gestartet: {len(rows)} Titel auf {settings.get('target_lufs')} LUFS, Backup: {settings.get('backup_mode','on')}")
     with db() as con:
@@ -644,9 +697,10 @@ def normalize_worker(artist: Optional[str] = None, album: Optional[str] = None, 
                 break
             state["current"] = row["path"]
             try:
-                normalize_file(row["path"], settings, settings.get("backup_mode", "on"))
-                result = analyze_track_file(MUSIC_ROOT / row["path"])
-                upsert_analysis(con, row["id"], result)
+                before = analyze_track_file(MUSIC_ROOT / row["path"])
+                backup_path = normalize_file(row["path"], settings, settings.get("backup_mode", "on"))
+                result = analyze_and_store(con, row["id"], row["path"])
+                insert_history(con, job_id, row, artist, album or row["album"], backup_path, settings.get("backup_mode", "on"), settings, before, result)
                 add_log(f"Normalisiert: {row['path']}")
             except Exception as e:
                 state["errors"] += 1
@@ -787,6 +841,7 @@ def normalize_batch_worker(items: list, backup_mode: Optional[str] = None):
         for row in rows:
             row["_album_label"] = album_label(item.get("artist"), item.get("album"))
         all_rows.extend(rows)
+    job_id = history_job_id()
     begin_job("batch_normalize", len(all_rows), f"Batch-Normalisierung auf {settings.get('target_lufs')} LUFS")
     add_log(f"Batch-Normalisierung gestartet: {len(albums)} Album/Alben, {len(all_rows)} Titel auf {settings.get('target_lufs')} LUFS, Backup: {settings.get('backup_mode','on')}")
     with db() as con:
@@ -796,11 +851,12 @@ def normalize_batch_worker(items: list, backup_mode: Optional[str] = None):
                 break
             state["current"] = f"{row.get('_album_label','')} / {row['path']}".strip(" /")
             try:
-                normalize_file(row["path"], settings, settings.get("backup_mode", "on"))
+                before = analyze_track_file(MUSIC_ROOT / row["path"])
+                backup_path = normalize_file(row["path"], settings, settings.get("backup_mode", "on"))
                 # Direkt nach jedem normalisierten Titel neu analysieren, damit Albumkarte
                 # und Titelliste nach Abschluss aktuelle Werte zeigen.
-                result = analyze_track_file(MUSIC_ROOT / row["path"])
-                upsert_analysis(con, row["id"], result)
+                result = analyze_and_store(con, row["id"], row["path"])
+                insert_history(con, job_id, row, row.get("artist"), row.get("album"), backup_path, settings.get("backup_mode", "on"), settings, before, result)
                 add_log(f"Normalisiert: {row['path']}")
             except Exception as e:
                 state["errors"] += 1
@@ -1132,6 +1188,77 @@ def album_analysis(album: str, artist: Optional[str] = None):
     with db() as con:
         return album_summary(con, artist, album)
 
+
+
+@app.get("/api/history")
+def api_history(limit: int = 50):
+    limit = max(1, min(int(limit or 50), 200))
+    with db() as con:
+        rows = con.execute(
+            """
+            SELECT job_id, MIN(created_at) created_at, COALESCE(artist,'') artist, album,
+                   COUNT(*) tracks,
+                   SUM(CASE WHEN backup_path IS NOT NULL AND backup_path!='' THEN 1 ELSE 0 END) backups,
+                   ROUND(AVG(before_i),2) before_lufs,
+                   ROUND(AVG(after_i),2) after_lufs,
+                   MAX(restored_at) restored_at
+            FROM history
+            GROUP BY job_id, artist, album
+            ORDER BY created_at DESC
+            LIMIT ?
+            """,
+            (limit,),
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+
+@app.post("/api/history/restore")
+def api_history_restore(data: dict):
+    job_id = str(data.get("job_id", "")).strip()
+    artist = str(data.get("artist", "")).strip()
+    album = str(data.get("album", "")).strip()
+    if not job_id or not album:
+        raise HTTPException(status_code=400, detail="job_id und album erforderlich")
+    with db() as con:
+        rows = con.execute(
+            """
+            SELECT h.*, t.id AS track_id FROM history h
+            LEFT JOIN tracks t ON t.path=h.path
+            WHERE h.job_id=? AND COALESCE(h.artist,'')=? AND h.album=?
+            ORDER BY h.id
+            """,
+            (job_id, artist, album),
+        ).fetchall()
+        if not rows:
+            raise HTTPException(status_code=404, detail="Historieneintrag nicht gefunden")
+        restored = 0
+        errors = []
+        for r in rows:
+            bp = r["backup_path"]
+            if not bp:
+                errors.append(f"Kein Backup für {r['path']}")
+                continue
+            backup = Path(bp)
+            target = MUSIC_ROOT / r["path"]
+            if not backup.exists():
+                errors.append(f"Backup fehlt: {bp}")
+                continue
+            try:
+                target.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(backup, target)
+                if r["track_id"]:
+                    result = analyze_track_file(target)
+                    upsert_analysis(con, r["track_id"], result)
+                restored += 1
+            except Exception as e:
+                errors.append(f"{r['path']}: {e}")
+        con.execute("UPDATE history SET restored_at=? WHERE job_id=? AND COALESCE(artist,'')=? AND album=?", (time.time(), job_id, artist, album))
+        con.commit()
+    if errors:
+        add_log(f"Wiederherstellung mit Fehlern: {album} ({restored}/{len(rows)}) - {'; '.join(errors[:3])}", True)
+    else:
+        add_log(f"Wiederhergestellt: {artist + ' - ' if artist else ''}{album} ({restored} Dateien)")
+    return {"restored": restored, "total": len(rows), "errors": errors}
 
 @app.get("/api/log")
 def api_log():
