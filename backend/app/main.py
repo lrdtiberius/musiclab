@@ -6,6 +6,7 @@ import subprocess
 import shutil
 import threading
 import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 from typing import Optional, Tuple
 
@@ -19,10 +20,12 @@ LOG_DIR = Path(os.getenv("LOG_DIR", str(DB_PATH.parent / "logs")))
 LOG_PATH = LOG_DIR / "musiclab.log"
 LOG_MAX_BYTES = int(os.getenv("LOG_MAX_BYTES", str(10 * 1024 * 1024)))
 EXTS = {".mp3", ".m4a", ".aac", ".flac", ".ogg"}
-SCHEMA_VERSION = 9
+SCHEMA_VERSION = 10
 
-app = FastAPI(title="MusicLab API", version="0.9.2")
+app = FastAPI(title="MusicLab API", version="0.9.3")
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
+
+stop_event = threading.Event()
 
 state = {
     "running": False,
@@ -35,6 +38,7 @@ state = {
     "log": [],
     "recent_errors": [],
     "last_finished": None,
+    "stop_requested": False,
 }
 
 
@@ -151,7 +155,7 @@ def init_db():
             )
             """
         )
-        defaults = {"target_lufs": "-16", "true_peak": "-1.5", "lra": "11", "backup_mode": "on"}
+        defaults = {"target_lufs": "-16", "true_peak": "-1.5", "lra": "11", "backup_mode": "on", "parallel_analysis": "2"}
         for k, v in defaults.items():
             con.execute("INSERT OR IGNORE INTO settings(key,value) VALUES(?,?)", (k, v))
         con.execute("INSERT OR REPLACE INTO meta(key,value) VALUES('schema_version', ?)", (str(SCHEMA_VERSION),))
@@ -166,7 +170,7 @@ def get_settings():
 
 def save_settings(data: dict):
     with db() as con:
-        for k in ["target_lufs", "true_peak", "lra", "backup_mode"]:
+        for k in ["target_lufs", "true_peak", "lra", "backup_mode", "parallel_analysis"]:
             if k in data:
                 con.execute("INSERT OR REPLACE INTO settings(key,value) VALUES(?,?)", (k, str(data[k])))
         con.commit()
@@ -286,10 +290,50 @@ def is_audio_candidate(path: Path) -> bool:
     return path.suffix.lower() in EXTS
 
 
+def begin_job(mode: str, total: int, message: str):
+    stop_event.clear()
+    state.update({
+        "running": True,
+        "mode": mode,
+        "done": 0,
+        "total": total,
+        "current": "",
+        "message": message,
+        "errors": 0,
+        "recent_errors": [],
+        "stop_requested": False,
+    })
+
+
+def finish_job(message: str, stopped: bool = False):
+    state.update({
+        "running": False,
+        "mode": "idle",
+        "current": "",
+        "message": message,
+        "last_finished": time.time(),
+        "stop_requested": False,
+    })
+    if stopped:
+        add_log(message, True)
+
+
+def analysis_parallelism() -> int:
+    try:
+        v = int(get_settings().get("parallel_analysis", "2"))
+    except Exception:
+        v = 2
+    return max(1, min(v, 6))
+
+
+def stop_requested() -> bool:
+    return stop_event.is_set()
+
+
 def scan_worker():
     init_db()
     files = [p for p in MUSIC_ROOT.rglob("*") if is_audio_candidate(p)]
-    state.update({"running": True, "mode": "scan", "done": 0, "total": len(files), "current": "", "message": "Scan läuft", "errors": 0, "recent_errors": []})
+    begin_job("scan", len(files), "Scan läuft")
     add_log(f"Scan gestartet: {len(files)} Dateien")
 
     seen_paths = set()
@@ -297,6 +341,9 @@ def scan_worker():
     with db() as con:
         existing = {r["path"]: dict(r) for r in con.execute("SELECT id,path,size,mtime FROM tracks").fetchall()}
         for p in files:
+            if stop_requested():
+                add_log("Scan abgebrochen")
+                break
             rel = str(p.relative_to(MUSIC_ROOT))
             seen_paths.add(rel)
             state["current"] = rel
@@ -331,8 +378,12 @@ def scan_worker():
             add_log(f"Entfernte Dateien aus Datenbank gelöscht: {len(missing)}")
 
         con.commit()
-    add_log(f"Scan fertig: {state['done']}/{state['total']} Dateien, Fehler {state['errors']}")
-    state.update({"running": False, "mode": "idle", "current": "", "message": "Scan fertig", "last_finished": time.time()})
+    if stop_requested():
+        add_log(f"Scan abgebrochen: {state['done']}/{state['total']} Dateien, Fehler {state['errors']}", True)
+        finish_job("Scan abgebrochen", True)
+    else:
+        add_log(f"Scan fertig: {state['done']}/{state['total']} Dateien, Fehler {state['errors']}")
+        finish_job("Scan fertig")
 
 
 def parse_loudnorm_json(stderr: str) -> Optional[dict]:
@@ -473,22 +524,39 @@ def selected_rows(artist: Optional[str], album: Optional[str]):
 def analysis_worker(artist: Optional[str] = None, album: Optional[str] = None):
     init_db()
     rows = selected_rows(artist, album)
-    state.update({"running": True, "mode": "analysis", "done": 0, "total": len(rows), "current": "", "message": "Analyse läuft", "errors": 0, "recent_errors": []})
-    add_log(f"Analyse gestartet: {len(rows)} Titel")
+    workers = analysis_parallelism()
+    begin_job("analysis", len(rows), f"Analyse läuft ({workers} parallel)")
+    add_log(f"Analyse gestartet: {len(rows)} Titel, parallel: {workers}")
+
+    def work(row):
+        return row, analyze_track_file(MUSIC_ROOT / row["path"])
+
     with db() as con:
-        for row in rows:
-            state["current"] = row["path"]
-            try:
-                result = analyze_track_file(MUSIC_ROOT / row["path"])
-                upsert_analysis(con, row["id"], result)
-            except Exception as e:
-                state["errors"] += 1
-                upsert_analysis(con, row["id"], None, str(e))
-                add_log(f"Analysefehler: {row['path']} - {e}", True)
-            state["done"] += 1
-            con.commit()
-    add_log(f"Analyse fertig: {state['done']}/{state['total']} Titel, Fehler {state['errors']}")
-    state.update({"running": False, "mode": "idle", "current": "", "message": "Analyse fertig", "last_finished": time.time()})
+        with ThreadPoolExecutor(max_workers=workers) as pool:
+            futures = {pool.submit(work, row): row for row in rows}
+            for fut in as_completed(futures):
+                if stop_requested():
+                    for pending in futures:
+                        pending.cancel()
+                    break
+                row = futures[fut]
+                state["current"] = row["path"]
+                try:
+                    _, result = fut.result()
+                    upsert_analysis(con, row["id"], result)
+                except Exception as e:
+                    state["errors"] += 1
+                    upsert_analysis(con, row["id"], None, str(e))
+                    add_log(f"Analysefehler: {row['path']} - {e}", True)
+                state["done"] += 1
+                con.commit()
+
+    if stop_requested():
+        add_log(f"Analyse abgebrochen: {state['done']}/{state['total']} Titel, Fehler {state['errors']}", True)
+        finish_job("Analyse abgebrochen", True)
+    else:
+        add_log(f"Analyse fertig: {state['done']}/{state['total']} Titel, Fehler {state['errors']}")
+        finish_job("Analyse fertig")
 
 
 def loudnorm_filter(first: dict, settings: dict) -> str:
@@ -567,10 +635,13 @@ def normalize_worker(artist: Optional[str] = None, album: Optional[str] = None, 
         add_log(f"Normalisierung abgebrochen: {artist or 'global'} - {album} ist nicht vollständig analysiert", True)
         return
 
-    state.update({"running": True, "mode": "normalize", "done": 0, "total": len(rows), "current": "", "message": f"Normalisiere auf {settings.get('target_lufs')} LUFS", "errors": 0, "recent_errors": []})
+    begin_job("normalize", len(rows), f"Normalisiere auf {settings.get('target_lufs')} LUFS")
     add_log(f"Normalisierung gestartet: {len(rows)} Titel auf {settings.get('target_lufs')} LUFS, Backup: {settings.get('backup_mode','on')}")
     with db() as con:
         for row in rows:
+            if stop_requested():
+                add_log("Normalisierung abgebrochen")
+                break
             state["current"] = row["path"]
             try:
                 normalize_file(row["path"], settings, settings.get("backup_mode", "on"))
@@ -583,8 +654,12 @@ def normalize_worker(artist: Optional[str] = None, album: Optional[str] = None, 
                 add_log(f"Normalisierungsfehler: {row['path']} - {e}", True)
             state["done"] += 1
             con.commit()
-    add_log(f"Normalisierung fertig: {state['done']}/{state['total']} Titel, Fehler {state['errors']}")
-    state.update({"running": False, "mode": "idle", "current": "", "message": "Normalisierung fertig", "last_finished": time.time()})
+    if stop_requested():
+        add_log(f"Normalisierung abgebrochen: {state['done']}/{state['total']} Titel, Fehler {state['errors']}", True)
+        finish_job("Normalisierung abgebrochen", True)
+    else:
+        add_log(f"Normalisierung fertig: {state['done']}/{state['total']} Titel, Fehler {state['errors']}")
+        finish_job("Normalisierung fertig")
 
 
 def album_label(artist: Optional[str], album: str) -> str:
@@ -657,22 +732,40 @@ def analyze_batch_worker(items: list):
         for row in rows:
             row["_album_label"] = album_label(item.get("artist"), item.get("album"))
         all_rows.extend(rows)
-    state.update({"running": True, "mode": "batch_analysis", "done": 0, "total": len(all_rows), "current": "", "message": "Batch-Analyse läuft", "errors": 0, "recent_errors": []})
-    add_log(f"Batch-Analyse gestartet: {len(albums)} Album/Alben, {len(all_rows)} Titel")
+
+    workers = analysis_parallelism()
+    begin_job("batch_analysis", len(all_rows), f"Batch-Analyse läuft ({workers} parallel)")
+    add_log(f"Batch-Analyse gestartet: {len(albums)} Album/Alben, {len(all_rows)} Titel, parallel: {workers}")
+
+    def work(row):
+        return row, analyze_track_file(MUSIC_ROOT / row["path"])
+
     with db() as con:
-        for row in all_rows:
-            state["current"] = f"{row.get('_album_label','')} / {row['path']}".strip(" /")
-            try:
-                result = analyze_track_file(MUSIC_ROOT / row["path"])
-                upsert_analysis(con, row["id"], result)
-            except Exception as e:
-                state["errors"] += 1
-                upsert_analysis(con, row["id"], None, str(e))
-                add_log(f"Analysefehler: {row['path']} - {e}", True)
-            state["done"] += 1
-            con.commit()
-    add_log(f"Batch-Analyse fertig: {state['done']}/{state['total']} Titel, Fehler {state['errors']}")
-    state.update({"running": False, "mode": "idle", "current": "", "message": "Batch-Analyse fertig", "last_finished": time.time()})
+        with ThreadPoolExecutor(max_workers=workers) as pool:
+            futures = {pool.submit(work, row): row for row in all_rows}
+            for fut in as_completed(futures):
+                if stop_requested():
+                    for pending in futures:
+                        pending.cancel()
+                    break
+                row = futures[fut]
+                state["current"] = f"{row.get('_album_label','')} / {row['path']}".strip(" /")
+                try:
+                    _, result = fut.result()
+                    upsert_analysis(con, row["id"], result)
+                except Exception as e:
+                    state["errors"] += 1
+                    upsert_analysis(con, row["id"], None, str(e))
+                    add_log(f"Analysefehler: {row['path']} - {e}", True)
+                state["done"] += 1
+                con.commit()
+
+    if stop_requested():
+        add_log(f"Batch-Analyse abgebrochen: {state['done']}/{state['total']} Titel, Fehler {state['errors']}", True)
+        finish_job("Batch-Analyse abgebrochen", True)
+    else:
+        add_log(f"Batch-Analyse fertig: {state['done']}/{state['total']} Titel, Fehler {state['errors']}")
+        finish_job("Batch-Analyse fertig")
 
 
 def normalize_batch_worker(items: list, backup_mode: Optional[str] = None):
@@ -694,10 +787,13 @@ def normalize_batch_worker(items: list, backup_mode: Optional[str] = None):
         for row in rows:
             row["_album_label"] = album_label(item.get("artist"), item.get("album"))
         all_rows.extend(rows)
-    state.update({"running": True, "mode": "batch_normalize", "done": 0, "total": len(all_rows), "current": "", "message": f"Batch-Normalisierung auf {settings.get('target_lufs')} LUFS", "errors": 0, "recent_errors": []})
+    begin_job("batch_normalize", len(all_rows), f"Batch-Normalisierung auf {settings.get('target_lufs')} LUFS")
     add_log(f"Batch-Normalisierung gestartet: {len(albums)} Album/Alben, {len(all_rows)} Titel auf {settings.get('target_lufs')} LUFS, Backup: {settings.get('backup_mode','on')}")
     with db() as con:
         for row in all_rows:
+            if stop_requested():
+                add_log("Batch-Normalisierung abgebrochen")
+                break
             state["current"] = f"{row.get('_album_label','')} / {row['path']}".strip(" /")
             try:
                 normalize_file(row["path"], settings, settings.get("backup_mode", "on"))
@@ -712,8 +808,12 @@ def normalize_batch_worker(items: list, backup_mode: Optional[str] = None):
                 add_log(f"Normalisierungsfehler: {row['path']} - {e}", True)
             state["done"] += 1
             con.commit()
-    add_log(f"Batch-Normalisierung fertig: {state['done']}/{state['total']} Titel, Fehler {state['errors']}")
-    state.update({"running": False, "mode": "idle", "current": "", "message": "Batch-Normalisierung fertig", "last_finished": time.time()})
+    if stop_requested():
+        add_log(f"Batch-Normalisierung abgebrochen: {state['done']}/{state['total']} Titel, Fehler {state['errors']}", True)
+        finish_job("Batch-Normalisierung abgebrochen", True)
+    else:
+        add_log(f"Batch-Normalisierung fertig: {state['done']}/{state['total']} Titel, Fehler {state['errors']}")
+        finish_job("Batch-Normalisierung fertig")
 
 @app.on_event("startup")
 def startup():
@@ -722,7 +822,7 @@ def startup():
 
 @app.get("/api/health")
 def health():
-    return {"ok": True, "version": "0.9.2", "music_root": str(MUSIC_ROOT), "db": str(DB_PATH)}
+    return {"ok": True, "version": "0.9.3", "music_root": str(MUSIC_ROOT), "db": str(DB_PATH)}
 
 
 @app.post("/api/scan")
@@ -820,6 +920,16 @@ def normalize_batch(data: dict):
         raise HTTPException(status_code=400, detail="Keine Alben übergeben")
     if not state["running"]:
         threading.Thread(target=normalize_batch_worker, args=(items, backup), daemon=True).start()
+    return state
+
+
+@app.post("/api/stop")
+def stop_job():
+    if state.get("running"):
+        stop_event.set()
+        state["stop_requested"] = True
+        state["message"] = "Abbruch angefordert"
+        add_log("Abbruch angefordert")
     return state
 
 

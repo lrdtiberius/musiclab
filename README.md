@@ -1,25 +1,16 @@
-# MusicLab v0.9.2
+# MusicLab v0.9.3
 
-## Neu
+Neu in v0.9.3:
 
-- FFmpeg/loudnorm-Auswertung grundlegend robuster gemacht.
-- FFmpeg-`stderr` wird nicht mehr automatisch als Fehler behandelt.
-- Der echte loudnorm-JSON-Block wird gezielt über `input_i`, `input_tp` und `input_lra` extrahiert.
-- ID3-Private-Tags, ReplayGain-Ausgaben, Cover-Streams und normale FFmpeg-Metadaten erzeugen keine falschen Analysefehler mehr.
-- Echte Fehler werden kompakter ausgegeben.
-- Version auf v0.9.2 gesetzt.
+- Parallel-Analyse für einzelne Alben, Alles analysieren und Batch-Analyse.
+- Einstellbare Parallelität im UI: 1, 2, 3, 4 oder 6 parallele ffmpeg-Prozesse.
+- Standard bleibt konservativ auf 2, damit die DS923+ nicht unnötig überlastet wird.
+- Stop-Button zum Abbrechen laufender Jobs.
+- Scan, Analyse, Batch-Analyse, Normalisierung und Batch-Normalisierung reagieren auf den Stop-Befehl.
+- Laufende ffmpeg-Prozesse werden nicht hart gekillt; der Abbruch erfolgt sauber nach dem aktuellen Titel bzw. nach den aktuell laufenden Analyse-Jobs.
+- Backend-Version 0.9.3, DB-Schema 10.
+- data/ ist enthalten.
 
-## Installation Synology
+Hinweis zur Parallelität:
 
-Ordnerinhalt nach `/volume1/docker/musiclab` kopieren.
-
-Wichtige Struktur:
-
-```text
-/volume1/docker/musiclab/backend
-/volume1/docker/musiclab/frontend
-/volume1/docker/musiclab/data
-/volume1/docker/musiclab/docker-compose.yml
-```
-
-Danach Container-Projekt neu starten und Browser hart neu laden.
+Für die DS923+ empfehle ich zunächst 2 oder 3. Bei 4 kann es deutlich schneller werden, erzeugt aber mehr CPU- und Festplattenlast. 6 ist nur zum Testen gedacht.

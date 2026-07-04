@@ -13,7 +13,7 @@ h1{font-size:22px;margin:0}.muted{color:var(--muted)}button,input,select{border:
 </style>
 </head>
 <body>
-<header><h1>🎵 MusicLab <span class="muted">v0.9.2</span></h1><button onclick="scan()">Bibliothek neu scannen</button><button class="secondary" onclick="analyzeAll()">Alles analysieren</button><span id="status" class="muted">Bereit</span></header>
+<header><h1>🎵 MusicLab <span class="muted">v0.9.3</span></h1><button onclick="scan()">Bibliothek neu scannen</button><button class="secondary" onclick="analyzeAll()">Alles analysieren</button><button class="danger" id="btnStop" onclick="stopJob()" disabled>Stop</button><span id="status" class="muted">Bereit</span></header>
 <div class="layout">
 <aside class="panel"><div class="modeSwitch"><button id="modeArtist" class="active" onclick="setBrowserMode('artist')">Interpreten</button><button id="modeAlbum" onclick="setBrowserMode('album')">Alben</button></div><input id="search" placeholder="Interpreten suchen..." oninput="loadBrowser()" style="width:100%;margin-bottom:12px"><h3 id="browserTitle">Interpreten</h3><div id="browserList" class="list"></div></aside>
 <main>
@@ -21,7 +21,7 @@ h1{font-size:22px;margin:0}.muted{color:var(--muted)}button,input,select{border:
 <div class="panel refbox" style="margin-bottom:16px"><div class="refmeta"><b>⭐ Referenzalbum</b><div id="referenceBox" class="small refempty">Noch kein Referenzalbum festgelegt.</div></div><button class="secondary" onclick="useReferenceTarget()" id="btnUseRef" disabled>Ziel-LUFS übernehmen</button></div>
 <div class="panel" style="margin-bottom:16px"><div class="bar"><div id="progress" class="fill"></div></div><div id="progressText" class="small" style="margin-top:8px">Bereit</div></div>
 <section class="panel"><h2>Albumliste</h2><div class="albumTools"><span id="albumsCount" class="albumsCount">Kein Interpret gewählt</span></div><div id="batchBar" class="batchbar"><b id="batchInfo">0 Alben ausgewählt</b><button class="secondary" onclick="selectVisibleAlbums()">Sichtbare auswählen</button><button class="secondary" onclick="clearBatchSelection()">Auswahl löschen</button><button onclick="analyzeSelectedAlbums()" id="btnBatchAnalyze">Auswahl analysieren</button><button class="danger" onclick="normalizeSelectedAlbums()" id="btnBatchNorm">Auswahl normalisieren</button></div><div id="albums" class="albums"></div></section>
-<section class="panel" style="margin-top:16px"><div class="toolbar"><h2 style="margin-right:auto">Titel</h2><button onclick="setReference()" id="btnRef" disabled>⭐ Als Referenz</button><button onclick="analyzeAlbum()" id="btnAnalyze" disabled>Album analysieren</button><button class="danger" onclick="normalizeAlbum()" id="btnNorm" disabled>Album normalisieren</button><span>Ziel-LUFS</span><input id="targetLufs" style="width:80px"><span>TP</span><input id="truePeak" style="width:70px"><span>LRA</span><input id="lra" style="width:70px"><span>Backup</span><select id="backupMode" style="width:120px"><option value="on">anlegen</option><option value="sidecar">.bak daneben</option><option value="off">aus</option></select><button class="secondary" onclick="saveSettings()">Speichern</button></div><div id="albumSummary" class="small"></div><div id="normalizePreview" class="small" style="margin:8px 0;color:var(--muted)"></div><table><thead><tr><th>#</th><th>Titel</th><th class="right">LUFS</th><th class="right">TP</th><th class="right">LRA</th><th class="right">Bitrate</th><th>Codec</th></tr></thead><tbody id="tracks"></tbody></table></section>
+<section class="panel" style="margin-top:16px"><div class="toolbar"><h2 style="margin-right:auto">Titel</h2><button onclick="setReference()" id="btnRef" disabled>⭐ Als Referenz</button><button onclick="analyzeAlbum()" id="btnAnalyze" disabled>Album analysieren</button><button class="danger" onclick="normalizeAlbum()" id="btnNorm" disabled>Album normalisieren</button><span>Ziel-LUFS</span><input id="targetLufs" style="width:80px"><span>TP</span><input id="truePeak" style="width:70px"><span>LRA</span><input id="lra" style="width:70px"><span>Backup</span><select id="backupMode" style="width:120px"><option value="on">anlegen</option><option value="sidecar">.bak daneben</option><option value="off">aus</option></select><span>Parallel</span><select id="parallelAnalysis" style="width:70px"><option value="1">1</option><option value="2">2</option><option value="3">3</option><option value="4">4</option><option value="6">6</option></select><button class="secondary" onclick="saveSettings()">Speichern</button></div><div id="albumSummary" class="small"></div><div id="normalizePreview" class="small" style="margin:8px 0;color:var(--muted)"></div><table><thead><tr><th>#</th><th>Titel</th><th class="right">LUFS</th><th class="right">TP</th><th class="right">LRA</th><th class="right">Bitrate</th><th>Codec</th></tr></thead><tbody id="tracks"></tbody></table></section>
 <section class="panel" style="margin-top:16px"><div class="toolbar"><h2 style="margin-right:auto">Log</h2><button class="secondary" onclick="exportLog(false)">Log exportieren</button><button class="secondary" onclick="exportLog(true)">Fehler exportieren</button><button class="secondary" onclick="clearLog()">Log löschen</button></div><pre id="logBox" class="small" style="white-space:pre-wrap;max-height:180px;overflow:auto;background:#0f1218;border:1px solid #303847;border-radius:10px;padding:10px">Noch kein Log.</pre></section>
 </main>
 </div>
@@ -104,13 +104,14 @@ async function loadSettings(){
   truePeak.value=s.true_peak;
   lra.value=s.lra;
   if(s.backup_mode) backupMode.value=s.backup_mode;
+  if(s.parallel_analysis) parallelAnalysis.value=s.parallel_analysis;
 }
 
 async function saveSettings(){
   await j(API+'/settings',{
     method:'POST',
     headers:{'Content-Type':'application/json'},
-    body:JSON.stringify({target_lufs:targetLufs.value,true_peak:truePeak.value,lra:lra.value,backup_mode:backupMode.value})
+    body:JSON.stringify({target_lufs:targetLufs.value,true_peak:truePeak.value,lra:lra.value,backup_mode:backupMode.value,parallel_analysis:parallelAnalysis.value})
   })
 }
 
@@ -449,6 +450,18 @@ async function normalizeSelectedAlbums(){
 }
 
 
+async function stopJob(){
+  try{
+    btnStop.disabled=true;
+    status.textContent='Abbruch wird angefordert...';
+    await j(API+'/stop',{method:'POST'});
+    await poll();
+  }catch(e){
+    status.textContent='Stop-Fehler';
+    alert('Job konnte nicht gestoppt werden:\n'+e.message);
+  }
+}
+
 function exportLog(errorsOnly=false){
   const url = API + '/log/export' + (errorsOnly ? '?errors_only=true' : '');
   const a = document.createElement('a');
@@ -486,6 +499,7 @@ async function poll(){
   progressText.textContent=`${s.mode} · ${s.done}/${s.total} · Fehler ${s.errors} · ${s.current||s.message}`;
   status.textContent=s.message;
   const running=!!s.running;
+  if(btnStop) btnStop.disabled=!running;
   if(running){
     btnAnalyze.disabled=true; btnNorm.disabled=true; btnRef.disabled=true; if(btnBatchAnalyze)btnBatchAnalyze.disabled=true; if(btnBatchNorm)btnBatchNorm.disabled=true;
   }else if(selectedAlbum){
