@@ -1,117 +1,46 @@
 <!doctype html>
 <html lang="de">
 <head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>MusicLab</title>
-  <style>
-    :root{--bg:#0f1115;--panel:#171a21;--panel2:#242936;--line:#2b2f3a;--text:#e8e8e8;--muted:#a6adbb;--green:#4caf50;--blue:#4f7cff;--warn:#ffcc66;--red:#ff7373}
-    *{box-sizing:border-box} body{margin:0;background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif}
-    header{padding:18px 28px;background:var(--panel);border-bottom:1px solid var(--line);display:flex;justify-content:space-between;align-items:center;position:sticky;top:0;z-index:5}
-    .app{display:grid;grid-template-columns:330px 1fr;gap:18px;padding:18px}.card{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:16px}
-    button,input{background:var(--panel2);color:#fff;border:1px solid #3a4050;border-radius:9px;padding:10px}button{cursor:pointer}button:hover{background:#303748}.primary{background:#2f5fff}.danger{background:#4a2630}
-    .stats{display:flex;gap:12px;flex-wrap:wrap}.stat{background:var(--panel2);border-radius:12px;padding:14px;min-width:135px}.stat b{font-size:20px}
-    .list{max-height:74vh;overflow:auto}.item{padding:10px;border-bottom:1px solid var(--line);cursor:pointer;border-radius:8px}.item:hover,.active{background:var(--panel2)}
-    .bar{height:12px;background:#333;border-radius:9px;overflow:hidden}.fill{height:12px;background:var(--green);width:0;transition:width .2s}
-    table{width:100%;border-collapse:collapse}td,th{border-bottom:1px solid var(--line);padding:8px;text-align:left;vertical-align:top}.muted{color:var(--muted)}h1,h2,h3{margin-top:0}
-    .pill{display:inline-block;background:var(--panel2);border:1px solid var(--line);border-radius:999px;padding:2px 8px;color:var(--muted);font-size:12px}.path{font-size:12px;color:var(--muted);max-width:520px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.small{font-size:13px;color:var(--muted)}
-    .lufs{font-variant-numeric:tabular-nums}.warn{color:var(--warn)}.ok{color:var(--green)}.bad{color:var(--red)}.row{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
-  </style>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>MusicLab</title>
+<style>
+:root{--bg:#111317;--panel:#1b1f27;--panel2:#242a35;--txt:#e8eaf0;--muted:#9aa3b2;--accent:#6aa9ff;--bad:#ff6b6b;--ok:#7bd88f}
+*{box-sizing:border-box} body{margin:0;background:var(--bg);color:var(--txt);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
+header{height:64px;display:flex;align-items:center;gap:18px;padding:0 24px;background:#0d0f13;border-bottom:1px solid #2a303b}
+h1{font-size:22px;margin:0}.muted{color:var(--muted)}button,input{border:0;border-radius:10px;padding:10px 14px;font-size:14px}button{background:var(--accent);color:#07111f;font-weight:700;cursor:pointer}button.secondary{background:#303847;color:var(--txt)}button.danger{background:#ffb86b;color:#241000}button:disabled{opacity:.45;cursor:not-allowed}input{background:#0f1218;color:var(--txt);border:1px solid #333b49}
+.layout{display:grid;grid-template-columns:300px 1fr;gap:16px;padding:16px}.panel{background:var(--panel);border:1px solid #2a303b;border-radius:16px;padding:16px}.grid{display:grid;grid-template-columns:repeat(6,1fr);gap:12px;margin-bottom:16px}.stat{background:var(--panel2);border-radius:14px;padding:14px}.stat b{font-size:22px;display:block}.list{max-height:calc(100vh - 230px);overflow:auto}.row{padding:10px;border-radius:10px;cursor:pointer}.row:hover,.row.sel{background:var(--panel2)}.albums{display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:12px}.album{background:var(--panel2);border-radius:14px;padding:14px;cursor:pointer}.album.sel{outline:2px solid var(--accent)}.toolbar{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:12px}table{width:100%;border-collapse:collapse}th,td{padding:9px;border-bottom:1px solid #303847;text-align:left}th{color:var(--muted);font-weight:600}.right{text-align:right}.bar{height:10px;background:#303847;border-radius:999px;overflow:hidden}.fill{height:100%;width:0%;background:var(--accent)}.small{font-size:12px;color:var(--muted)}
+</style>
 </head>
 <body>
-<header>
-  <h1>🎵 MusicLab <span class="muted">v0.3.0</span></h1>
-  <div class="row"><button onclick="scan()">Bibliothek neu scannen</button><button onclick="analyzeLibrary()">Alles analysieren</button></div>
-</header>
-<div class="app">
-  <div class="card">
-    <input id="search" placeholder="Interpret suchen..." style="width:100%" oninput="loadArtists()">
-    <h3>Interpreten</h3>
-    <div id="artists" class="list"></div>
-  </div>
-  <div>
-    <div class="card">
-      <div class="stats">
-        <div class="stat"><b id="sArtists">0</b><br><span class="muted">Interpreten</span></div>
-        <div class="stat"><b id="sAlbums">0</b><br><span class="muted">Alben</span></div>
-        <div class="stat"><b id="sTracks">0</b><br><span class="muted">Titel</span></div>
-        <div class="stat"><b id="sAnalyzed">0</b><br><span class="muted">Analysiert</span></div>
-        <div class="stat"><b id="sDuration">0h</b><br><span class="muted">Dauer</span></div>
-        <div class="stat"><b id="sSchema">-</b><br><span class="muted">DB Schema</span></div>
-      </div>
-      <br><div class="bar"><div id="fill" class="fill"></div></div>
-      <p id="status" class="muted">Bereit</p>
-    </div>
-    <br>
-    <div class="card">
-      <h2 id="selectedArtist">Albumliste</h2>
-      <div id="albums"></div>
-    </div>
-    <br>
-    <div class="card">
-      <div class="row" style="justify-content:space-between">
-        <h2 id="selectedAlbum">Titel</h2>
-        <div><button id="analyzeAlbumBtn" class="primary" onclick="analyzeSelectedAlbum()" style="display:none">Album analysieren</button></div>
-      </div>
-      <div id="albumAnalysis" class="muted"></div><br>
-      <div id="tracks"></div>
-    </div>
-  </div>
+<header><h1>🎵 MusicLab <span class="muted">v0.4.0</span></h1><button onclick="scan()">Bibliothek neu scannen</button><button class="secondary" onclick="analyzeAll()">Alles analysieren</button><span id="status" class="muted">Bereit</span></header>
+<div class="layout">
+<aside class="panel"><input id="search" placeholder="Interpreten suchen..." oninput="loadArtists()" style="width:100%;margin-bottom:12px"><h3>Interpreten</h3><div id="artists" class="list"></div></aside>
+<main>
+<div class="grid"><div class="stat"><b id="sArtists">0</b><span>Interpreten</span></div><div class="stat"><b id="sAlbums">0</b><span>Alben</span></div><div class="stat"><b id="sTracks">0</b><span>Titel</span></div><div class="stat"><b id="sAnalyzed">0</b><span>Analysiert</span></div><div class="stat"><b id="sDuration">0h</b><span>Dauer</span></div><div class="stat"><b id="sSchema">-</b><span>DB Schema</span></div></div>
+<div class="panel" style="margin-bottom:16px"><div class="bar"><div id="progress" class="fill"></div></div><div id="progressText" class="small" style="margin-top:8px">Bereit</div></div>
+<section class="panel"><h2>Albumliste</h2><div id="albums" class="albums"></div></section>
+<section class="panel" style="margin-top:16px"><div class="toolbar"><h2 style="margin-right:auto">Titel</h2><button onclick="analyzeAlbum()" id="btnAnalyze" disabled>Album analysieren</button><button class="danger" onclick="normalizeAlbum()" id="btnNorm" disabled>Album normalisieren</button><span>Ziel-LUFS</span><input id="targetLufs" style="width:80px"><span>TP</span><input id="truePeak" style="width:70px"><span>LRA</span><input id="lra" style="width:70px"><button class="secondary" onclick="saveSettings()">Speichern</button></div><div id="albumSummary" class="small"></div><table><thead><tr><th>#</th><th>Titel</th><th class="right">LUFS</th><th class="right">TP</th><th class="right">LRA</th><th class="right">Bitrate</th><th>Codec</th></tr></thead><tbody id="tracks"></tbody></table></section>
+</main>
 </div>
 <script>
-const API='http://'+location.hostname+':8091/api';
-let currentArtist='';
-let currentAlbum='';
-function esc(s){return String(s??'').replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]))}
-function fmtDur(s){s=Math.round(s||0);let h=Math.floor(s/3600),m=Math.floor((s%3600)/60);return h?`${h}h ${m}m`:`${m}m`}
-function fmtTrack(t){
-  let base='';
-  if(t.track_number){ const total=Number(t.track_total||0); base=total>0?`${t.track_number}/${total}`:String(t.track_number); }
-  else { base=(t.track_raw||'').replace(/\/0$/,''); }
-  if(t.disc_number && t.disc_number>1) base=`${t.disc_number}.${base}`;
-  return base;
-}
-function fmtNum(v, suffix=''){ return (v===null || v===undefined || v==='') ? '' : `${Number(v).toFixed(1)}${suffix}`; }
-function lufsClass(v){ if(v===null || v===undefined) return ''; v=Number(v); if(v>-9) return 'bad'; if(v>-12) return 'warn'; return 'ok'; }
-async function scan(){ if(confirm('Die Datenbank wird neu aufgebaut. Fortfahren?')) await fetch(API+'/scan',{method:'POST'}); }
-async function analyzeLibrary(){ if(confirm('Komplette Bibliothek analysieren? Das kann lange dauern.')) await fetch(API+'/analyze',{method:'POST'}); }
-async function analyzeSelectedAlbum(){ if(!currentArtist||!currentAlbum) return; await fetch(API+`/analyze?artist=${encodeURIComponent(currentArtist)}&album=${encodeURIComponent(currentAlbum)}`,{method:'POST'}); }
-async function refresh(){
-  let st=await fetch(API+'/status').then(r=>r.json()).catch(()=>({total:0,done:0,message:'Backend nicht erreichbar'}));
-  let pct=st.total?Math.round(st.done/st.total*100):0; fill.style.width=pct+'%';
-  status.innerText=`${st.message||''} · ${st.done||0}/${st.total||0} · Fehler: ${st.errors||0} ${st.current?('· '+st.current):''}`;
-  let s=await fetch(API+'/stats').then(r=>r.json()).catch(()=>({artists:0,albums:0,tracks:0,duration:0,analyzed:0,schema_version:'-'}));
-  sArtists.innerText=s.artists; sAlbums.innerText=s.albums; sTracks.innerText=s.tracks; sAnalyzed.innerText=s.analyzed||0; sDuration.innerText=fmtDur(s.duration); sSchema.innerText=s.schema_version||'-';
-  if(currentArtist&&currentAlbum) loadAlbumAnalysis(false);
-}
-async function loadArtists(){
-  let q=search.value;
-  let arr=await fetch(API+'/artists?q='+encodeURIComponent(q)).then(r=>r.json()).catch(()=>[]);
-  artists.innerHTML=arr.map(a=>`<div class="item" onclick="loadAlbums('${encodeURIComponent(a.artist)}')"><b>${esc(a.artist)}</b><br><span class="muted">${a.albums} Alben · ${a.tracks} Titel · ${fmtDur(a.duration)}</span></div>`).join('') || '<p class="muted">Keine Interpreten gefunden.</p>';
-}
-async function loadAlbums(a){
-  currentArtist=decodeURIComponent(a); currentAlbum=''; selectedArtist.innerText=currentArtist;
-  let arr=await fetch(API+'/albums?artist='+a).then(r=>r.json()).catch(()=>[]);
-  albums.innerHTML=arr.map(x=>`<div class="item" onclick="loadTracks('${encodeURIComponent(x.album)}')"><b>${esc(x.album)}</b><br><span class="muted">${x.tracks} Titel · ${fmtDur(x.duration)} · ${x.analyzed||0}/${x.tracks} analysiert ${x.avg_lufs?('· Ø '+x.avg_lufs+' LUFS'):''}</span></div>`).join('') || '<p class="muted">Keine Alben gefunden.</p>';
-  tracks.innerHTML=''; selectedAlbum.innerText='Titel'; albumAnalysis.innerHTML=''; analyzeAlbumBtn.style.display='none';
-}
-async function loadAlbumAnalysis(show=true){
-  if(!currentArtist||!currentAlbum) return;
-  let a=await fetch(API+`/album_analysis?artist=${encodeURIComponent(currentArtist)}&album=${encodeURIComponent(currentAlbum)}`).then(r=>r.json()).catch(()=>({}));
-  albumAnalysis.innerHTML = `<div class="stats">
-    <div class="stat"><b>${a.analyzed||0}/${a.tracks||0}</b><br><span class="muted">analysiert</span></div>
-    <div class="stat"><b>${a.avg_lufs?fmtNum(a.avg_lufs,' LUFS'):'-'}</b><br><span class="muted">Ø Integrated</span></div>
-    <div class="stat"><b>${a.max_true_peak?fmtNum(a.max_true_peak,' dBTP'):'-'}</b><br><span class="muted">Max True Peak</span></div>
-    <div class="stat"><b>${a.avg_lra?fmtNum(a.avg_lra,' LU'):'-'}</b><br><span class="muted">Ø LRA</span></div>
-  </div>`;
-}
-async function loadTracks(alb){
-  currentAlbum=decodeURIComponent(alb); selectedAlbum.innerText=currentAlbum; analyzeAlbumBtn.style.display='inline-block';
-  await loadAlbumAnalysis();
-  let arr=await fetch(API+`/tracks?artist=${encodeURIComponent(currentArtist)}&album=${alb}`).then(r=>r.json()).catch(()=>[]);
-  tracks.innerHTML='<table><tr><th>#</th><th>Titel</th><th>Dauer</th><th>Codec</th><th>Bitrate</th><th>LUFS</th><th>TP</th><th>LRA</th><th>Pfad</th></tr>'+arr.map(t=>`<tr><td>${esc(fmtTrack(t))}</td><td><b>${esc(t.title)}</b><br><span class="small">Datei: ${esc(t.filename)}</span></td><td>${fmtDur(t.duration)}</td><td><span class="pill">${esc(t.codec)}</span></td><td>${t.bitrate?Math.round(t.bitrate/1000)+' kb/s':''}</td><td class="lufs ${lufsClass(t.input_i)}">${fmtNum(t.input_i)}</td><td>${fmtNum(t.input_tp)}</td><td>${fmtNum(t.input_lra)}</td><td><div class="path" title="${esc(t.path)}">${esc(t.path)}</div></td></tr>`).join('')+'</table>';
-}
-setInterval(refresh,2500); refresh(); loadArtists();
+const API='http://'+location.hostname+':8091/api';let selectedArtist=null,selectedAlbum=null;
+function fmt(n,d=1){return n===null||n===undefined?'':Number(n).toFixed(d)}
+function dur(s){s=Number(s||0);let h=Math.floor(s/3600),m=Math.floor((s%3600)/60);return h?`${h}h ${m}m`:`${m}m`}
+function trackNo(t){if(!t.track_number)return'';return t.track_total?`${t.track_number}/${t.track_total}`:String(t.track_number)}
+async function j(url,opt){return fetch(url,opt).then(r=>r.json())}
+async function loadSettings(){let s=await j(API+'/settings');targetLufs.value=s.target_lufs;truePeak.value=s.true_peak;lra.value=s.lra}
+async function saveSettings(){await j(API+'/settings',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({target_lufs:targetLufs.value,true_peak:truePeak.value,lra:lra.value})})}
+async function loadStats(){let s=await j(API+'/stats');sArtists.textContent=s.artists;sAlbums.textContent=s.albums;sTracks.textContent=s.tracks;sAnalyzed.textContent=s.analyzed;sDuration.textContent=dur(s.duration);sSchema.textContent=s.schema_version}
+async function loadArtists(){let q=encodeURIComponent(search.value||'');let a=await j(API+'/artists?q='+q);artists.innerHTML=a.map(x=>`<div class="row ${x.artist===selectedArtist?'sel':''}" onclick="selectArtist('${x.artist.replaceAll("'","\\'")}')"><b>${x.artist}</b><br><span class="small">${x.albums} Alben · ${x.tracks} Titel</span></div>`).join('')}
+async function selectArtist(a){selectedArtist=a;selectedAlbum=null;await loadArtists();let list=await j(API+'/albums?artist='+encodeURIComponent(a));albums.innerHTML=list.map(x=>`<div class="album" onclick="selectAlbum('${x.album.replaceAll("'","\\'")}')"><b>${x.album}</b><br><span class="small">${x.tracks} Titel · ${x.analyzed}/${x.tracks} analysiert</span><br><span class="small">Ø ${x.avg_lufs??'-'} LUFS · TP ${x.max_true_peak??'-'} · LRA ${x.avg_lra??'-'}</span></div>`).join('');tracks.innerHTML='';albumSummary.textContent='';btnAnalyze.disabled=true;btnNorm.disabled=true}
+async function selectAlbum(a){selectedAlbum=a;document.querySelectorAll('.album').forEach(e=>e.classList.remove('sel'));[...document.querySelectorAll('.album')].find(e=>e.textContent.includes(a))?.classList.add('sel');let t=await j(API+'/tracks?artist='+encodeURIComponent(selectedArtist)+'&album='+encodeURIComponent(a));tracks.innerHTML=t.map(x=>`<tr><td>${trackNo(x)}</td><td>${x.title}<br><span class="small">${x.filename}</span></td><td class="right">${fmt(x.input_i,1)}</td><td class="right">${fmt(x.input_tp,1)}</td><td class="right">${fmt(x.input_lra,1)}</td><td class="right">${x.bitrate?Math.round(x.bitrate/1000):''}</td><td>${x.codec}</td></tr>`).join('');let an=await j(API+'/album_analysis?artist='+encodeURIComponent(selectedArtist)+'&album='+encodeURIComponent(a));albumSummary.textContent=`${an.tracks} Titel · ${an.analyzed} analysiert · Ø ${an.avg_lufs??'-'} LUFS · TP ${an.max_true_peak??'-'} · LRA ${an.avg_lra??'-'}`;btnAnalyze.disabled=false;btnNorm.disabled=false}
+async function scan(){await j(API+'/scan',{method:'POST'})}
+async function analyzeAll(){await j(API+'/analyze',{method:'POST'})}
+async function analyzeAlbum(){if(selectedArtist&&selectedAlbum)await j(API+'/analyze?artist='+encodeURIComponent(selectedArtist)+'&album='+encodeURIComponent(selectedAlbum),{method:'POST'})}
+async function normalizeAlbum(){if(!selectedArtist||!selectedAlbum)return;if(!confirm('Album wird direkt überschrieben. Fortfahren?'))return;await j(API+'/normalize?artist='+encodeURIComponent(selectedArtist)+'&album='+encodeURIComponent(selectedAlbum),{method:'POST'})}
+async function poll(){let s=await j(API+'/status');let p=s.total?Math.round(s.done/s.total*100):0;progress.style.width=p+'%';progressText.textContent=`${s.mode} · ${s.done}/${s.total} · Fehler ${s.errors} · ${s.current||s.message}`;status.textContent=s.message;if(!s.running){loadStats();if(selectedArtist)selectArtist(selectedArtist).then(()=>{if(selectedAlbum)selectAlbum(selectedAlbum)})}}
+setInterval(poll,2000);loadSettings();loadStats();loadArtists();poll();
 </script>
 </body>
 </html>
