@@ -1,6 +1,6 @@
-# MusicLab v1.1.0
+# MusicLab v1.1.1
 
-## Änderungen v1.1.0
+## Änderungen v1.1.1
 
 - Referenzalbum-Button in die Albumsektion verschoben.
 - Titelbereich aufgeräumt: dort bleibt nur die Titelnormalisierung.
@@ -15,3 +15,9 @@
 2. Projekt im Container Manager neu erstellen oder neu bauen.
 3. Browser hart neu laden: `Cmd + Shift + R`.
 
+
+
+## v1.1.1
+- Ein-Bildschirm-Layout: Header, Inhalte und Footer bleiben sichtbar.
+- Interpreten/Alben, Albumliste, Titelliste, Log und Historie scrollen intern.
+- Footer mit „Idea by Lrd.Tiberius“ bleibt dauerhaft sichtbar.
