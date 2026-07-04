@@ -1,6 +1,6 @@
-# MusicLab v0.5.2
+# MusicLab v0.5.3
 
-Neu in v0.5.2:
+Neu in v0.5.3:
 
 - Referenzalbum festlegen
 - Referenzalbum dauerhaft in der Datenbank speichern
@@ -24,9 +24,14 @@ Installation:
 5. Browser hart neu laden: `Cmd + Shift + R`.
 
 
-## v0.5.2
+## v0.5.3
 - Zeigt unter jedem Titel zusätzlich den relativen Dateipfad an.
 
 
-## v0.5.2
+## v0.5.3
 - Albumliste hat jetzt einen eigenen Scrollbereich, damit die Titelliste und Navigation bei Interpreten mit vielen Alben stabil bleiben.
+
+
+## v0.5.3
+- Referenzalbum-Box passt nun auch bei langen Namen sauber in den Bereich.
+- Dateiname unter dem Titel entfernt, da der Pfad bereits angezeigt wird.
