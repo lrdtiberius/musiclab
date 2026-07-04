@@ -13,7 +13,7 @@ h1{font-size:22px;margin:0}.muted{color:var(--muted)}button,input,select{border:
 </style>
 </head>
 <body>
-<header><h1>🎵 MusicLab <span class="muted">v0.7.2</span></h1><button onclick="scan()">Bibliothek neu scannen</button><button class="secondary" onclick="analyzeAll()">Alles analysieren</button><span id="status" class="muted">Bereit</span></header>
+<header><h1>🎵 MusicLab <span class="muted">v0.7.3</span></h1><button onclick="scan()">Bibliothek neu scannen</button><button class="secondary" onclick="analyzeAll()">Alles analysieren</button><span id="status" class="muted">Bereit</span></header>
 <div class="layout">
 <aside class="panel"><div class="modeSwitch"><button id="modeArtist" class="active" onclick="setBrowserMode('artist')">Interpreten</button><button id="modeAlbum" onclick="setBrowserMode('album')">Alben</button></div><input id="search" placeholder="Interpreten suchen..." oninput="loadBrowser()" style="width:100%;margin-bottom:12px"><h3 id="browserTitle">Interpreten</h3><div id="browserList" class="list"></div></aside>
 <main>
@@ -279,7 +279,7 @@ async function selectAlbum(a){
   let url=API+'/tracks?album='+encodeURIComponent(a);
   if(selectedArtist) url+='&artist='+encodeURIComponent(selectedArtist);
   let t=await j(url);
-  tracks.innerHTML=t.map(x=>`<tr><td>${trackNo(x)}</td><td>${escHtml(x.title)}<br><span class="small">Pfad: ${escHtml(relPath(x.path))}</span></td><td class="right">${fmt(x.input_i,1)}</td><td class="right">${fmt(x.input_tp,1)}</td><td class="right">${fmt(x.input_lra,1)}</td><td class="right">${x.bitrate?Math.round(x.bitrate/1000):''}</td><td>${escHtml(x.codec)}</td></tr>`).join('');
+  tracks.innerHTML=t.map(x=>`<tr><td>${trackNo(x)}</td><td>${escHtml(x.title)}<br><span class="small">${escHtml(relPath(x.path))}</span></td><td class="right">${fmt(x.input_i,1)}</td><td class="right">${fmt(x.input_tp,1)}</td><td class="right">${fmt(x.input_lra,1)}</td><td class="right">${x.bitrate?Math.round(x.bitrate/1000):''}</td><td>${escHtml(x.codec)}</td></tr>`).join('');
 
   let anUrl=API+'/album_analysis?album='+encodeURIComponent(a);
   if(selectedArtist) anUrl+='&artist='+encodeURIComponent(selectedArtist);
