@@ -1,19 +1,27 @@
-# MusicLab v0.9.0
+# MusicLab v0.9.1
 
-Größerer Schritt Richtung produktiver Batch-Nutzung.
+## Neu
 
-Neu:
+- Log-Export direkt aus der Oberfläche:
+  - gesamtes Log exportieren
+  - nur Fehler exportieren
+  - Log löschen
+- Backend schreibt Logs zusätzlich dauerhaft nach `/data/logs/musiclab.log`.
+- Logrotation bei ca. 10 MB.
+- Analyse-Fehler werden kompakter behandelt; FFmpeg-Ausgaben werden robuster gelesen.
+- Version auf v0.9.1 gesetzt.
 
-- Mehrfachauswahl von Alben über Checkboxen auf den Albumkarten.
-- Sichtbare Alben können gesammelt ausgewählt werden.
-- Ausgewählte Alben können gesammelt analysiert werden.
-- Ausgewählte Alben können gesammelt normalisiert werden.
-- Vor Batch-Normalisierung erscheint eine gemeinsame Vorschau mit Ziel-LUFS und dB-Änderung pro Album.
-- Normalisierung startet nur, wenn alle ausgewählten Alben vollständig analysiert sind.
-- Nach jeder Normalisierung wird der jeweilige Titel direkt neu analysiert, damit Werte danach aktuell sind.
-- Batch-Fortschritt und Log laufen über die bestehende Statusanzeige.
-- `data/` ist wieder im ZIP enthalten.
+## Installation Synology
 
-Hinweis:
+Ordnerinhalt nach `/volume1/docker/musiclab` kopieren.
 
-Bestehende Datenbank kann bleiben. Nach dem Entpacken wie gewohnt Projekt neu starten und Browser hart neu laden.
+Wichtige Struktur:
+
+```text
+/volume1/docker/musiclab/backend
+/volume1/docker/musiclab/frontend
+/volume1/docker/musiclab/data
+/volume1/docker/musiclab/docker-compose.yml
+```
+
+Danach Container-Projekt neu starten und Browser hart neu laden.

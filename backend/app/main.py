@@ -9,16 +9,19 @@ import time
 from pathlib import Path
 from typing import Optional, Tuple
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Response
 from fastapi.middleware.cors import CORSMiddleware
 from mutagen import File as MutagenFile
 
 MUSIC_ROOT = Path(os.getenv("MUSIC_ROOT", "/music"))
 DB_PATH = Path(os.getenv("DB_PATH", "/data/musiclab.sqlite"))
+LOG_DIR = Path(os.getenv("LOG_DIR", str(DB_PATH.parent / "logs")))
+LOG_PATH = LOG_DIR / "musiclab.log"
+LOG_MAX_BYTES = int(os.getenv("LOG_MAX_BYTES", str(10 * 1024 * 1024)))
 EXTS = {".mp3", ".m4a", ".aac", ".flac", ".ogg"}
-SCHEMA_VERSION = 8
+SCHEMA_VERSION = 9
 
-app = FastAPI(title="MusicLab API", version="0.9.0")
+app = FastAPI(title="MusicLab API", version="0.9.1")
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
 
 state = {
@@ -35,6 +38,25 @@ state = {
 }
 
 
+def rotate_log_if_needed():
+    try:
+        if LOG_PATH.exists() and LOG_PATH.stat().st_size >= LOG_MAX_BYTES:
+            LOG_DIR.mkdir(parents=True, exist_ok=True)
+            for i in range(4, 0, -1):
+                src = LOG_DIR / f"musiclab.{i}.log"
+                dst = LOG_DIR / f"musiclab.{i + 1}.log"
+                if src.exists():
+                    if dst.exists():
+                        dst.unlink()
+                    src.rename(dst)
+            dst = LOG_DIR / "musiclab.1.log"
+            if dst.exists():
+                dst.unlink()
+            LOG_PATH.rename(dst)
+    except Exception as e:
+        print(f"Logrotation fehlgeschlagen: {e}", flush=True)
+
+
 def add_log(message: str, is_error: bool = False):
     line = f"{time.strftime('%H:%M:%S')} | {message}"
     state["log"].append(line)
@@ -42,7 +64,28 @@ def add_log(message: str, is_error: bool = False):
     if is_error:
         state["recent_errors"].append(line)
         state["recent_errors"] = state["recent_errors"][-50:]
+    try:
+        LOG_DIR.mkdir(parents=True, exist_ok=True)
+        rotate_log_if_needed()
+        with LOG_PATH.open("a", encoding="utf-8") as f:
+            f.write(line + "\n")
+    except Exception as e:
+        print(f"Logdatei konnte nicht geschrieben werden: {e}", flush=True)
     print(line, flush=True)
+
+
+def read_log_text(errors_only: bool = False) -> str:
+    lines = []
+    try:
+        if LOG_PATH.exists():
+            lines = LOG_PATH.read_text(encoding="utf-8", errors="replace").splitlines()
+    except Exception:
+        lines = []
+    if not lines:
+        lines = list(state.get("log", []))
+    if errors_only:
+        lines = [l for l in lines if "fehler" in l.lower() or "abgebrochen" in l.lower()]
+    return "\n".join(lines) + ("\n" if lines else "")
 
 
 def db():
@@ -308,11 +351,18 @@ def parse_loudnorm_json(stderr: str) -> Optional[dict]:
 
 
 def analyze_track_file(path: Path) -> dict:
-    cmd = ["ffmpeg", "-hide_banner", "-nostats", "-i", str(path), "-af", "loudnorm=print_format=json", "-f", "null", "-"]
-    res = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, timeout=600)
-    data = parse_loudnorm_json(res.stderr)
+    cmd = ["ffmpeg", "-hide_banner", "-nostats", "-i", str(path), "-vn", "-af", "loudnorm=print_format=json", "-f", "null", "-"]
+    res = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=600)
+    stderr = (res.stderr or b"").decode("utf-8", errors="replace")
+    data = parse_loudnorm_json(stderr)
     if not data:
-        raise RuntimeError((res.stderr or "Keine loudnorm-Daten")[-1200:])
+        short = "Keine loudnorm-Daten"
+        for line in reversed(stderr.splitlines()):
+            line = line.strip()
+            if line and not line.startswith("size=") and not line.startswith("video:"):
+                short = line
+                break
+        raise RuntimeError(short[:500])
     return {
         "input_i": float(data["input_i"]),
         "input_tp": float(data["input_tp"]),
@@ -611,7 +661,7 @@ def startup():
 
 @app.get("/api/health")
 def health():
-    return {"ok": True, "version": "0.9.0", "music_root": str(MUSIC_ROOT), "db": str(DB_PATH)}
+    return {"ok": True, "version": "0.9.1", "music_root": str(MUSIC_ROOT), "db": str(DB_PATH)}
 
 
 @app.post("/api/scan")
@@ -915,3 +965,26 @@ def album_analysis(album: str, artist: Optional[str] = None):
 @app.get("/api/log")
 def api_log():
     return {"lines": state.get("log", []), "errors": state.get("recent_errors", [])}
+
+
+@app.get("/api/log/export")
+def api_log_export(errors_only: bool = False):
+    text = read_log_text(errors_only=errors_only)
+    suffix = "errors" if errors_only else "full"
+    stamp = time.strftime("%Y-%m-%d_%H-%M-%S")
+    filename = f"musiclab_{suffix}_{stamp}.log"
+    headers = {"Content-Disposition": f'attachment; filename="{filename}"'}
+    return Response(content=text, media_type="text/plain; charset=utf-8", headers=headers)
+
+
+@app.post("/api/log/clear")
+def api_log_clear():
+    state["log"] = []
+    state["recent_errors"] = []
+    try:
+        LOG_DIR.mkdir(parents=True, exist_ok=True)
+        LOG_PATH.write_text("", encoding="utf-8")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Log konnte nicht gelöscht werden: {e}")
+    add_log("Log gelöscht")
+    return {"ok": True}
