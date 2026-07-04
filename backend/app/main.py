@@ -8,16 +8,16 @@ import time
 from pathlib import Path
 from typing import Optional, Tuple
 
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from mutagen import File as MutagenFile
 
 MUSIC_ROOT = Path(os.getenv("MUSIC_ROOT", "/music"))
 DB_PATH = Path(os.getenv("DB_PATH", "/data/musiclab.sqlite"))
 EXTS = {".mp3", ".m4a", ".aac", ".flac", ".ogg"}
-SCHEMA_VERSION = 5
+SCHEMA_VERSION = 6
 
-app = FastAPI(title="MusicLab API", version="0.4.3")
+app = FastAPI(title="MusicLab API", version="0.5.0")
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
 
 state = {
@@ -401,7 +401,7 @@ def startup():
 
 @app.get("/api/health")
 def health():
-    return {"ok": True, "version": "0.4.3", "music_root": str(MUSIC_ROOT), "db": str(DB_PATH)}
+    return {"ok": True, "version": "0.5.0", "music_root": str(MUSIC_ROOT), "db": str(DB_PATH)}
 
 
 @app.post("/api/scan")
@@ -494,18 +494,68 @@ def get_tracks(artist: str, album: str):
         ).fetchall()]
 
 
+def album_summary(con, artist: str, album: str):
+    row = con.execute(
+        """
+        SELECT COUNT(t.id) tracks, COUNT(a.track_id) analyzed,
+        ROUND(AVG(a.input_i),2) avg_lufs,
+        ROUND(MAX(a.input_tp),2) max_true_peak,
+        ROUND(AVG(a.input_lra),2) avg_lra
+        FROM tracks t LEFT JOIN analysis a ON a.track_id=t.id AND a.status='ok'
+        WHERE t.artist=? AND t.album=?
+        """,
+        (artist, album),
+    ).fetchone()
+    return dict(row) if row else {}
+
+
+def get_setting_value(con, key: str):
+    r = con.execute("SELECT value FROM settings WHERE key=?", (key,)).fetchone()
+    return r["value"] if r else None
+
+
+@app.get("/api/reference")
+def api_get_reference():
+    with db() as con:
+        artist = get_setting_value(con, "reference_artist")
+        album = get_setting_value(con, "reference_album")
+        if not artist or not album:
+            return {"is_set": False}
+        summary = album_summary(con, artist, album)
+        exists = bool(summary.get("tracks"))
+        return {
+            "is_set": exists,
+            "artist": artist,
+            "album": album,
+            **summary,
+        }
+
+
+@app.post("/api/reference")
+def api_set_reference(data: dict):
+    artist = str(data.get("artist", "")).strip()
+    album = str(data.get("album", "")).strip()
+    if not artist or not album:
+        raise HTTPException(status_code=400, detail="artist und album erforderlich")
+    with db() as con:
+        summary = album_summary(con, artist, album)
+        if not summary.get("tracks"):
+            raise HTTPException(status_code=404, detail="Album nicht gefunden")
+        if not summary.get("analyzed"):
+            raise HTTPException(status_code=400, detail="Album zuerst analysieren")
+        con.execute("INSERT OR REPLACE INTO settings(key,value) VALUES('reference_artist',?)", (artist,))
+        con.execute("INSERT OR REPLACE INTO settings(key,value) VALUES('reference_album',?)", (album,))
+        if summary.get("avg_lufs") is not None:
+            con.execute("INSERT OR REPLACE INTO settings(key,value) VALUES('target_lufs',?)", (str(summary["avg_lufs"]),))
+        con.commit()
+    add_log(f"Referenzalbum gesetzt: {artist} - {album} ({summary.get('avg_lufs')} LUFS)")
+    return {"is_set": True, "artist": artist, "album": album, **summary}
+
+
 @app.get("/api/album_analysis")
 def album_analysis(artist: str, album: str):
     with db() as con:
-        r = con.execute(
-            """
-            SELECT COUNT(t.id) tracks, COUNT(a.track_id) analyzed,
-            ROUND(AVG(a.input_i),2) avg_lufs, ROUND(MAX(a.input_tp),2) max_true_peak, ROUND(AVG(a.input_lra),2) avg_lra
-            FROM tracks t LEFT JOIN analysis a ON a.track_id=t.id AND a.status='ok'
-            WHERE t.artist=? AND t.album=?
-            """, (artist, album),
-        ).fetchone()
-        return dict(r) if r else {}
+        return album_summary(con, artist, album)
 
 
 @app.get("/api/log")
