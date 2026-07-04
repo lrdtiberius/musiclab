@@ -13,7 +13,7 @@ h1{font-size:22px;margin:0}.muted{color:var(--muted)}button,input{border:0;borde
 </style>
 </head>
 <body>
-<header><h1>🎵 MusicLab <span class="muted">v0.4.1</span></h1><button onclick="scan()">Bibliothek neu scannen</button><button class="secondary" onclick="analyzeAll()">Alles analysieren</button><span id="status" class="muted">Bereit</span></header>
+<header><h1>🎵 MusicLab <span class="muted">v0.4.2</span></h1><button onclick="scan()">Bibliothek neu scannen</button><button class="secondary" onclick="analyzeAll()">Alles analysieren</button><span id="status" class="muted">Bereit</span></header>
 <div class="layout">
 <aside class="panel"><input id="search" placeholder="Interpreten suchen..." oninput="loadArtists()" style="width:100%;margin-bottom:12px"><h3>Interpreten</h3><div id="artists" class="list"></div></aside>
 <main>
@@ -21,6 +21,7 @@ h1{font-size:22px;margin:0}.muted{color:var(--muted)}button,input{border:0;borde
 <div class="panel" style="margin-bottom:16px"><div class="bar"><div id="progress" class="fill"></div></div><div id="progressText" class="small" style="margin-top:8px">Bereit</div></div>
 <section class="panel"><h2>Albumliste</h2><div id="albums" class="albums"></div></section>
 <section class="panel" style="margin-top:16px"><div class="toolbar"><h2 style="margin-right:auto">Titel</h2><button onclick="analyzeAlbum()" id="btnAnalyze" disabled>Album analysieren</button><button class="danger" onclick="normalizeAlbum()" id="btnNorm" disabled>Album normalisieren</button><span>Ziel-LUFS</span><input id="targetLufs" style="width:80px"><span>TP</span><input id="truePeak" style="width:70px"><span>LRA</span><input id="lra" style="width:70px"><button class="secondary" onclick="saveSettings()">Speichern</button></div><div id="albumSummary" class="small"></div><table><thead><tr><th>#</th><th>Titel</th><th class="right">LUFS</th><th class="right">TP</th><th class="right">LRA</th><th class="right">Bitrate</th><th>Codec</th></tr></thead><tbody id="tracks"></tbody></table></section>
+<section class="panel" style="margin-top:16px"><h2>Log</h2><pre id="logBox" class="small" style="white-space:pre-wrap;max-height:180px;overflow:auto;background:#0f1218;border:1px solid #303847;border-radius:10px;padding:10px">Noch kein Log.</pre></section>
 </main>
 </div>
 <script>
@@ -98,10 +99,20 @@ async function selectAlbum(a){
   btnNorm.disabled=false;
 }
 
-async function scan(){await j(API+'/scan',{method:'POST'})}
-async function analyzeAll(){await j(API+'/analyze',{method:'POST'})}
-async function analyzeAlbum(){if(selectedArtist&&selectedAlbum)await j(API+'/analyze?artist='+encodeURIComponent(selectedArtist)+'&album='+encodeURIComponent(selectedAlbum),{method:'POST'})}
-async function normalizeAlbum(){if(!selectedArtist||!selectedAlbum)return;if(!confirm('Album wird direkt überschrieben. Fortfahren?'))return;await j(API+'/normalize?artist='+encodeURIComponent(selectedArtist)+'&album='+encodeURIComponent(selectedAlbum),{method:'POST'})}
+async function scan(){lastRunning=true;await j(API+'/scan',{method:'POST'});poll()}
+async function analyzeAll(){lastRunning=true;await j(API+'/analyze',{method:'POST'});poll()}
+async function analyzeAlbum(){if(selectedArtist&&selectedAlbum){lastRunning=true;await j(API+'/analyze?artist='+encodeURIComponent(selectedArtist)+'&album='+encodeURIComponent(selectedAlbum),{method:'POST'});poll()}}
+async function normalizeAlbum(){if(!selectedArtist||!selectedAlbum)return;if(!confirm('Album wird direkt überschrieben. Fortfahren?'))return;lastRunning=true;await j(API+'/normalize?artist='+encodeURIComponent(selectedArtist)+'&album='+encodeURIComponent(selectedAlbum),{method:'POST'});poll()}
+
+async function loadLog(){
+  try{
+    let l=await j(API+'/log');
+    let lines=[...(l.errors||[]), ...(l.lines||[]).slice(-25)];
+    logBox.textContent=lines.length ? lines.join('
+') : 'Noch kein Log.';
+    logBox.scrollTop=logBox.scrollHeight;
+  }catch(e){}
+}
 
 async function poll(){
   let s=await j(API+'/status');
@@ -113,8 +124,11 @@ async function poll(){
 
   // Nur nach Abschluss eines Jobs neu laden. Kein permanentes Re-Rendering im Idle-Zustand,
   // damit die Albumauswahl nicht wieder zuklappt.
+  await loadLog();
+
   if(lastRunning && !s.running){
     await loadStats();
+    await loadArtists();
     if(selectedArtist){
       await selectArtist(selectedArtist,true);
       if(selectedAlbum) await selectAlbum(selectedAlbum);
@@ -128,6 +142,7 @@ setInterval(poll,2000);
 loadSettings();
 loadStats();
 loadArtists();
+loadLog();
 poll();
 </script>
 </body>

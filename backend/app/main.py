@@ -17,7 +17,7 @@ DB_PATH = Path(os.getenv("DB_PATH", "/data/musiclab.sqlite"))
 EXTS = {".mp3", ".m4a", ".aac", ".flac", ".ogg"}
 SCHEMA_VERSION = 5
 
-app = FastAPI(title="MusicLab API", version="0.4.0")
+app = FastAPI(title="MusicLab API", version="0.4.2")
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
 
 state = {
@@ -28,7 +28,20 @@ state = {
     "current": "",
     "message": "Bereit",
     "errors": 0,
+    "log": [],
+    "recent_errors": [],
+    "last_finished": None,
 }
+
+
+def add_log(message: str, is_error: bool = False):
+    line = f"{time.strftime('%H:%M:%S')} | {message}"
+    state["log"].append(line)
+    state["log"] = state["log"][-200:]
+    if is_error:
+        state["recent_errors"].append(line)
+        state["recent_errors"] = state["recent_errors"][-50:]
+    print(line, flush=True)
 
 
 def db():
@@ -217,7 +230,8 @@ def upsert_track(con, item):
 def scan_worker():
     init_db()
     files = [p for p in MUSIC_ROOT.rglob("*") if p.is_file() and p.suffix.lower() in EXTS and ".tmp" not in p.name]
-    state.update({"running": True, "mode": "scan", "done": 0, "total": len(files), "current": "", "message": "Scan läuft", "errors": 0})
+    state.update({"running": True, "mode": "scan", "done": 0, "total": len(files), "current": "", "message": "Scan läuft", "errors": 0, "recent_errors": []})
+    add_log(f"Scan gestartet: {len(files)} Dateien")
     with db() as con:
         con.execute("DELETE FROM analysis")
         con.execute("DELETE FROM tracks")
@@ -230,12 +244,13 @@ def scan_worker():
                     upsert_track(con, item)
             except Exception as e:
                 state["errors"] += 1
-                print("scan error", p, e, flush=True)
+                add_log(f"Scanfehler: {p.relative_to(MUSIC_ROOT)} - {e}", True)
             state["done"] += 1
             if state["done"] % 100 == 0:
                 con.commit()
         con.commit()
-    state.update({"running": False, "mode": "idle", "current": "", "message": "Scan fertig"})
+    add_log(f"Scan fertig: {state['done']}/{state['total']} Dateien, Fehler {state['errors']}")
+    state.update({"running": False, "mode": "idle", "current": "", "message": "Scan fertig", "last_finished": time.time()})
 
 
 def parse_loudnorm_json(stderr: str) -> Optional[dict]:
@@ -300,7 +315,8 @@ def selected_rows(artist: Optional[str], album: Optional[str]):
 def analysis_worker(artist: Optional[str] = None, album: Optional[str] = None):
     init_db()
     rows = selected_rows(artist, album)
-    state.update({"running": True, "mode": "analysis", "done": 0, "total": len(rows), "current": "", "message": "Analyse läuft", "errors": 0})
+    state.update({"running": True, "mode": "analysis", "done": 0, "total": len(rows), "current": "", "message": "Analyse läuft", "errors": 0, "recent_errors": []})
+    add_log(f"Analyse gestartet: {len(rows)} Titel")
     with db() as con:
         for row in rows:
             state["current"] = row["path"]
@@ -310,9 +326,12 @@ def analysis_worker(artist: Optional[str] = None, album: Optional[str] = None):
             except Exception as e:
                 state["errors"] += 1
                 upsert_analysis(con, row["id"], None, str(e))
+                add_log(f"Normalisierungsfehler: {row['path']} - {e}", True)
+                add_log(f"Analysefehler: {row['path']} - {e}", True)
             state["done"] += 1
             con.commit()
-    state.update({"running": False, "mode": "idle", "current": "", "message": "Analyse fertig"})
+    add_log(f"Analyse fertig: {state['done']}/{state['total']} Titel, Fehler {state['errors']}")
+    state.update({"running": False, "mode": "idle", "current": "", "message": "Analyse fertig", "last_finished": time.time()})
 
 
 def loudnorm_filter(first: dict, settings: dict) -> str:
@@ -355,7 +374,8 @@ def normalize_worker(artist: Optional[str] = None, album: Optional[str] = None):
     init_db()
     settings = get_settings()
     rows = selected_rows(artist, album)
-    state.update({"running": True, "mode": "normalize", "done": 0, "total": len(rows), "current": "", "message": f"Normalisiere auf {settings.get('target_lufs')} LUFS", "errors": 0})
+    state.update({"running": True, "mode": "normalize", "done": 0, "total": len(rows), "current": "", "message": f"Normalisiere auf {settings.get('target_lufs')} LUFS", "errors": 0, "recent_errors": []})
+    add_log(f"Normalisierung gestartet: {len(rows)} Titel auf {settings.get('target_lufs')} LUFS")
     with db() as con:
         for row in rows:
             state["current"] = row["path"]
@@ -366,9 +386,12 @@ def normalize_worker(artist: Optional[str] = None, album: Optional[str] = None):
             except Exception as e:
                 state["errors"] += 1
                 upsert_analysis(con, row["id"], None, str(e))
+                add_log(f"Normalisierungsfehler: {row['path']} - {e}", True)
+                add_log(f"Analysefehler: {row['path']} - {e}", True)
             state["done"] += 1
             con.commit()
-    state.update({"running": False, "mode": "idle", "current": "", "message": "Normalisierung fertig"})
+    add_log(f"Normalisierung fertig: {state['done']}/{state['total']} Titel, Fehler {state['errors']}")
+    state.update({"running": False, "mode": "idle", "current": "", "message": "Normalisierung fertig", "last_finished": time.time()})
 
 
 @app.on_event("startup")
@@ -378,7 +401,7 @@ def startup():
 
 @app.get("/api/health")
 def health():
-    return {"ok": True, "version": "0.4.0", "music_root": str(MUSIC_ROOT), "db": str(DB_PATH)}
+    return {"ok": True, "version": "0.4.2", "music_root": str(MUSIC_ROOT), "db": str(DB_PATH)}
 
 
 @app.post("/api/scan")
@@ -483,3 +506,8 @@ def album_analysis(artist: str, album: str):
             """, (artist, album),
         ).fetchone()
         return dict(r) if r else {}
+
+
+@app.get("/api/log")
+def api_log():
+    return {"lines": state.get("log", []), "errors": state.get("recent_errors", [])}
