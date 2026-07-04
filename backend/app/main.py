@@ -17,7 +17,7 @@ DB_PATH = Path(os.getenv("DB_PATH", "/data/musiclab.sqlite"))
 EXTS = {".mp3", ".m4a", ".aac", ".flac", ".ogg"}
 SCHEMA_VERSION = 5
 
-app = FastAPI(title="MusicLab API", version="0.4.2")
+app = FastAPI(title="MusicLab API", version="0.4.3")
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
 
 state = {
@@ -401,7 +401,7 @@ def startup():
 
 @app.get("/api/health")
 def health():
-    return {"ok": True, "version": "0.4.2", "music_root": str(MUSIC_ROOT), "db": str(DB_PATH)}
+    return {"ok": True, "version": "0.4.3", "music_root": str(MUSIC_ROOT), "db": str(DB_PATH)}
 
 
 @app.post("/api/scan")

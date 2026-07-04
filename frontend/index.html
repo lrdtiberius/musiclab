@@ -13,7 +13,7 @@ h1{font-size:22px;margin:0}.muted{color:var(--muted)}button,input{border:0;borde
 </style>
 </head>
 <body>
-<header><h1>🎵 MusicLab <span class="muted">v0.4.2</span></h1><button onclick="scan()">Bibliothek neu scannen</button><button class="secondary" onclick="analyzeAll()">Alles analysieren</button><span id="status" class="muted">Bereit</span></header>
+<header><h1>🎵 MusicLab <span class="muted">v0.4.3</span></h1><button onclick="scan()">Bibliothek neu scannen</button><button class="secondary" onclick="analyzeAll()">Alles analysieren</button><span id="status" class="muted">Bereit</span></header>
 <div class="layout">
 <aside class="panel"><input id="search" placeholder="Interpreten suchen..." oninput="loadArtists()" style="width:100%;margin-bottom:12px"><h3>Interpreten</h3><div id="artists" class="list"></div></aside>
 <main>
@@ -33,7 +33,14 @@ function fmt(n,d=1){return n===null||n===undefined?'':Number(n).toFixed(d)}
 function dur(s){s=Number(s||0);let h=Math.floor(s/3600),m=Math.floor((s%3600)/60);return h?`${h}h ${m}m`:`${m}m`}
 function trackNo(t){if(!t.track_number)return'';return (!t.track_total || Number(t.track_total)===0) ? String(t.track_number) : `${t.track_number}/${t.track_total}`}
 function escHtml(v){return String(v ?? '').replace(/[&<>"]/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]))}
-async function j(url,opt){return fetch(url,opt).then(r=>r.json())}
+async function j(url,opt){
+  const r = await fetch(url,opt);
+  if(!r.ok){
+    const txt = await r.text().catch(()=>'');
+    throw new Error(`${r.status} ${r.statusText} ${txt}`);
+  }
+  return r.json();
+}
 
 async function loadSettings(){
   let s=await j(API+'/settings');
@@ -99,8 +106,30 @@ async function selectAlbum(a){
   btnNorm.disabled=false;
 }
 
-async function scan(){lastRunning=true;await j(API+'/scan',{method:'POST'});poll()}
-async function analyzeAll(){lastRunning=true;await j(API+'/analyze',{method:'POST'});poll()}
+async function scan(){
+  try{
+    lastRunning=true;
+    status.textContent='Scan wird gestartet...';
+    await j(API+'/scan',{method:'POST'});
+    await poll();
+  }catch(e){
+    status.textContent='Scan-Fehler';
+    logBox.textContent='Scan konnte nicht gestartet werden:\n'+e.message;
+    console.error(e);
+  }
+}
+async function analyzeAll(){
+  try{
+    lastRunning=true;
+    status.textContent='Analyse wird gestartet...';
+    await j(API+'/analyze',{method:'POST'});
+    await poll();
+  }catch(e){
+    status.textContent='Analyse-Fehler';
+    logBox.textContent='Analyse konnte nicht gestartet werden:\n'+e.message;
+    console.error(e);
+  }
+}
 async function analyzeAlbum(){if(selectedArtist&&selectedAlbum){lastRunning=true;await j(API+'/analyze?artist='+encodeURIComponent(selectedArtist)+'&album='+encodeURIComponent(selectedAlbum),{method:'POST'});poll()}}
 async function normalizeAlbum(){if(!selectedArtist||!selectedAlbum)return;if(!confirm('Album wird direkt überschrieben. Fortfahren?'))return;lastRunning=true;await j(API+'/normalize?artist='+encodeURIComponent(selectedArtist)+'&album='+encodeURIComponent(selectedAlbum),{method:'POST'});poll()}
 
@@ -108,8 +137,7 @@ async function loadLog(){
   try{
     let l=await j(API+'/log');
     let lines=[...(l.errors||[]), ...(l.lines||[]).slice(-25)];
-    logBox.textContent=lines.length ? lines.join('
-') : 'Noch kein Log.';
+    logBox.textContent=lines.length ? lines.join('\n') : 'Noch kein Log.';
     logBox.scrollTop=logBox.scrollHeight;
   }catch(e){}
 }
