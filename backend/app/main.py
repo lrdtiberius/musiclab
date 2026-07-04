@@ -22,7 +22,7 @@ LOG_MAX_BYTES = int(os.getenv("LOG_MAX_BYTES", str(10 * 1024 * 1024)))
 EXTS = {".mp3", ".m4a", ".aac", ".flac", ".ogg"}
 SCHEMA_VERSION = 11
 
-app = FastAPI(title="MusicLab API", version="1.0.2")
+app = FastAPI(title="MusicLab API", version="1.1.0")
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
 
 stop_event = threading.Event()
@@ -974,7 +974,7 @@ def startup():
 
 @app.get("/api/health")
 def health():
-    return {"ok": True, "version": "1.0.2", "music_root": str(MUSIC_ROOT), "db": str(DB_PATH)}
+    return {"ok": True, "version": "1.1.0", "music_root": str(MUSIC_ROOT), "db": str(DB_PATH)}
 
 
 @app.post("/api/scan")

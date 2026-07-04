@@ -1,23 +1,17 @@
-# MusicLab v1.0.2
+# MusicLab v1.1.0
 
-Musikbibliothek scannen, analysieren und normalisieren.
+## Änderungen v1.1.0
 
-## Änderungen v1.0.2
-
-- DB-Schema-Kachel entfernt.
-- Kompakte Anzeige für Backup-Modus und Parallelität in der Kopfstatistik.
-- Zahnrad im Titelbereich entfernt, Einstellungen bleiben oben im Header.
-- Titelauswahl in der Titeltabelle ergänzt.
-- Einzelne oder mehrere ausgewählte Titel können normalisiert werden.
-- Vorschau und Sicherheitsabfrage vor Titel-Normalisierung.
+- Referenzalbum-Button in die Albumsektion verschoben.
+- Titelbereich aufgeräumt: dort bleibt nur die Titelnormalisierung.
+- Referenz bleibt als Albumfunktion eindeutig erkennbar.
+- Albumkarten etwas kompakter gestaltet.
+- Footer-Credit ergänzt: `Idea by Lrd.Tiberius`.
+- Kleinen JavaScript-Duplikatfehler bei der Albumauswahl bereinigt.
 
 ## Installation Synology
 
 1. Inhalt nach `/volume1/docker/musiclab` kopieren.
-2. Im Container Manager Projekt aus `docker-compose.yml` neu erstellen oder aktualisieren.
-3. Browser hart neu laden.
+2. Projekt im Container Manager neu erstellen oder neu bauen.
+3. Browser hart neu laden: `Cmd + Shift + R`.
 
-## Hinweise
-
-- `data/` ist enthalten und sollte bestehen bleiben.
-- Für produktive Normalisierung Backup-Modus aktiv lassen.
