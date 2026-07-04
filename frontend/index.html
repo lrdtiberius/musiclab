@@ -13,7 +13,7 @@ h1{font-size:22px;margin:0}.muted{color:var(--muted)}button,input{border:0;borde
 </style>
 </head>
 <body>
-<header><h1>🎵 MusicLab <span class="muted">v0.6.2</span></h1><button onclick="scan()">Bibliothek neu scannen</button><button class="secondary" onclick="analyzeAll()">Alles analysieren</button><span id="status" class="muted">Bereit</span></header>
+<header><h1>🎵 MusicLab <span class="muted">v0.6.3</span></h1><button onclick="scan()">Bibliothek neu scannen</button><button class="secondary" onclick="analyzeAll()">Alles analysieren</button><span id="status" class="muted">Bereit</span></header>
 <div class="layout">
 <aside class="panel"><div class="modeSwitch"><button id="modeArtist" class="active" onclick="setBrowserMode('artist')">Interpreten</button><button id="modeAlbum" onclick="setBrowserMode('album')">Alben</button></div><input id="search" placeholder="Interpreten suchen..." oninput="loadBrowser()" style="width:100%;margin-bottom:12px"><h3 id="browserTitle">Interpreten</h3><div id="browserList" class="list"></div></aside>
 <main>
@@ -57,7 +57,7 @@ function albumCard(x){
   const selected=x.album===selectedAlbum;
   const cls=`album ${selected?'sel':''} ${ref?'ref':''}`;
   const title=`${x.album}`;
-  return `<div class="${cls}" title="${escHtml(title)}" onclick='selectAlbum(${JSON.stringify(x.album)})'><b>${ref?'⭐ ':''}${escHtml(x.album)}</b><br><span class="small">${x.tracks} Titel · ${x.analyzed}/${x.tracks} analysiert</span><br><span class="small">Ø ${x.avg_lufs??'-'} LUFS · TP ${x.max_true_peak??'-'} · LRA ${x.avg_lra??'-'}</span></div>`;
+  return `<div class="${cls}" title="${escHtml(title)}" data-album="${encodeURIComponent(x.album)}"><b>${ref?'⭐ ':''}${escHtml(x.album)}</b><br><span class="small">${x.tracks} Titel · ${x.analyzed}/${x.tracks} analysiert</span><br><span class="small">Ø ${x.avg_lufs??'-'} LUFS · TP ${x.max_true_peak??'-'} · LRA ${x.avg_lra??'-'}</span></div>`;
 }
 
 async function loadSettings(){
@@ -151,20 +151,48 @@ async function loadBrowser(){
   return loadArtists();
 }
 
+function bindArtistRows(){
+  document.querySelectorAll('#browserList .row[data-artist]').forEach(el=>{
+    el.onclick=()=>selectArtist(decodeURIComponent(el.dataset.artist));
+  });
+}
+
+function bindAlbumRows(){
+  document.querySelectorAll('#browserList .row[data-album]').forEach(el=>{
+    el.onclick=()=>selectAlbumFromBrowser(
+      decodeURIComponent(el.dataset.album),
+      el.dataset.artist ? decodeURIComponent(el.dataset.artist) : null
+    );
+  });
+}
+
+function bindAlbumCards(){
+  document.querySelectorAll('#albums .album[data-album]').forEach(el=>{
+    el.onclick=()=>selectAlbum(decodeURIComponent(el.dataset.album));
+  });
+}
+
 async function loadArtists(){
   let q=encodeURIComponent(search.value||'');
   let a=await j(API+'/artists?q='+q);
-  browserList.innerHTML=a.map(x=>`<div class="row ${x.artist===selectedArtist?'sel':''}" onclick='selectArtist(${JSON.stringify(x.artist)})'><b>${escHtml(x.artist)}</b><br><span class="small">${x.albums} Alben · ${x.tracks} Titel</span></div>`).join('') || '<div class="empty">Keine Interpreten gefunden.</div>';
+  browserList.innerHTML=a.map(x=>`<div class="row ${x.artist===selectedArtist?'sel':''}" data-artist="${encodeURIComponent(x.artist)}"><b>${escHtml(x.artist)}</b><br><span class="small">${x.albums} Alben · ${x.tracks} Titel</span></div>`).join('') || '<div class="empty">Keine Interpreten gefunden.</div>';
+  bindArtistRows();
 }
 
 async function loadAlbumBrowser(){
   let q=encodeURIComponent(search.value||'');
   let a=await j(API+'/library_albums?q='+q);
-  browserList.innerHTML=a.map(x=>`<div class="row ${x.artist===selectedArtist && x.album===selectedAlbum?'sel':''}" onclick='selectAlbumFromBrowser(${JSON.stringify(x.album)})'><b>${escHtml(x.album)}</b><br><span class="small">${escHtml(x.artist)} · ${x.tracks} Titel · ${x.analyzed}/${x.tracks} analysiert</span></div>`).join('') || '<div class="empty">Keine Alben gefunden.</div>';
+  browserList.innerHTML=a.map(x=>{
+    const oneArtist = Number(x.artist_count||0)===1;
+    const artistData = oneArtist ? ` data-artist="${encodeURIComponent(x.artist)}"` : '';
+    const active = x.album===selectedAlbum && (!selectedArtist || x.artist===selectedArtist);
+    return `<div class="row ${active?'sel':''}" data-album="${encodeURIComponent(x.album)}"${artistData}><b>${escHtml(x.album)}</b><br><span class="small">${escHtml(x.artist)} · ${x.tracks} Titel · ${x.analyzed}/${x.tracks} analysiert</span></div>`;
+  }).join('') || '<div class="empty">Keine Alben gefunden.</div>';
+  bindAlbumRows();
 }
 
-async function selectAlbumFromBrowser(album){
-  selectedArtist=null;
+async function selectAlbumFromBrowser(album, artist=null){
+  selectedArtist=artist;
   selectedAlbum=album;
   await loadBrowser();
   await loadAlbums();
@@ -195,6 +223,7 @@ async function loadAlbums(){
     const x=await j(API+'/library_album?album='+encodeURIComponent(selectedAlbum));
     albumsCount.textContent = `${x.artist} · Album`;
     albums.innerHTML = albumCard(x);
+    bindAlbumCards();
     return;
   }
   if(!selectedArtist){
@@ -205,6 +234,7 @@ async function loadAlbums(){
   const list=await j(API+'/albums?artist='+encodeURIComponent(selectedArtist));
   albumsCount.textContent = `${selectedArtist} · ` + (list.length===1 ? '1 Album' : `${list.length} Alben`);
   albums.innerHTML=list.length ? list.map(albumCard).join('') : '<div class="empty">Kein Album gefunden.</div>';
+  bindAlbumCards();
 
   if(selectedAlbum && !list.some(x=>x.album===selectedAlbum)){
     selectedAlbum=null;
