@@ -13,7 +13,7 @@ h1{font-size:22px;margin:0}.muted{color:var(--muted)}button,input{border:0;borde
 </style>
 </head>
 <body>
-<header><h1>🎵 MusicLab <span class="muted">v0.4.0</span></h1><button onclick="scan()">Bibliothek neu scannen</button><button class="secondary" onclick="analyzeAll()">Alles analysieren</button><span id="status" class="muted">Bereit</span></header>
+<header><h1>🎵 MusicLab <span class="muted">v0.4.1</span></h1><button onclick="scan()">Bibliothek neu scannen</button><button class="secondary" onclick="analyzeAll()">Alles analysieren</button><span id="status" class="muted">Bereit</span></header>
 <div class="layout">
 <aside class="panel"><input id="search" placeholder="Interpreten suchen..." oninput="loadArtists()" style="width:100%;margin-bottom:12px"><h3>Interpreten</h3><div id="artists" class="list"></div></aside>
 <main>
@@ -24,23 +24,111 @@ h1{font-size:22px;margin:0}.muted{color:var(--muted)}button,input{border:0;borde
 </main>
 </div>
 <script>
-const API='http://'+location.hostname+':8091/api';let selectedArtist=null,selectedAlbum=null;
+const API='http://'+location.hostname+':8091/api';
+let selectedArtist=null, selectedAlbum=null;
+let lastRunning=false;
+
 function fmt(n,d=1){return n===null||n===undefined?'':Number(n).toFixed(d)}
 function dur(s){s=Number(s||0);let h=Math.floor(s/3600),m=Math.floor((s%3600)/60);return h?`${h}h ${m}m`:`${m}m`}
-function trackNo(t){if(!t.track_number)return'';return t.track_total?`${t.track_number}/${t.track_total}`:String(t.track_number)}
+function trackNo(t){if(!t.track_number)return'';return (!t.track_total || Number(t.track_total)===0) ? String(t.track_number) : `${t.track_number}/${t.track_total}`}
+function escHtml(v){return String(v ?? '').replace(/[&<>"]/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]))}
 async function j(url,opt){return fetch(url,opt).then(r=>r.json())}
-async function loadSettings(){let s=await j(API+'/settings');targetLufs.value=s.target_lufs;truePeak.value=s.true_peak;lra.value=s.lra}
-async function saveSettings(){await j(API+'/settings',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({target_lufs:targetLufs.value,true_peak:truePeak.value,lra:lra.value})})}
-async function loadStats(){let s=await j(API+'/stats');sArtists.textContent=s.artists;sAlbums.textContent=s.albums;sTracks.textContent=s.tracks;sAnalyzed.textContent=s.analyzed;sDuration.textContent=dur(s.duration);sSchema.textContent=s.schema_version}
-async function loadArtists(){let q=encodeURIComponent(search.value||'');let a=await j(API+'/artists?q='+q);artists.innerHTML=a.map(x=>`<div class="row ${x.artist===selectedArtist?'sel':''}" onclick="selectArtist('${x.artist.replaceAll("'","\\'")}')"><b>${x.artist}</b><br><span class="small">${x.albums} Alben · ${x.tracks} Titel</span></div>`).join('')}
-async function selectArtist(a){selectedArtist=a;selectedAlbum=null;await loadArtists();let list=await j(API+'/albums?artist='+encodeURIComponent(a));albums.innerHTML=list.map(x=>`<div class="album" onclick="selectAlbum('${x.album.replaceAll("'","\\'")}')"><b>${x.album}</b><br><span class="small">${x.tracks} Titel · ${x.analyzed}/${x.tracks} analysiert</span><br><span class="small">Ø ${x.avg_lufs??'-'} LUFS · TP ${x.max_true_peak??'-'} · LRA ${x.avg_lra??'-'}</span></div>`).join('');tracks.innerHTML='';albumSummary.textContent='';btnAnalyze.disabled=true;btnNorm.disabled=true}
-async function selectAlbum(a){selectedAlbum=a;document.querySelectorAll('.album').forEach(e=>e.classList.remove('sel'));[...document.querySelectorAll('.album')].find(e=>e.textContent.includes(a))?.classList.add('sel');let t=await j(API+'/tracks?artist='+encodeURIComponent(selectedArtist)+'&album='+encodeURIComponent(a));tracks.innerHTML=t.map(x=>`<tr><td>${trackNo(x)}</td><td>${x.title}<br><span class="small">${x.filename}</span></td><td class="right">${fmt(x.input_i,1)}</td><td class="right">${fmt(x.input_tp,1)}</td><td class="right">${fmt(x.input_lra,1)}</td><td class="right">${x.bitrate?Math.round(x.bitrate/1000):''}</td><td>${x.codec}</td></tr>`).join('');let an=await j(API+'/album_analysis?artist='+encodeURIComponent(selectedArtist)+'&album='+encodeURIComponent(a));albumSummary.textContent=`${an.tracks} Titel · ${an.analyzed} analysiert · Ø ${an.avg_lufs??'-'} LUFS · TP ${an.max_true_peak??'-'} · LRA ${an.avg_lra??'-'}`;btnAnalyze.disabled=false;btnNorm.disabled=false}
+
+async function loadSettings(){
+  let s=await j(API+'/settings');
+  targetLufs.value=s.target_lufs;
+  truePeak.value=s.true_peak;
+  lra.value=s.lra;
+}
+
+async function saveSettings(){
+  await j(API+'/settings',{
+    method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({target_lufs:targetLufs.value,true_peak:truePeak.value,lra:lra.value})
+  })
+}
+
+async function loadStats(){
+  let s=await j(API+'/stats');
+  sArtists.textContent=s.artists;
+  sAlbums.textContent=s.albums;
+  sTracks.textContent=s.tracks;
+  sAnalyzed.textContent=s.analyzed;
+  sDuration.textContent=dur(s.duration);
+  sSchema.textContent=s.schema_version;
+}
+
+async function loadArtists(){
+  let q=encodeURIComponent(search.value||'');
+  let a=await j(API+'/artists?q='+q);
+  artists.innerHTML=a.map(x=>`<div class="row ${x.artist===selectedArtist?'sel':''}" onclick='selectArtist(${JSON.stringify(x.artist)})'><b>${escHtml(x.artist)}</b><br><span class="small">${x.albums} Alben · ${x.tracks} Titel</span></div>`).join('')
+}
+
+async function selectArtist(a, keepAlbum=false){
+  selectedArtist=a;
+  if(!keepAlbum) selectedAlbum=null;
+
+  await loadArtists();
+
+  let list=await j(API+'/albums?artist='+encodeURIComponent(a));
+  albums.innerHTML=list.map(x=>`<div class="album ${x.album===selectedAlbum?'sel':''}" onclick='selectAlbum(${JSON.stringify(x.album)})'><b>${escHtml(x.album)}</b><br><span class="small">${x.tracks} Titel · ${x.analyzed}/${x.tracks} analysiert</span><br><span class="small">Ø ${x.avg_lufs??'-'} LUFS · TP ${x.max_true_peak??'-'} · LRA ${x.avg_lra??'-'}</span></div>`).join('');
+
+  if(!keepAlbum){
+    tracks.innerHTML='';
+    albumSummary.textContent='';
+    btnAnalyze.disabled=true;
+    btnNorm.disabled=true;
+  }
+}
+
+async function selectAlbum(a){
+  selectedAlbum=a;
+
+  document.querySelectorAll('.album').forEach(e=>e.classList.remove('sel'));
+  [...document.querySelectorAll('.album')].find(e=>e.querySelector('b')?.textContent===a)?.classList.add('sel');
+
+  let t=await j(API+'/tracks?artist='+encodeURIComponent(selectedArtist)+'&album='+encodeURIComponent(a));
+  tracks.innerHTML=t.map(x=>`<tr><td>${trackNo(x)}</td><td>${escHtml(x.title)}<br><span class="small">${escHtml(x.filename)}</span></td><td class="right">${fmt(x.input_i,1)}</td><td class="right">${fmt(x.input_tp,1)}</td><td class="right">${fmt(x.input_lra,1)}</td><td class="right">${x.bitrate?Math.round(x.bitrate/1000):''}</td><td>${escHtml(x.codec)}</td></tr>`).join('');
+
+  let an=await j(API+'/album_analysis?artist='+encodeURIComponent(selectedArtist)+'&album='+encodeURIComponent(a));
+  albumSummary.textContent=`${an.tracks} Titel · ${an.analyzed} analysiert · Ø ${an.avg_lufs??'-'} LUFS · TP ${an.max_true_peak??'-'} · LRA ${an.avg_lra??'-'}`;
+
+  btnAnalyze.disabled=false;
+  btnNorm.disabled=false;
+}
+
 async function scan(){await j(API+'/scan',{method:'POST'})}
 async function analyzeAll(){await j(API+'/analyze',{method:'POST'})}
 async function analyzeAlbum(){if(selectedArtist&&selectedAlbum)await j(API+'/analyze?artist='+encodeURIComponent(selectedArtist)+'&album='+encodeURIComponent(selectedAlbum),{method:'POST'})}
 async function normalizeAlbum(){if(!selectedArtist||!selectedAlbum)return;if(!confirm('Album wird direkt überschrieben. Fortfahren?'))return;await j(API+'/normalize?artist='+encodeURIComponent(selectedArtist)+'&album='+encodeURIComponent(selectedAlbum),{method:'POST'})}
-async function poll(){let s=await j(API+'/status');let p=s.total?Math.round(s.done/s.total*100):0;progress.style.width=p+'%';progressText.textContent=`${s.mode} · ${s.done}/${s.total} · Fehler ${s.errors} · ${s.current||s.message}`;status.textContent=s.message;if(!s.running){loadStats();if(selectedArtist)selectArtist(selectedArtist).then(()=>{if(selectedAlbum)selectAlbum(selectedAlbum)})}}
-setInterval(poll,2000);loadSettings();loadStats();loadArtists();poll();
+
+async function poll(){
+  let s=await j(API+'/status');
+  let p=s.total?Math.round(s.done/s.total*100):0;
+
+  progress.style.width=p+'%';
+  progressText.textContent=`${s.mode} · ${s.done}/${s.total} · Fehler ${s.errors} · ${s.current||s.message}`;
+  status.textContent=s.message;
+
+  // Nur nach Abschluss eines Jobs neu laden. Kein permanentes Re-Rendering im Idle-Zustand,
+  // damit die Albumauswahl nicht wieder zuklappt.
+  if(lastRunning && !s.running){
+    await loadStats();
+    if(selectedArtist){
+      await selectArtist(selectedArtist,true);
+      if(selectedAlbum) await selectAlbum(selectedAlbum);
+    }
+  }
+
+  lastRunning=s.running;
+}
+
+setInterval(poll,2000);
+loadSettings();
+loadStats();
+loadArtists();
+poll();
 </script>
 </body>
 </html>

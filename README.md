@@ -1,14 +1,3 @@
-# MusicLab v0.4
+# MusicLab v0.4.1
 
-Schlanke Version mit Scan, Albumanalyse und LUFS-Normalisierung.
-
-Ports:
-- Frontend: 8092
-- Backend: 8091
-
-Update auf Synology:
-1. Inhalt nach `/volume1/docker/musiclab` kopieren.
-2. Projekt neu erstellen/starten.
-3. Browser hart neu laden.
-
-Wichtig: Dateien werden bei der Normalisierung direkt überschrieben.
+Patch gegen zuklappende Albumansicht und Tracknummern wie `1/0` werden als `1` angezeigt.
