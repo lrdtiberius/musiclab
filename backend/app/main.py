@@ -3,6 +3,7 @@ import os
 import re
 import sqlite3
 import subprocess
+import shutil
 import threading
 import time
 from pathlib import Path
@@ -15,9 +16,9 @@ from mutagen import File as MutagenFile
 MUSIC_ROOT = Path(os.getenv("MUSIC_ROOT", "/music"))
 DB_PATH = Path(os.getenv("DB_PATH", "/data/musiclab.sqlite"))
 EXTS = {".mp3", ".m4a", ".aac", ".flac", ".ogg"}
-SCHEMA_VERSION = 6
+SCHEMA_VERSION = 7
 
-app = FastAPI(title="MusicLab API", version="0.6.2")
+app = FastAPI(title="MusicLab API", version="0.7.0")
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
 
 state = {
@@ -107,7 +108,7 @@ def init_db():
             )
             """
         )
-        defaults = {"target_lufs": "-16", "true_peak": "-1.5", "lra": "11"}
+        defaults = {"target_lufs": "-16", "true_peak": "-1.5", "lra": "11", "backup_mode": "on"}
         for k, v in defaults.items():
             con.execute("INSERT OR IGNORE INTO settings(key,value) VALUES(?,?)", (k, v))
         con.execute("INSERT OR REPLACE INTO meta(key,value) VALUES('schema_version', ?)", (str(SCHEMA_VERSION),))
@@ -122,7 +123,7 @@ def get_settings():
 
 def save_settings(data: dict):
     with db() as con:
-        for k in ["target_lufs", "true_peak", "lra"]:
+        for k in ["target_lufs", "true_peak", "lra", "backup_mode"]:
             if k in data:
                 con.execute("INSERT OR REPLACE INTO settings(key,value) VALUES(?,?)", (k, str(data[k])))
         con.commit()
@@ -341,11 +342,37 @@ def loudnorm_filter(first: dict, settings: dict) -> str:
     )
 
 
-def normalize_file(rel_path: str, settings: dict) -> bool:
+def backup_file(file: Path, rel_path: str, mode: str) -> Optional[str]:
+    if mode not in {"on", "sidecar"}:
+        return None
+    if mode == "sidecar":
+        bak = file.with_name(file.name + ".bak")
+        if not bak.exists():
+            shutil.copy2(file, bak)
+        return str(bak)
+    stamp = time.strftime("%Y%m%d-%H%M%S")
+    dest = DB_PATH.parent / "backups" / stamp / rel_path
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(file, dest)
+    return str(dest)
+
+
+def normalize_file(rel_path: str, settings: dict, backup_mode: Optional[str] = None) -> bool:
     file = MUSIC_ROOT / rel_path
+    if not file.exists():
+        raise RuntimeError("Datei nicht gefunden")
+    if not os.access(file, os.W_OK):
+        raise RuntimeError("Datei ist nicht schreibbar")
+
     tmp = file.with_name(file.stem + ".tmp" + file.suffix)
     if tmp.exists():
         tmp.unlink()
+
+    backup_mode = backup_mode if backup_mode is not None else settings.get("backup_mode", "on")
+    backup_path = backup_file(file, rel_path, backup_mode)
+    if backup_path:
+        add_log(f"Backup erstellt: {rel_path}")
+
     first = analyze_track_file(file)
     suffix = file.suffix.lower()
     cmd = ["ffmpeg", "-y", "-hide_banner", "-i", str(file), "-af", loudnorm_filter(first, settings), "-map", "0", "-map_metadata", "0", "-c:v", "copy"]
@@ -369,28 +396,38 @@ def normalize_file(rel_path: str, settings: dict) -> bool:
     return True
 
 
-def normalize_worker(artist: Optional[str] = None, album: Optional[str] = None):
+def normalize_worker(artist: Optional[str] = None, album: Optional[str] = None, backup_mode: Optional[str] = None):
     init_db()
     settings = get_settings()
+    if backup_mode is not None:
+        settings["backup_mode"] = backup_mode
     rows = selected_rows(artist, album)
+
+    with db() as con:
+        summary = album_summary(con, artist, album) if album else {}
+    if album and summary.get("tracks") and summary.get("analyzed") != summary.get("tracks"):
+        state.update({"running": False, "mode": "idle", "done": 0, "total": 0, "current": "", "message": "Normalisierung abgebrochen: Album zuerst vollständig analysieren", "errors": 1})
+        add_log(f"Normalisierung abgebrochen: {artist or 'global'} - {album} ist nicht vollständig analysiert", True)
+        return
+
     state.update({"running": True, "mode": "normalize", "done": 0, "total": len(rows), "current": "", "message": f"Normalisiere auf {settings.get('target_lufs')} LUFS", "errors": 0, "recent_errors": []})
-    add_log(f"Normalisierung gestartet: {len(rows)} Titel auf {settings.get('target_lufs')} LUFS")
+    add_log(f"Normalisierung gestartet: {len(rows)} Titel auf {settings.get('target_lufs')} LUFS, Backup: {settings.get('backup_mode','on')}")
     with db() as con:
         for row in rows:
             state["current"] = row["path"]
             try:
-                normalize_file(row["path"], settings)
+                normalize_file(row["path"], settings, settings.get("backup_mode", "on"))
                 result = analyze_track_file(MUSIC_ROOT / row["path"])
                 upsert_analysis(con, row["id"], result)
+                add_log(f"Normalisiert: {row['path']}")
             except Exception as e:
                 state["errors"] += 1
                 upsert_analysis(con, row["id"], None, str(e))
-                add_log(f"Analysefehler: {row['path']} - {e}", True)
+                add_log(f"Normalisierungsfehler: {row['path']} - {e}", True)
             state["done"] += 1
             con.commit()
     add_log(f"Normalisierung fertig: {state['done']}/{state['total']} Titel, Fehler {state['errors']}")
     state.update({"running": False, "mode": "idle", "current": "", "message": "Normalisierung fertig", "last_finished": time.time()})
-
 
 @app.on_event("startup")
 def startup():
@@ -399,7 +436,7 @@ def startup():
 
 @app.get("/api/health")
 def health():
-    return {"ok": True, "version": "0.6.1", "music_root": str(MUSIC_ROOT), "db": str(DB_PATH)}
+    return {"ok": True, "version": "0.7.0", "music_root": str(MUSIC_ROOT), "db": str(DB_PATH)}
 
 
 @app.post("/api/scan")
@@ -417,10 +454,47 @@ def analyze(artist: Optional[str] = None, album: Optional[str] = None):
 
 
 @app.post("/api/normalize")
-def normalize(artist: Optional[str] = None, album: Optional[str] = None):
+def normalize(artist: Optional[str] = None, album: Optional[str] = None, backup: Optional[str] = None):
     if not state["running"]:
-        threading.Thread(target=normalize_worker, kwargs={"artist": artist, "album": album}, daemon=True).start()
+        threading.Thread(target=normalize_worker, kwargs={"artist": artist, "album": album, "backup_mode": backup}, daemon=True).start()
     return state
+
+
+@app.get("/api/normalize_preview")
+def normalize_preview(album: str, artist: Optional[str] = None):
+    settings = get_settings()
+    with db() as con:
+        summary = album_summary(con, artist, album)
+    tracks = summary.get("tracks") or 0
+    analyzed = summary.get("analyzed") or 0
+    current = summary.get("avg_lufs")
+    try:
+        target = float(settings.get("target_lufs", "-16"))
+    except Exception:
+        target = -16.0
+    delta = round(target - float(current), 2) if current is not None else None
+    can = bool(tracks and analyzed == tracks and current is not None)
+    reason = None
+    if not tracks:
+        reason = "Album nicht gefunden"
+    elif analyzed != tracks:
+        reason = "Album zuerst vollständig analysieren"
+    elif current is None:
+        reason = "Keine Analysewerte vorhanden"
+    return {
+        "artist": artist,
+        "album": album,
+        "tracks": tracks,
+        "analyzed": analyzed,
+        "current_lufs": current,
+        "target_lufs": target,
+        "gain_delta": delta,
+        "true_peak": settings.get("true_peak"),
+        "lra": settings.get("lra"),
+        "backup_mode": settings.get("backup_mode", "on"),
+        "can_normalize": can,
+        "reason": reason,
+    }
 
 
 @app.get("/api/settings")
