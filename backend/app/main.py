@@ -17,7 +17,7 @@ DB_PATH = Path(os.getenv("DB_PATH", "/data/musiclab.sqlite"))
 EXTS = {".mp3", ".m4a", ".aac", ".flac", ".ogg"}
 SCHEMA_VERSION = 6
 
-app = FastAPI(title="MusicLab API", version="0.5.0")
+app = FastAPI(title="MusicLab API", version="0.6.0")
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
 
 state = {
@@ -326,7 +326,6 @@ def analysis_worker(artist: Optional[str] = None, album: Optional[str] = None):
             except Exception as e:
                 state["errors"] += 1
                 upsert_analysis(con, row["id"], None, str(e))
-                add_log(f"Normalisierungsfehler: {row['path']} - {e}", True)
                 add_log(f"Analysefehler: {row['path']} - {e}", True)
             state["done"] += 1
             con.commit()
@@ -386,7 +385,6 @@ def normalize_worker(artist: Optional[str] = None, album: Optional[str] = None):
             except Exception as e:
                 state["errors"] += 1
                 upsert_analysis(con, row["id"], None, str(e))
-                add_log(f"Normalisierungsfehler: {row['path']} - {e}", True)
                 add_log(f"Analysefehler: {row['path']} - {e}", True)
             state["done"] += 1
             con.commit()
@@ -401,7 +399,7 @@ def startup():
 
 @app.get("/api/health")
 def health():
-    return {"ok": True, "version": "0.5.0", "music_root": str(MUSIC_ROOT), "db": str(DB_PATH)}
+    return {"ok": True, "version": "0.6.0", "music_root": str(MUSIC_ROOT), "db": str(DB_PATH)}
 
 
 @app.post("/api/scan")
@@ -467,16 +465,21 @@ def get_artists(q: str = ""):
 
 
 @app.get("/api/albums")
-def get_albums(artist: str):
+def get_albums(artist: str, q: str = ""):
+    where = "WHERE t.artist=?"
+    args = [artist]
+    if q:
+        where += " AND t.album LIKE ?"
+        args.append(f"%{q}%")
     with db() as con:
         return [dict(r) for r in con.execute(
-            """
+            f"""
             SELECT t.album, COUNT(*) tracks, COALESCE(SUM(t.duration),0) duration,
             COUNT(a.track_id) analyzed, ROUND(AVG(a.input_i),2) avg_lufs,
             ROUND(MAX(a.input_tp),2) max_true_peak, ROUND(AVG(a.input_lra),2) avg_lra
             FROM tracks t LEFT JOIN analysis a ON a.track_id=t.id AND a.status='ok'
-            WHERE t.artist=? GROUP BY t.album ORDER BY t.album COLLATE NOCASE
-            """, (artist,),
+            {where} GROUP BY t.album ORDER BY t.album COLLATE NOCASE
+            """, args,
         ).fetchall()]
 
 
