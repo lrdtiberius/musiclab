@@ -1,6 +1,6 @@
-# MusicLab v0.5.0
+# MusicLab v0.5.2
 
-Neu in v0.5.0:
+Neu in v0.5.2:
 
 - Referenzalbum festlegen
 - Referenzalbum dauerhaft in der Datenbank speichern
@@ -22,3 +22,11 @@ Installation:
 3. Projekt im Container Manager stoppen.
 4. Bereinigen / neu erstellen.
 5. Browser hart neu laden: `Cmd + Shift + R`.
+
+
+## v0.5.2
+- Zeigt unter jedem Titel zusätzlich den relativen Dateipfad an.
+
+
+## v0.5.2
+- Albumliste hat jetzt einen eigenen Scrollbereich, damit die Titelliste und Navigation bei Interpreten mit vielen Alben stabil bleiben.
