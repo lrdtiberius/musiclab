@@ -17,7 +17,7 @@ DB_PATH = Path(os.getenv("DB_PATH", "/data/musiclab.sqlite"))
 EXTS = {".mp3", ".m4a", ".aac", ".flac", ".ogg"}
 SCHEMA_VERSION = 6
 
-app = FastAPI(title="MusicLab API", version="0.6.0")
+app = FastAPI(title="MusicLab API", version="0.6.1")
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
 
 state = {
@@ -399,7 +399,7 @@ def startup():
 
 @app.get("/api/health")
 def health():
-    return {"ok": True, "version": "0.6.0", "music_root": str(MUSIC_ROOT), "db": str(DB_PATH)}
+    return {"ok": True, "version": "0.6.1", "music_root": str(MUSIC_ROOT), "db": str(DB_PATH)}
 
 
 @app.post("/api/scan")
@@ -479,6 +479,28 @@ def get_albums(artist: str, q: str = ""):
             ROUND(MAX(a.input_tp),2) max_true_peak, ROUND(AVG(a.input_lra),2) avg_lra
             FROM tracks t LEFT JOIN analysis a ON a.track_id=t.id AND a.status='ok'
             {where} GROUP BY t.album ORDER BY t.album COLLATE NOCASE
+            """, args,
+        ).fetchall()]
+
+
+@app.get("/api/library_albums")
+def get_library_albums(q: str = ""):
+    where = ""
+    args = []
+    if q:
+        where = "WHERE t.album LIKE ? OR t.artist LIKE ?"
+        args.extend([f"%{q}%", f"%{q}%"])
+    with db() as con:
+        return [dict(r) for r in con.execute(
+            f"""
+            SELECT t.artist, t.album, COUNT(*) tracks, COALESCE(SUM(t.duration),0) duration,
+            COUNT(a.track_id) analyzed, ROUND(AVG(a.input_i),2) avg_lufs,
+            ROUND(MAX(a.input_tp),2) max_true_peak, ROUND(AVG(a.input_lra),2) avg_lra
+            FROM tracks t LEFT JOIN analysis a ON a.track_id=t.id AND a.status='ok'
+            {where}
+            GROUP BY t.artist, t.album
+            ORDER BY t.album COLLATE NOCASE, t.artist COLLATE NOCASE
+            LIMIT 1000
             """, args,
         ).fetchall()]
 
