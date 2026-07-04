@@ -1,4 +1,4 @@
-# MusicLab v1.0.0
+# MusicLab v1.0.1
 
 Stabile Version mit Batch-Analyse, Batch-Normalisierung, Referenzalbum, Logexport, Stop-Button, Parallel-Analyse und Historie/Wiederherstellen.
 
@@ -9,7 +9,7 @@ Stabile Version mit Batch-Analyse, Batch-Normalisierung, Referenzalbum, Logexpor
 3. Wichtig bei Synology: alte Images/Container ggf. löschen, wenn Änderungen nicht sichtbar werden.
 4. Frontend ist auf Port `8092`, Backend auf Port `8091`.
 
-## Neu in v1.0.0
+## Neu in v1.0.1
 
 - Einstellungen über Zahnrad-Dialog.
 - Hauptansicht aufgeräumt: Zielwerte/Backup/Parallelität werden kompakt angezeigt.
@@ -22,3 +22,7 @@ Stabile Version mit Batch-Analyse, Batch-Normalisierung, Referenzalbum, Logexpor
 ## Hinweis
 
 Wiederherstellen funktioniert nur für Normalisierungen, bei denen ein Backup erstellt wurde.
+
+
+## v1.0.1
+- Header-Statusanzeige („Bereit“) ausgeblendet.
