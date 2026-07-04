@@ -1,14 +1,15 @@
-# MusicLab v0.7.1
+# MusicLab v0.7.2
 
-Neu:
-- Normalisierung mit Vorschau/Testlauf vor dem Überschreiben.
-- Backup-Auswahl: Backup unter `/data/backups`, `.bak` neben Datei oder ohne Backup.
-- Normalisierung ist gesperrt, bis das Album vollständig analysiert ist.
-- Nach der Normalisierung wird jeder Titel automatisch neu analysiert.
-- Fortschritt und Log bleiben sichtbar.
+Fix-Release nach v0.7.1.
 
-Installation: Inhalt nach `/volume1/docker/musiclab` kopieren, Container neu starten, Browser hart neu laden.
+## Änderungen
+- Frontend-JavaScript-Fehler behoben, wodurch Buttons wie „Bibliothek neu scannen“ nicht reagierten.
+- Analyse-Parser robuster gemacht: ffmpeg-Ausgaben mit zusätzlichen `{...}`-Blöcken oder Backslashes verursachen nicht mehr sofort `Invalid \\escape`.
+- Version auf v0.7.2 angehoben.
 
+## Update
+1. ZIP-Inhalt nach `/volume1/docker/musiclab` kopieren.
+2. Container/Projekt neu starten.
+3. Browser hart neu laden: `Cmd + Shift + R`.
 
-## v0.7.1
-- Albumliste kompakter gemacht: ungefähr zwei Reihen sichtbar, weiterhin scrollbar.
+Bei aktivem Volume-Mount für `frontend/index.html` und `backend/app` reicht meistens ein Neustart der Container.

@@ -255,10 +255,18 @@ def scan_worker():
 
 
 def parse_loudnorm_json(stderr: str) -> Optional[dict]:
-    matches = re.findall(r"\{[\s\S]*?\}", stderr)
-    if not matches:
-        return None
-    return json.loads(matches[-1])
+    # ffmpeg may print metadata or warnings containing braces/backslashes before
+    # the actual loudnorm JSON block. Try candidates from the end and only
+    # accept the object that contains the expected loudnorm keys.
+    matches = re.findall(r"\{[\s\S]*?\}", stderr or "")
+    for candidate in reversed(matches):
+        try:
+            data = json.loads(candidate)
+        except Exception:
+            continue
+        if isinstance(data, dict) and "input_i" in data and "input_tp" in data and "input_lra" in data:
+            return data
+    return None
 
 
 def analyze_track_file(path: Path) -> dict:
@@ -436,7 +444,7 @@ def startup():
 
 @app.get("/api/health")
 def health():
-    return {"ok": True, "version": "0.7.0", "music_root": str(MUSIC_ROOT), "db": str(DB_PATH)}
+    return {"ok": True, "version": "0.7.2", "music_root": str(MUSIC_ROOT), "db": str(DB_PATH)}
 
 
 @app.post("/api/scan")

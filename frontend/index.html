@@ -13,7 +13,7 @@ h1{font-size:22px;margin:0}.muted{color:var(--muted)}button,input,select{border:
 </style>
 </head>
 <body>
-<header><h1>🎵 MusicLab <span class="muted">v0.7.1</span></h1><button onclick="scan()">Bibliothek neu scannen</button><button class="secondary" onclick="analyzeAll()">Alles analysieren</button><span id="status" class="muted">Bereit</span></header>
+<header><h1>🎵 MusicLab <span class="muted">v0.7.2</span></h1><button onclick="scan()">Bibliothek neu scannen</button><button class="secondary" onclick="analyzeAll()">Alles analysieren</button><span id="status" class="muted">Bereit</span></header>
 <div class="layout">
 <aside class="panel"><div class="modeSwitch"><button id="modeArtist" class="active" onclick="setBrowserMode('artist')">Interpreten</button><button id="modeAlbum" onclick="setBrowserMode('album')">Alben</button></div><input id="search" placeholder="Interpreten suchen..." oninput="loadBrowser()" style="width:100%;margin-bottom:12px"><h3 id="browserTitle">Interpreten</h3><div id="browserList" class="list"></div></aside>
 <main>
@@ -324,8 +324,7 @@ async function normalizeAlbum(){
     if(selectedArtist) previewUrl+='&artist='+encodeURIComponent(selectedArtist);
     let pv=await j(previewUrl);
     if(!pv.can_normalize){
-      alert('Normalisierung nicht möglich:
-'+(pv.reason||'Unbekannter Grund'));
+      alert('Normalisierung nicht möglich:\n' + (pv.reason || 'Unbekannter Grund'));
       return;
     }
     const backupText = backupMode.value==='off' ? 'kein Backup' : (backupMode.value==='sidecar' ? '.bak neben der Datei' : 'Backup unter /data/backups');
@@ -350,8 +349,7 @@ Dateien werden überschrieben.`;
     poll();
   }catch(e){
     status.textContent='Normalisierungs-Fehler';
-    alert('Normalisierung konnte nicht gestartet werden:
-'+e.message);
+    alert('Normalisierung konnte nicht gestartet werden:\n' + e.message);
   }
 }
 
