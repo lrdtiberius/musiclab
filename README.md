@@ -1,28 +1,23 @@
-# MusicLab v1.0.1
+# MusicLab v1.0.2
 
-Stabile Version mit Batch-Analyse, Batch-Normalisierung, Referenzalbum, Logexport, Stop-Button, Parallel-Analyse und Historie/Wiederherstellen.
+Musikbibliothek scannen, analysieren und normalisieren.
+
+## Änderungen v1.0.2
+
+- DB-Schema-Kachel entfernt.
+- Kompakte Anzeige für Backup-Modus und Parallelität in der Kopfstatistik.
+- Zahnrad im Titelbereich entfernt, Einstellungen bleiben oben im Header.
+- Titelauswahl in der Titeltabelle ergänzt.
+- Einzelne oder mehrere ausgewählte Titel können normalisiert werden.
+- Vorschau und Sicherheitsabfrage vor Titel-Normalisierung.
 
 ## Installation Synology
 
-1. Ordner nach `/volume1/docker/musiclab` kopieren.
-2. Im Container Manager Projekt aus diesem Ordner erstellen oder aktualisieren.
-3. Wichtig bei Synology: alte Images/Container ggf. löschen, wenn Änderungen nicht sichtbar werden.
-4. Frontend ist auf Port `8092`, Backend auf Port `8091`.
+1. Inhalt nach `/volume1/docker/musiclab` kopieren.
+2. Im Container Manager Projekt aus `docker-compose.yml` neu erstellen oder aktualisieren.
+3. Browser hart neu laden.
 
-## Neu in v1.0.1
+## Hinweise
 
-- Einstellungen über Zahnrad-Dialog.
-- Hauptansicht aufgeräumt: Zielwerte/Backup/Parallelität werden kompakt angezeigt.
-- Historie für Normalisierungen.
-- Wiederherstellen aus Backups direkt aus MusicLab.
-- Backup-Modus bleibt wählbar: `/data/backups`, `.bak daneben`, oder aus.
-- Schnellscan bleibt erhalten: unveränderte Analysewerte werden nicht gelöscht.
-- Keine Statistik-Seite.
-
-## Hinweis
-
-Wiederherstellen funktioniert nur für Normalisierungen, bei denen ein Backup erstellt wurde.
-
-
-## v1.0.1
-- Header-Statusanzeige („Bereit“) ausgeblendet.
+- `data/` ist enthalten und sollte bestehen bleiben.
+- Für produktive Normalisierung Backup-Modus aktiv lassen.

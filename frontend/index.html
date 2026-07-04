@@ -13,15 +13,15 @@ h1{font-size:22px;margin:0}.muted{color:var(--muted)}button,input,select{border:
 </style>
 </head>
 <body>
-<header><h1>🎵 MusicLab <span class="muted">v1.0.1</span></h1><button onclick="scan()">Bibliothek neu scannen</button><button class="secondary" onclick="analyzeAll()">Alles analysieren</button><button class="danger" id="btnStop" onclick="stopJob()" disabled>Stop</button><button class="secondary" onclick="openSettings()">⚙ Einstellungen</button><span id="status" class="muted" style="display:none"></span></header>
+<header><h1>🎵 MusicLab <span class="muted">v1.0.2</span></h1><button onclick="scan()">Bibliothek neu scannen</button><button class="secondary" onclick="analyzeAll()">Alles analysieren</button><button class="danger" id="btnStop" onclick="stopJob()" disabled>Stop</button><button class="secondary" onclick="openSettings()">⚙ Einstellungen</button><span id="status" class="muted" style="display:none"></span></header>
 <div class="layout">
 <aside class="panel"><div class="modeSwitch"><button id="modeArtist" class="active" onclick="setBrowserMode('artist')">Interpreten</button><button id="modeAlbum" onclick="setBrowserMode('album')">Alben</button></div><input id="search" placeholder="Interpreten suchen..." oninput="loadBrowser()" style="width:100%;margin-bottom:12px"><h3 id="browserTitle">Interpreten</h3><div id="browserList" class="list"></div></aside>
 <main>
-<div class="grid"><div class="stat"><b id="sArtists">0</b><span>Interpreten</span></div><div class="stat"><b id="sAlbums">0</b><span>Alben</span></div><div class="stat"><b id="sTracks">0</b><span>Titel</span></div><div class="stat"><b id="sAnalyzed">0</b><span>Analysiert</span></div><div class="stat"><b id="sDuration">0h</b><span>Dauer</span></div><div class="stat"><b id="sSchema">-</b><span>DB Schema</span></div></div>
+<div class="grid"><div class="stat"><b id="sArtists">0</b><span>Interpreten</span></div><div class="stat"><b id="sAlbums">0</b><span>Alben</span></div><div class="stat"><b id="sTracks">0</b><span>Titel</span></div><div class="stat"><b id="sAnalyzed">0</b><span>Analysiert</span></div><div class="stat"><b id="sDuration">0h</b><span>Dauer</span></div><div class="stat"><b id="sBackup">Backup</b><span id="sParallel">Parallel</span></div></div>
 <div class="panel refbox" style="margin-bottom:16px"><div class="refmeta"><b>⭐ Referenzalbum</b><div id="referenceBox" class="small refempty">Noch kein Referenzalbum festgelegt.</div></div><button class="secondary" onclick="useReferenceTarget()" id="btnUseRef" disabled>Ziel-LUFS übernehmen</button></div>
 <div class="panel" style="margin-bottom:16px"><div class="bar"><div id="progress" class="fill"></div></div><div id="progressText" class="small" style="margin-top:8px">Bereit</div></div>
 <section class="panel"><h2>Albumliste</h2><div class="albumTools"><span id="albumsCount" class="albumsCount">Kein Interpret gewählt</span></div><div id="batchBar" class="batchbar"><b id="batchInfo">0 Alben ausgewählt</b><button class="secondary" onclick="selectVisibleAlbums()">Sichtbare auswählen</button><button class="secondary" onclick="clearBatchSelection()">Auswahl löschen</button><button onclick="analyzeSelectedAlbums()" id="btnBatchAnalyze">Auswahl analysieren</button><button class="danger" onclick="normalizeSelectedAlbums()" id="btnBatchNorm">Auswahl normalisieren</button></div><div id="albums" class="albums"></div></section>
-<section class="panel" style="margin-top:16px"><div class="toolbar"><h2 style="margin-right:auto">Titel</h2><button onclick="setReference()" id="btnRef" disabled>⭐ Als Referenz</button><button onclick="analyzeAlbum()" id="btnAnalyze" disabled>Album analysieren</button><button class="danger" onclick="normalizeAlbum()" id="btnNorm" disabled>Album normalisieren</button><span id="targetInfo" class="settingsSummary">Ziel nicht geladen</span><button class="secondary" onclick="openSettings()">⚙</button></div><div id="albumSummary" class="small"></div><div id="normalizePreview" class="small" style="margin:8px 0;color:var(--muted)"></div><table><thead><tr><th>#</th><th>Titel</th><th class="right">LUFS</th><th class="right">TP</th><th class="right">LRA</th><th class="right">Bitrate</th><th>Codec</th></tr></thead><tbody id="tracks"></tbody></table></section>
+<section class="panel" style="margin-top:16px"><div class="toolbar"><h2 style="margin-right:auto">Titel</h2><button onclick="setReference()" id="btnRef" disabled>⭐ Als Referenz</button><button onclick="analyzeAlbum()" id="btnAnalyze" disabled>Album analysieren</button><button class="danger" onclick="normalizeAlbum()" id="btnNorm" disabled>Album normalisieren</button><button class="secondary" onclick="normalizeSelectedTracks()" id="btnTrackNorm" disabled>Titel normalisieren</button><span id="targetInfo" class="settingsSummary">Ziel nicht geladen</span></div><div id="albumSummary" class="small"></div><div id="normalizePreview" class="small" style="margin:8px 0;color:var(--muted)"></div><table><thead><tr><th style="width:34px"><input type="checkbox" id="trackSelectAll" onchange="toggleAllTracks(this.checked)"></th><th>#</th><th>Titel</th><th class="right">LUFS</th><th class="right">TP</th><th class="right">LRA</th><th class="right">Bitrate</th><th>Codec</th></tr></thead><tbody id="tracks"></tbody></table></section>
 <section class="panel" style="margin-top:16px"><div class="toolbar"><h2 style="margin-right:auto">Log</h2><button class="secondary" onclick="exportLog(false)">Log exportieren</button><button class="secondary" onclick="exportLog(true)">Fehler exportieren</button><button class="secondary" onclick="clearLog()">Log löschen</button></div><pre id="logBox" class="small" style="white-space:pre-wrap;max-height:180px;overflow:auto;background:#0f1218;border:1px solid #303847;border-radius:10px;padding:10px">Noch kein Log.</pre></section>
 <section class="panel" style="margin-top:16px"><div class="toolbar"><h2 style="margin-right:auto">Historie / Wiederherstellen</h2><button class="secondary" onclick="loadHistory()">Aktualisieren</button></div><div id="historyList" class="historyList small">Noch keine Historie.</div></section>
 </main>
@@ -36,6 +36,7 @@ let uiBusy=false;
 let reference=null;
 let selectedAlbumAnalysis=null;
 let selectedBatch=new Map();
+let selectedTracks=new Map();
 
 function fmt(n,d=1){return n===null||n===undefined?'':Number(n).toFixed(d)}
 function dur(s){s=Number(s||0);let h=Math.floor(s/3600),m=Math.floor((s%3600)/60);return h?`${h}h ${m}m`:`${m}m`}
@@ -56,6 +57,7 @@ function setBusy(isBusy){
   [btnAnalyze,btnRef].forEach(b=>{ if(b) b.disabled = isBusy || !selectedAlbum; });
   renderBatchBar();
   updateNormalizeGuard();
+  updateTrackSelectionUI();
 }
 
 function batchKey(artist, album){return `${artist||''}\u0000${album||''}`}
@@ -79,6 +81,37 @@ function renderBatchBar(){
   const disabled = uiBusy || count===0;
   if(btnBatchAnalyze) btnBatchAnalyze.disabled=disabled;
   if(btnBatchNorm) btnBatchNorm.disabled=disabled;
+}
+
+function clearTrackSelection(){
+  selectedTracks.clear();
+  document.querySelectorAll('.trackPick').forEach(c=>c.checked=false);
+  if(trackSelectAll) trackSelectAll.checked=false;
+  updateTrackSelectionUI();
+}
+function toggleTrack(path, title, checked){
+  if(checked) selectedTracks.set(path, {path, title});
+  else selectedTracks.delete(path);
+  updateTrackSelectionUI();
+}
+function toggleAllTracks(checked){
+  document.querySelectorAll('.trackPick').forEach(cb=>{
+    cb.checked=checked;
+    toggleTrack(cb.dataset.path, cb.dataset.title || cb.dataset.path, checked);
+  });
+}
+function selectedTrackPaths(){return Array.from(selectedTracks.values()).map(x=>x.path)}
+function updateTrackSelectionUI(){
+  const count=selectedTracks.size;
+  if(btnTrackNorm){
+    btnTrackNorm.disabled = uiBusy || count===0;
+    btnTrackNorm.textContent = count>1 ? `${count} Titel normalisieren` : 'Titel normalisieren';
+  }
+  if(trackSelectAll){
+    const all=[...document.querySelectorAll('.trackPick')];
+    trackSelectAll.checked = all.length>0 && all.every(x=>x.checked);
+    trackSelectAll.indeterminate = count>0 && !trackSelectAll.checked;
+  }
 }
 
 function toggleBatchAlbum(artist, album, checked){
@@ -112,7 +145,10 @@ async function loadSettings(){
 
 function updateTargetInfo(){
   const bm={on:'/data/backups',sidecar:'.bak',off:'kein Backup'}[backupMode.value]||backupMode.value;
+  const bmShort={on:'ein',sidecar:'.bak',off:'aus'}[backupMode.value]||backupMode.value;
   targetInfo.textContent=`Ziel ${targetLufs.value} LUFS · TP ${truePeak.value} · LRA ${lra.value} · Backup ${bm} · ${parallelAnalysis.value}×`;
+  if(typeof sBackup!=='undefined') sBackup.textContent='Backup '+bmShort;
+  if(typeof sParallel!=='undefined') sParallel.textContent='Parallel '+parallelAnalysis.value+'×';
 }
 function openSettings(){settingsModal.classList.add('show')}
 function closeSettings(){settingsModal.classList.remove('show')}
@@ -202,7 +238,6 @@ async function loadStats(){
   sTracks.textContent=s.tracks;
   sAnalyzed.textContent=s.analyzed;
   sDuration.textContent=dur(s.duration);
-  sSchema.textContent=s.schema_version;
 }
 
 function setBrowserMode(mode){
@@ -294,6 +329,7 @@ async function selectArtist(a, keepAlbum=false){
 
   if(!keepAlbum){
     tracks.innerHTML='';
+    clearTrackSelection();
     albumSummary.textContent='';
     selectedAlbumAnalysis=null;
     normalizePreview.textContent='';
@@ -325,6 +361,7 @@ async function loadAlbums(){
   if(selectedAlbum && !list.some(x=>x.album===selectedAlbum)){
     selectedAlbum=null;
     tracks.innerHTML='';
+    clearTrackSelection();
     albumSummary.textContent='';
     selectedAlbumAnalysis=null;
     normalizePreview.textContent='';
@@ -344,7 +381,10 @@ async function selectAlbum(a){
   let url=API+'/tracks?album='+encodeURIComponent(a);
   if(selectedArtist) url+='&artist='+encodeURIComponent(selectedArtist);
   let t=await j(url);
-  tracks.innerHTML=t.map(x=>`<tr><td>${trackNo(x)}</td><td>${escHtml(x.title)}<br><span class="small">${escHtml(relPath(x.path))}</span></td><td class="right">${fmt(x.input_i,1)}</td><td class="right">${fmt(x.input_tp,1)}</td><td class="right">${fmt(x.input_lra,1)}</td><td class="right">${x.bitrate?Math.round(x.bitrate/1000):''}</td><td>${escHtml(x.codec)}</td></tr>`).join('');
+  selectedTracks.clear();
+  tracks.innerHTML=t.map(x=>`<tr><td><input type="checkbox" class="trackPick" data-path="${escHtml(relPath(x.path))}" data-title="${escHtml(x.title)}"></td><td>${trackNo(x)}</td><td>${escHtml(x.title)}<br><span class="small">${escHtml(relPath(x.path))}</span></td><td class="right">${fmt(x.input_i,1)}</td><td class="right">${fmt(x.input_tp,1)}</td><td class="right">${fmt(x.input_lra,1)}</td><td class="right">${x.bitrate?Math.round(x.bitrate/1000):''}</td><td>${escHtml(x.codec)}</td></tr>`).join('');
+  document.querySelectorAll('.trackPick').forEach(cb=>{cb.onchange=()=>toggleTrack(cb.dataset.path, cb.dataset.title || cb.dataset.path, cb.checked)});
+  updateTrackSelectionUI();
 
   let anUrl=API+'/album_analysis?album='+encodeURIComponent(a);
   if(selectedArtist) anUrl+='&artist='+encodeURIComponent(selectedArtist);
@@ -415,6 +455,34 @@ Dateien werden überschrieben.`;
   }catch(e){
     status.textContent='Normalisierungs-Fehler';
     alert('Normalisierung konnte nicht gestartet werden:\n' + e.message);
+  }
+}
+
+async function normalizeSelectedTracks(){
+  const paths=selectedTrackPaths();
+  if(!paths.length) return;
+  try{
+    const pv=await j(API+'/normalize_preview_tracks',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({paths})});
+    const lines=(pv.items||[]).slice(0,10).map(x=>{
+      const delta=x.gain_delta===null || x.gain_delta===undefined ? '-' : (x.gain_delta>0 ? '+'+x.gain_delta : String(x.gain_delta));
+      const status=x.can_normalize ? `${x.current_lufs} → ${x.target_lufs} LUFS (${delta} dB)` : `gesperrt: ${x.reason||'nicht möglich'}`;
+      return `- ${x.title}: ${status}`;
+    });
+    if((pv.items||[]).length>10) lines.push(`... und ${(pv.items||[]).length-10} weitere`);
+    if(!pv.can_normalize){
+      alert('Nicht alle ausgewählten Titel können normalisiert werden:\n\n'+lines.join('\n'));
+      return;
+    }
+    const backupText = backupMode.value==='off' ? 'kein Backup' : (backupMode.value==='sidecar' ? '.bak neben der Datei' : 'Backup unter /data/backups');
+    const msg=`${pv.count_tracks} Titel normalisieren?\nZiel: ${pv.target_lufs} LUFS · TP ${pv.true_peak} · LRA ${pv.lra}\nBackup: ${backupText}\n\n${lines.join('\n')}\n\nDateien werden überschrieben.`;
+    if(!confirm(msg)) return;
+    lastRunning=true;
+    status.textContent='Titel-Normalisierung wird gestartet...';
+    await j(API+'/normalize_tracks',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({paths, backup:backupMode.value})});
+    await poll();
+  }catch(e){
+    status.textContent='Titel-Normalisierungs-Fehler';
+    alert('Titel-Normalisierung konnte nicht gestartet werden:\n'+e.message);
   }
 }
 
@@ -542,9 +610,9 @@ async function poll(){
   const running=!!s.running;
   if(btnStop) btnStop.disabled=!running;
   if(running){
-    btnAnalyze.disabled=true; btnNorm.disabled=true; btnRef.disabled=true; if(btnBatchAnalyze)btnBatchAnalyze.disabled=true; if(btnBatchNorm)btnBatchNorm.disabled=true;
+    btnAnalyze.disabled=true; btnNorm.disabled=true; btnRef.disabled=true; if(btnTrackNorm)btnTrackNorm.disabled=true; if(btnBatchAnalyze)btnBatchAnalyze.disabled=true; if(btnBatchNorm)btnBatchNorm.disabled=true;
   }else if(selectedAlbum){
-    btnAnalyze.disabled=false; btnRef.disabled=false; updateNormalizeGuard();
+    btnAnalyze.disabled=false; btnRef.disabled=false; updateNormalizeGuard(); updateTrackSelectionUI();
   }
 
   // Nur nach Abschluss eines Jobs neu laden. Kein permanentes Re-Rendering im Idle-Zustand,

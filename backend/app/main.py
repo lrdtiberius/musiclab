@@ -22,7 +22,7 @@ LOG_MAX_BYTES = int(os.getenv("LOG_MAX_BYTES", str(10 * 1024 * 1024)))
 EXTS = {".mp3", ".m4a", ".aac", ".flac", ".ogg"}
 SCHEMA_VERSION = 11
 
-app = FastAPI(title="MusicLab API", version="1.0.0")
+app = FastAPI(title="MusicLab API", version="1.0.2")
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
 
 stop_event = threading.Event()
@@ -733,6 +733,102 @@ def rows_for_album_item(item: dict):
     return selected_rows(item.get("artist"), item.get("album"))
 
 
+def rows_for_paths(paths: list):
+    clean = []
+    for p in paths or []:
+        rel = str(p or "").strip()
+        if rel.startswith("/music/"):
+            rel = rel[7:]
+        if rel and rel not in clean:
+            clean.append(rel)
+    if not clean:
+        return []
+    placeholders = ",".join(["?"] * len(clean))
+    sql = f"SELECT id,path,title,artist,album FROM tracks WHERE path IN ({placeholders}) ORDER BY artist COLLATE NOCASE, album COLLATE NOCASE, COALESCE(disc_number,1), COALESCE(track_number,9999), title COLLATE NOCASE"
+    with db() as con:
+        found = [dict(r) for r in con.execute(sql, clean).fetchall()]
+    order = {path: i for i, path in enumerate(clean)}
+    found.sort(key=lambda r: order.get(r["path"], 999999))
+    return found
+
+def tracks_preview(paths: list) -> dict:
+    settings = get_settings()
+    try:
+        target = float(settings.get("target_lufs", "-16"))
+    except Exception:
+        target = -16.0
+    rows = rows_for_paths(paths)
+    out = []
+    with db() as con:
+        for row in rows:
+            a = con.execute("SELECT input_i,input_tp,input_lra,status FROM analysis WHERE track_id=?", (row["id"],)).fetchone()
+            current = a["input_i"] if a and a["status"] == "ok" else None
+            delta = round(target - float(current), 2) if current is not None else None
+            can = current is not None
+            out.append({
+                "path": row["path"],
+                "artist": row["artist"],
+                "album": row["album"],
+                "title": row["title"],
+                "current_lufs": current,
+                "target_lufs": target,
+                "gain_delta": delta,
+                "can_normalize": can,
+                "reason": None if can else "Titel zuerst analysieren",
+            })
+    missing = len(set(str(p).replace('/music/','') for p in (paths or []))) - len(rows)
+    return {
+        "count_tracks": len(rows),
+        "missing": max(0, missing),
+        "target_lufs": target,
+        "true_peak": settings.get("true_peak"),
+        "lra": settings.get("lra"),
+        "backup_mode": settings.get("backup_mode", "on"),
+        "can_normalize": bool(rows) and all(x.get("can_normalize") for x in out),
+        "items": out,
+    }
+
+def normalize_tracks_worker(paths: list, backup_mode: Optional[str] = None):
+    init_db()
+    settings = get_settings()
+    if backup_mode is not None:
+        settings["backup_mode"] = backup_mode
+    rows = rows_for_paths(paths)
+    blocked = [x for x in tracks_preview([r["path"] for r in rows]).get("items", []) if not x.get("can_normalize")]
+    if blocked:
+        names = "; ".join(f"{p['path']}: {p.get('reason') or 'nicht möglich'}" for p in blocked[:5])
+        state.update({"running": False, "mode": "idle", "done": 0, "total": 0, "current": "", "message": "Titel-Normalisierung abgebrochen", "errors": len(blocked), "recent_errors": []})
+        add_log(f"Titel-Normalisierung abgebrochen: {names}", True)
+        return
+    job_id = history_job_id()
+    begin_job("track_normalize", len(rows), f"Titel-Normalisierung auf {settings.get('target_lufs')} LUFS")
+    add_log(f"Titel-Normalisierung gestartet: {len(rows)} Titel auf {settings.get('target_lufs')} LUFS, Backup: {settings.get('backup_mode','on')}")
+    with db() as con:
+        for row in rows:
+            if stop_requested():
+                add_log("Titel-Normalisierung abgebrochen")
+                break
+            state["current"] = row["path"]
+            try:
+                before = analyze_track_file(MUSIC_ROOT / row["path"])
+                backup_path = normalize_file(row["path"], settings, settings.get("backup_mode", "on"))
+                result = analyze_and_store(con, row["id"], row["path"])
+                insert_history(con, job_id, row, row.get("artist"), row.get("album"), backup_path, settings.get("backup_mode", "on"), settings, before, result)
+                add_log(f"Titel normalisiert: {row['path']}")
+            except Exception as e:
+                state["errors"] += 1
+                upsert_analysis(con, row["id"], None, str(e))
+                add_log(f"Titel-Normalisierungsfehler: {row['path']} - {e}", True)
+            state["done"] += 1
+            con.commit()
+    if stop_requested():
+        add_log(f"Titel-Normalisierung abgebrochen: {state['done']}/{state['total']} Titel, Fehler {state['errors']}", True)
+        finish_job("Titel-Normalisierung abgebrochen", True)
+    else:
+        add_log(f"Titel-Normalisierung fertig: {state['done']}/{state['total']} Titel, Fehler {state['errors']}")
+        finish_job("Titel-Normalisierung fertig")
+
+
 def batch_preview_items(items: list) -> list:
     settings = get_settings()
     try:
@@ -878,7 +974,7 @@ def startup():
 
 @app.get("/api/health")
 def health():
-    return {"ok": True, "version": "0.9.3", "music_root": str(MUSIC_ROOT), "db": str(DB_PATH)}
+    return {"ok": True, "version": "1.0.2", "music_root": str(MUSIC_ROOT), "db": str(DB_PATH)}
 
 
 @app.post("/api/scan")
@@ -976,6 +1072,20 @@ def normalize_batch(data: dict):
         raise HTTPException(status_code=400, detail="Keine Alben übergeben")
     if not state["running"]:
         threading.Thread(target=normalize_batch_worker, args=(items, backup), daemon=True).start()
+    return state
+
+
+@app.post("/api/normalize_preview_tracks")
+def normalize_preview_tracks(data: dict):
+    return tracks_preview(data.get("paths") or [])
+
+
+@app.post("/api/normalize_tracks")
+def normalize_tracks(data: dict):
+    paths = data.get("paths") or []
+    backup = data.get("backup")
+    if not state["running"]:
+        threading.Thread(target=normalize_tracks_worker, args=(paths, backup), daemon=True).start()
     return state
 
 
