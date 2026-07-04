@@ -19,7 +19,7 @@ services:
     ports:
       - "8092:80"
     volumes:
-      - /volume1/docker/musiclab/frontend/index.html:/usr/share/nginx/html/index.html:ro
+      - /volume1/docker/musiclab/frontend:/usr/share/nginx/html:ro
     depends_on:
       - musiclab-backend
     restart: unless-stopped

@@ -1,31 +1,42 @@
-# MusicLab v1.1.2
+# MusicLab v1.1.5
 
-## Änderungen v1.1.2
+Musikbibliothek scannen, LUFS/True-Peak/LRA analysieren und Alben oder Titel normalisieren.
 
-- Referenzalbum-Button in die Albumsektion verschoben.
-- Titelbereich aufgeräumt: dort bleibt nur die Titelnormalisierung.
-- Referenz bleibt als Albumfunktion eindeutig erkennbar.
-- Albumkarten etwas kompakter gestaltet.
-- Footer-Credit ergänzt: `Idea by Lrd.Tiberius`.
-- Kleinen JavaScript-Duplikatfehler bei der Albumauswahl bereinigt.
+## Projektstruktur
 
-## Installation Synology
+```text
+MusicLab/
+├── backend/
+│   ├── Dockerfile
+│   ├── requirements.txt
+│   └── app/
+│       └── main.py
+├── frontend/
+│   ├── Dockerfile
+│   ├── index.html
+│   ├── app.js
+│   ├── styles.css
+│   └── assets/
+├── data/
+│   ├── backups/
+│   └── logs/
+├── docker-compose.yml
+├── README.md
+└── LICENSE
+```
 
-1. Inhalt nach `/volume1/docker/musiclab` kopieren.
-2. Projekt im Container Manager neu erstellen oder neu bauen.
-3. Browser hart neu laden: `Cmd + Shift + R`.
+## Synology-Installation
 
+1. Den kompletten Ordner nach `/volume1/docker/musiclab` kopieren.
+2. Im Container Manager ein neues Projekt aus diesem Ordner erstellen.
+3. Projekt starten.
+4. Oberfläche öffnen: `http://<NAS-IP>:8092`
+5. Backend API: `http://<NAS-IP>:8091/api/status`
 
+## Hinweise
 
-## v1.1.2
-- Ein-Bildschirm-Layout: Header, Inhalte und Footer bleiben sichtbar.
-- Interpreten/Alben, Albumliste, Titelliste, Log und Historie scrollen intern.
-- Footer mit „Idea by Lrd.Tiberius“ bleibt dauerhaft sichtbar.
+- Der Ordner `data/` ist absichtlich enthalten und wird für Datenbank, Logs und Backups genutzt.
+- Frontend-Dateien liegen jetzt sauber getrennt in `frontend/index.html`, `frontend/app.js` und `frontend/styles.css`.
+- macOS-Metadatenordner wie `__MACOSX` und `._*` sind nicht enthalten.
 
-
-## Änderungen v1.1.2
-- Kompakte Infozeile für Interpreten, Alben, Titel, analysierte Titel und Dauer.
-- Backup/Parallelität statt DB-Schema-Kachel.
-- Stern vor der Referenzalbum-Überschrift entfernt.
-- Logbereich vergrößert und lesbarer gemacht.
-- Ein-Bildschirm-Layout bleibt erhalten.
+Idea by Lrd.Tiberius.
