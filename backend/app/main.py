@@ -21,7 +21,7 @@ LOG_MAX_BYTES = int(os.getenv("LOG_MAX_BYTES", str(10 * 1024 * 1024)))
 EXTS = {".mp3", ".m4a", ".aac", ".flac", ".ogg"}
 SCHEMA_VERSION = 9
 
-app = FastAPI(title="MusicLab API", version="0.9.1")
+app = FastAPI(title="MusicLab API", version="0.9.2")
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
 
 state = {
@@ -336,40 +336,101 @@ def scan_worker():
 
 
 def parse_loudnorm_json(stderr: str) -> Optional[dict]:
-    # ffmpeg may print metadata or warnings containing braces/backslashes before
-    # the actual loudnorm JSON block. Try candidates from the end and only
-    # accept the object that contains the expected loudnorm keys.
-    matches = re.findall(r"\{[\s\S]*?\}", stderr or "")
-    for candidate in reversed(matches):
-        try:
-            data = json.loads(candidate)
-        except Exception:
-            continue
-        if isinstance(data, dict) and "input_i" in data and "input_tp" in data and "input_lra" in data:
-            return data
+    """Extract only the JSON object emitted by ffmpeg's loudnorm filter.
+
+    Important: ffmpeg writes normal progress, stream metadata, ReplayGain tags and
+    embedded cover information to stderr even on success. Some ID3 private tags
+    also contain literal braces/backslashes, so a generic ``{...}`` regex can
+    accidentally consume junk before the real loudnorm object.
+
+    We therefore locate the loudnorm block by its required keys and parse the
+    nearest surrounding JSON object.
+    """
+    text = stderr or ""
+    required = ['"input_i"', '"input_tp"', '"input_lra"']
+
+    # Usually there is exactly one loudnorm JSON block. Start from input_i and
+    # take the closest enclosing braces around that block. This avoids ID3 values
+    # like ``AverageLevel: {\x1c...`` being treated as JSON.
+    idx = text.rfind('"input_i"')
+    if idx >= 0:
+        start = text.rfind("{", 0, idx)
+        end = text.find("}", idx)
+        if start >= 0 and end > idx:
+            candidate = text[start:end + 1]
+            try:
+                data = json.loads(candidate)
+                if isinstance(data, dict) and all(k.strip('"') in data for k in required):
+                    return data
+            except Exception:
+                pass
+
+    # Fallback: parse line-based blocks that look like JSON. This is deliberately
+    # stricter than a global non-greedy regex.
+    lines = text.splitlines()
+    for i, line in enumerate(lines):
+        if line.strip() == "{":
+            block = []
+            for j in range(i, min(i + 40, len(lines))):
+                block.append(lines[j])
+                if lines[j].strip() == "}":
+                    candidate = "\n".join(block)
+                    try:
+                        data = json.loads(candidate)
+                        if isinstance(data, dict) and "input_i" in data and "input_tp" in data and "input_lra" in data:
+                            return data
+                    except Exception:
+                        pass
+                    break
     return None
 
 
+def concise_ffmpeg_error(stderr: str, returncode: int) -> str:
+    text = stderr or ""
+    interesting = []
+    noise_prefixes = (
+        "Input #", "Metadata:", "Duration:", "Stream #", "Side data:",
+        "encoder", "id3v2_priv", "replaygain:", "[Parsed_loudnorm",
+        "{", "}", '"input_', '"output_', '"normalization_', '"target_offset"',
+        "size=", "video:", "audio:", "frame=", "Press [q]"
+    )
+    for raw in text.splitlines():
+        line = raw.strip()
+        if not line:
+            continue
+        if any(line.startswith(p) for p in noise_prefixes):
+            continue
+        if "Error" in line or "Invalid" in line or "failed" in line.lower() or "can't" in line.lower():
+            interesting.append(line)
+    if interesting:
+        return " | ".join(interesting[-3:])[:500]
+    return f"ffmpeg returncode {returncode}, keine loudnorm-Daten" if returncode else "Keine loudnorm-Daten gefunden"
+
+
 def analyze_track_file(path: Path) -> dict:
-    cmd = ["ffmpeg", "-hide_banner", "-nostats", "-i", str(path), "-vn", "-af", "loudnorm=print_format=json", "-f", "null", "-"]
+    cmd = [
+        "ffmpeg", "-hide_banner", "-nostats",
+        "-i", str(path),
+        "-map", "0:a:0",
+        "-af", "loudnorm=print_format=json",
+        "-f", "null", "-"
+    ]
     res = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=600)
     stderr = (res.stderr or b"").decode("utf-8", errors="replace")
     data = parse_loudnorm_json(stderr)
-    if not data:
-        short = "Keine loudnorm-Daten"
-        for line in reversed(stderr.splitlines()):
-            line = line.strip()
-            if line and not line.startswith("size=") and not line.startswith("video:"):
-                short = line
-                break
-        raise RuntimeError(short[:500])
-    return {
-        "input_i": float(data["input_i"]),
-        "input_tp": float(data["input_tp"]),
-        "input_lra": float(data["input_lra"]),
-        "input_thresh": float(data["input_thresh"]),
-        "target_offset": float(data.get("target_offset", 0)),
-    }
+
+    # ffmpeg can write lots of stderr on success. A valid loudnorm JSON block is
+    # considered success even if stderr contains metadata or warnings.
+    if data:
+        return {
+            "input_i": float(data["input_i"]),
+            "input_tp": float(data["input_tp"]),
+            "input_lra": float(data["input_lra"]),
+            "input_thresh": float(data["input_thresh"]),
+            "target_offset": float(data.get("target_offset", 0)),
+        }
+
+    raise RuntimeError(concise_ffmpeg_error(stderr, res.returncode))
 
 
 def upsert_analysis(con, track_id: int, result: Optional[dict], error: Optional[str] = None):
@@ -661,7 +722,7 @@ def startup():
 
 @app.get("/api/health")
 def health():
-    return {"ok": True, "version": "0.9.1", "music_root": str(MUSIC_ROOT), "db": str(DB_PATH)}
+    return {"ok": True, "version": "0.9.2", "music_root": str(MUSIC_ROOT), "db": str(DB_PATH)}
 
 
 @app.post("/api/scan")

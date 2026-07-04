@@ -13,7 +13,7 @@ h1{font-size:22px;margin:0}.muted{color:var(--muted)}button,input,select{border:
 </style>
 </head>
 <body>
-<header><h1>🎵 MusicLab <span class="muted">v0.9.1</span></h1><button onclick="scan()">Bibliothek neu scannen</button><button class="secondary" onclick="analyzeAll()">Alles analysieren</button><span id="status" class="muted">Bereit</span></header>
+<header><h1>🎵 MusicLab <span class="muted">v0.9.2</span></h1><button onclick="scan()">Bibliothek neu scannen</button><button class="secondary" onclick="analyzeAll()">Alles analysieren</button><span id="status" class="muted">Bereit</span></header>
 <div class="layout">
 <aside class="panel"><div class="modeSwitch"><button id="modeArtist" class="active" onclick="setBrowserMode('artist')">Interpreten</button><button id="modeAlbum" onclick="setBrowserMode('album')">Alben</button></div><input id="search" placeholder="Interpreten suchen..." oninput="loadBrowser()" style="width:100%;margin-bottom:12px"><h3 id="browserTitle">Interpreten</h3><div id="browserList" class="list"></div></aside>
 <main>

@@ -1,15 +1,13 @@
-# MusicLab v0.9.1
+# MusicLab v0.9.2
 
 ## Neu
 
-- Log-Export direkt aus der Oberfläche:
-  - gesamtes Log exportieren
-  - nur Fehler exportieren
-  - Log löschen
-- Backend schreibt Logs zusätzlich dauerhaft nach `/data/logs/musiclab.log`.
-- Logrotation bei ca. 10 MB.
-- Analyse-Fehler werden kompakter behandelt; FFmpeg-Ausgaben werden robuster gelesen.
-- Version auf v0.9.1 gesetzt.
+- FFmpeg/loudnorm-Auswertung grundlegend robuster gemacht.
+- FFmpeg-`stderr` wird nicht mehr automatisch als Fehler behandelt.
+- Der echte loudnorm-JSON-Block wird gezielt über `input_i`, `input_tp` und `input_lra` extrahiert.
+- ID3-Private-Tags, ReplayGain-Ausgaben, Cover-Streams und normale FFmpeg-Metadaten erzeugen keine falschen Analysefehler mehr.
+- Echte Fehler werden kompakter ausgegeben.
+- Version auf v0.9.2 gesetzt.
 
 ## Installation Synology
 
