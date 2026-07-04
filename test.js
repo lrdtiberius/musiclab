@@ -1,31 +1,4 @@
-<!doctype html>
-<html lang="de">
-<head>
-<meta charset="utf-8" />
-<meta name="viewport" content="width=device-width,initial-scale=1" />
-<title>MusicLab</title>
-<style>
-:root{--bg:#111317;--panel:#1b1f27;--panel2:#242a35;--txt:#e8eaf0;--muted:#9aa3b2;--accent:#6aa9ff;--bad:#ff6b6b;--ok:#7bd88f;--gold:#ffcc66}
-*{box-sizing:border-box} body{margin:0;background:var(--bg);color:var(--txt);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
-header{height:64px;display:flex;align-items:center;gap:18px;padding:0 24px;background:#0d0f13;border-bottom:1px solid #2a303b}
-h1{font-size:22px;margin:0}.muted{color:var(--muted)}button,input{border:0;border-radius:10px;padding:10px 14px;font-size:14px}button{background:var(--accent);color:#07111f;font-weight:700;cursor:pointer}button.secondary{background:#303847;color:var(--txt)}button.danger{background:#ffb86b;color:#241000}button:disabled{opacity:.45;cursor:not-allowed}input{background:#0f1218;color:var(--txt);border:1px solid #333b49}
-.layout{display:grid;grid-template-columns:300px 1fr;gap:16px;padding:16px}.panel{background:var(--panel);border:1px solid #2a303b;border-radius:16px;padding:16px}.grid{display:grid;grid-template-columns:repeat(6,1fr);gap:12px;margin-bottom:16px}.stat{background:var(--panel2);border-radius:14px;padding:14px}.stat b{font-size:22px;display:block}.list{max-height:calc(100vh - 230px);overflow:auto}.row{padding:10px;border-radius:10px;cursor:pointer}.row:hover,.row.sel{background:var(--panel2)}.modeSwitch{display:flex;gap:6px;margin-bottom:10px}.modeSwitch button{flex:1;padding:8px 10px}.modeSwitch button.active{background:var(--accent);color:#07111f}.modeSwitch button:not(.active){background:#303847;color:var(--txt)}.albums{display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:12px;max-height:300px;overflow-y:auto;padding-right:6px;scrollbar-gutter:stable}.empty{color:var(--muted);padding:12px}.albumsCount{color:var(--muted);font-size:12px}.album{background:var(--panel2);border-radius:14px;padding:14px;cursor:pointer}.album.sel{outline:2px solid var(--accent)}.album.ref{outline:2px solid var(--gold)}.refbox{display:flex;gap:14px;align-items:center;justify-content:space-between;min-height:74px;padding:16px 18px}.refmeta{display:flex;flex-direction:column;gap:6px;min-width:0;flex:1}.refpill{display:block;max-width:100%;width:fit-content;background:#2b2618;border:1px solid #6b5422;color:#ffd98a;border-radius:12px;padding:8px 12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;line-height:1.25}.refempty{color:var(--muted)}.toolbar{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:12px}table{width:100%;border-collapse:collapse}th,td{padding:9px;border-bottom:1px solid #303847;text-align:left}th{color:var(--muted);font-weight:600}.right{text-align:right}.bar{height:10px;background:#303847;border-radius:999px;overflow:hidden}.fill{height:100%;width:0%;background:var(--accent)}.small{font-size:12px;color:var(--muted)}
-</style>
-</head>
-<body>
-<header><h1>🎵 MusicLab <span class="muted">v0.6.2</span></h1><button onclick="scan()">Bibliothek neu scannen</button><button class="secondary" onclick="analyzeAll()">Alles analysieren</button><span id="status" class="muted">Bereit</span></header>
-<div class="layout">
-<aside class="panel"><div class="modeSwitch"><button id="modeArtist" class="active" onclick="setBrowserMode('artist')">Interpreten</button><button id="modeAlbum" onclick="setBrowserMode('album')">Alben</button></div><input id="search" placeholder="Interpreten suchen..." oninput="loadBrowser()" style="width:100%;margin-bottom:12px"><h3 id="browserTitle">Interpreten</h3><div id="browserList" class="list"></div></aside>
-<main>
-<div class="grid"><div class="stat"><b id="sArtists">0</b><span>Interpreten</span></div><div class="stat"><b id="sAlbums">0</b><span>Alben</span></div><div class="stat"><b id="sTracks">0</b><span>Titel</span></div><div class="stat"><b id="sAnalyzed">0</b><span>Analysiert</span></div><div class="stat"><b id="sDuration">0h</b><span>Dauer</span></div><div class="stat"><b id="sSchema">-</b><span>DB Schema</span></div></div>
-<div class="panel refbox" style="margin-bottom:16px"><div class="refmeta"><b>⭐ Referenzalbum</b><div id="referenceBox" class="small refempty">Noch kein Referenzalbum festgelegt.</div></div><button class="secondary" onclick="useReferenceTarget()" id="btnUseRef" disabled>Ziel-LUFS übernehmen</button></div>
-<div class="panel" style="margin-bottom:16px"><div class="bar"><div id="progress" class="fill"></div></div><div id="progressText" class="small" style="margin-top:8px">Bereit</div></div>
-<section class="panel"><h2>Albumliste</h2><div class="albumTools"><span id="albumsCount" class="albumsCount">Kein Interpret gewählt</span></div><div id="albums" class="albums"></div></section>
-<section class="panel" style="margin-top:16px"><div class="toolbar"><h2 style="margin-right:auto">Titel</h2><button onclick="setReference()" id="btnRef" disabled>⭐ Als Referenz</button><button onclick="analyzeAlbum()" id="btnAnalyze" disabled>Album analysieren</button><button class="danger" onclick="normalizeAlbum()" id="btnNorm" disabled>Album normalisieren</button><span>Ziel-LUFS</span><input id="targetLufs" style="width:80px"><span>TP</span><input id="truePeak" style="width:70px"><span>LRA</span><input id="lra" style="width:70px"><button class="secondary" onclick="saveSettings()">Speichern</button></div><div id="albumSummary" class="small"></div><table><thead><tr><th>#</th><th>Titel</th><th class="right">LUFS</th><th class="right">TP</th><th class="right">LRA</th><th class="right">Bitrate</th><th>Codec</th></tr></thead><tbody id="tracks"></tbody></table></section>
-<section class="panel" style="margin-top:16px"><h2>Log</h2><pre id="logBox" class="small" style="white-space:pre-wrap;max-height:180px;overflow:auto;background:#0f1218;border:1px solid #303847;border-radius:10px;padding:10px">Noch kein Log.</pre></section>
-</main>
-</div>
-<script>
+
 const API='http://'+location.hostname+':8091/api';
 let selectedArtist=null, selectedAlbum=null;
 let browserMode='artist';
@@ -316,6 +289,3 @@ loadBrowser();
 loadAlbums();
 loadLog();
 poll();
-</script>
-</body>
-</html>

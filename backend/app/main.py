@@ -17,7 +17,7 @@ DB_PATH = Path(os.getenv("DB_PATH", "/data/musiclab.sqlite"))
 EXTS = {".mp3", ".m4a", ".aac", ".flac", ".ogg"}
 SCHEMA_VERSION = 6
 
-app = FastAPI(title="MusicLab API", version="0.6.1")
+app = FastAPI(title="MusicLab API", version="0.6.2")
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
 
 state = {
@@ -444,7 +444,7 @@ def stats():
     with db() as con:
         return {
             "artists": con.execute("SELECT COUNT(DISTINCT artist) c FROM tracks").fetchone()["c"],
-            "albums": con.execute("SELECT COUNT(*) c FROM (SELECT artist, album FROM tracks GROUP BY artist, album)").fetchone()["c"],
+            "albums": con.execute("SELECT COUNT(*) c FROM (SELECT album FROM tracks GROUP BY album)").fetchone()["c"],
             "tracks": con.execute("SELECT COUNT(*) c FROM tracks").fetchone()["c"],
             "duration": con.execute("SELECT COALESCE(SUM(duration),0) c FROM tracks").fetchone()["c"],
             "analyzed": con.execute("SELECT COUNT(*) c FROM analysis WHERE status='ok'").fetchone()["c"],
@@ -491,45 +491,82 @@ def get_library_albums(q: str = ""):
         where = "WHERE t.album LIKE ? OR t.artist LIKE ?"
         args.extend([f"%{q}%", f"%{q}%"])
     with db() as con:
-        return [dict(r) for r in con.execute(
+        rows = con.execute(
             f"""
-            SELECT t.artist, t.album, COUNT(*) tracks, COALESCE(SUM(t.duration),0) duration,
-            COUNT(a.track_id) analyzed, ROUND(AVG(a.input_i),2) avg_lufs,
-            ROUND(MAX(a.input_tp),2) max_true_peak, ROUND(AVG(a.input_lra),2) avg_lra
+            SELECT
+              t.album,
+              CASE WHEN COUNT(DISTINCT t.artist)=1 THEN MIN(t.artist) ELSE 'Verschiedene Interpreten' END AS artist,
+              COUNT(DISTINCT t.artist) AS artist_count,
+              COUNT(*) tracks, COALESCE(SUM(t.duration),0) duration,
+              COUNT(a.track_id) analyzed, ROUND(AVG(a.input_i),2) avg_lufs,
+              ROUND(MAX(a.input_tp),2) max_true_peak, ROUND(AVG(a.input_lra),2) avg_lra
             FROM tracks t LEFT JOIN analysis a ON a.track_id=t.id AND a.status='ok'
             {where}
-            GROUP BY t.artist, t.album
-            ORDER BY t.album COLLATE NOCASE, t.artist COLLATE NOCASE
+            GROUP BY t.album
+            ORDER BY t.album COLLATE NOCASE
             LIMIT 1000
+            """, args,
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+
+@app.get("/api/library_album")
+def get_library_album(album: str):
+    with db() as con:
+        row = con.execute(
+            """
+            SELECT
+              t.album,
+              CASE WHEN COUNT(DISTINCT t.artist)=1 THEN MIN(t.artist) ELSE 'Verschiedene Interpreten' END AS artist,
+              COUNT(DISTINCT t.artist) AS artist_count,
+              COUNT(*) tracks, COALESCE(SUM(t.duration),0) duration,
+              COUNT(a.track_id) analyzed, ROUND(AVG(a.input_i),2) avg_lufs,
+              ROUND(MAX(a.input_tp),2) max_true_peak, ROUND(AVG(a.input_lra),2) avg_lra
+            FROM tracks t LEFT JOIN analysis a ON a.track_id=t.id AND a.status='ok'
+            WHERE t.album=?
+            GROUP BY t.album
+            """, (album,),
+        ).fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="Album nicht gefunden")
+        return dict(row)
+
+
+@app.get("/api/tracks")
+def get_tracks(album: str, artist: Optional[str] = None):
+    where = "WHERE t.album=?"
+    args = [album]
+    if artist:
+        where += " AND t.artist=?"
+        args.append(artist)
+    with db() as con:
+        return [dict(r) for r in con.execute(
+            f"""
+            SELECT t.id,t.title,t.track_number,t.track_total,t.disc_number,t.disc_total,t.duration,t.codec,t.bitrate,t.sample_rate,t.channels,t.path,t.filename,
+            a.input_i,a.input_tp,a.input_lra,a.status AS analysis_status
+            FROM tracks t LEFT JOIN analysis a ON a.track_id=t.id
+            {where}
+            ORDER BY t.artist COLLATE NOCASE, COALESCE(t.disc_number,1), COALESCE(t.track_number,9999), t.title COLLATE NOCASE, t.path COLLATE NOCASE
             """, args,
         ).fetchall()]
 
 
-@app.get("/api/tracks")
-def get_tracks(artist: str, album: str):
-    with db() as con:
-        return [dict(r) for r in con.execute(
-            """
-            SELECT t.id,t.title,t.track_number,t.track_total,t.disc_number,t.disc_total,t.duration,t.codec,t.bitrate,t.sample_rate,t.channels,t.path,t.filename,
-            a.input_i,a.input_tp,a.input_lra,a.status AS analysis_status
-            FROM tracks t LEFT JOIN analysis a ON a.track_id=t.id
-            WHERE t.artist=? AND t.album=?
-            ORDER BY COALESCE(t.disc_number,1), COALESCE(t.track_number,9999), t.title COLLATE NOCASE, t.path COLLATE NOCASE
-            """, (artist, album),
-        ).fetchall()]
-
-
-def album_summary(con, artist: str, album: str):
+def album_summary(con, artist: Optional[str], album: str):
+    where = "WHERE t.album=?"
+    args = [album]
+    if artist:
+        where += " AND t.artist=?"
+        args.append(artist)
     row = con.execute(
-        """
+        f"""
         SELECT COUNT(t.id) tracks, COUNT(a.track_id) analyzed,
         ROUND(AVG(a.input_i),2) avg_lufs,
         ROUND(MAX(a.input_tp),2) max_true_peak,
         ROUND(AVG(a.input_lra),2) avg_lra
         FROM tracks t LEFT JOIN analysis a ON a.track_id=t.id AND a.status='ok'
-        WHERE t.artist=? AND t.album=?
+        {where}
         """,
-        (artist, album),
+        args,
     ).fetchone()
     return dict(row) if row else {}
 
@@ -544,41 +581,44 @@ def api_get_reference():
     with db() as con:
         artist = get_setting_value(con, "reference_artist")
         album = get_setting_value(con, "reference_album")
-        if not artist or not album:
+        if not album:
             return {"is_set": False}
+        artist = artist or None
         summary = album_summary(con, artist, album)
         exists = bool(summary.get("tracks"))
         return {
             "is_set": exists,
             "artist": artist,
             "album": album,
+            "artist_label": artist or "Verschiedene Interpreten",
             **summary,
         }
 
 
 @app.post("/api/reference")
 def api_set_reference(data: dict):
-    artist = str(data.get("artist", "")).strip()
+    artist = str(data.get("artist", "")).strip() or None
     album = str(data.get("album", "")).strip()
-    if not artist or not album:
-        raise HTTPException(status_code=400, detail="artist und album erforderlich")
+    if not album:
+        raise HTTPException(status_code=400, detail="album erforderlich")
     with db() as con:
         summary = album_summary(con, artist, album)
         if not summary.get("tracks"):
             raise HTTPException(status_code=404, detail="Album nicht gefunden")
         if not summary.get("analyzed"):
             raise HTTPException(status_code=400, detail="Album zuerst analysieren")
-        con.execute("INSERT OR REPLACE INTO settings(key,value) VALUES('reference_artist',?)", (artist,))
+        con.execute("INSERT OR REPLACE INTO settings(key,value) VALUES('reference_artist',?)", (artist or "",))
         con.execute("INSERT OR REPLACE INTO settings(key,value) VALUES('reference_album',?)", (album,))
         if summary.get("avg_lufs") is not None:
             con.execute("INSERT OR REPLACE INTO settings(key,value) VALUES('target_lufs',?)", (str(summary["avg_lufs"]),))
         con.commit()
-    add_log(f"Referenzalbum gesetzt: {artist} - {album} ({summary.get('avg_lufs')} LUFS)")
-    return {"is_set": True, "artist": artist, "album": album, **summary}
+    label = artist or "Verschiedene Interpreten"
+    add_log(f"Referenzalbum gesetzt: {label} - {album} ({summary.get('avg_lufs')} LUFS)")
+    return {"is_set": True, "artist": artist, "artist_label": label, "album": album, **summary}
 
 
 @app.get("/api/album_analysis")
-def album_analysis(artist: str, album: str):
+def album_analysis(album: str, artist: Optional[str] = None):
     with db() as con:
         return album_summary(con, artist, album)
 

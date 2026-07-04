@@ -1,10 +1,13 @@
-# MusicLab v0.6.1
+# MusicLab v0.6.2
 
 Änderungen:
-- Links kann jetzt zwischen **Interpreten** und **Alben** umgeschaltet werden.
-- Im Album-Modus werden alle Alben der Bibliothek angezeigt.
-- Die Suche oben links sucht je nach Modus nach Interpreten oder Alben.
-- Die separate Albumsuche in der Albumliste wurde entfernt.
-- Auswahl bleibt beim Polling stabil.
+- Album-Browser links gruppiert jetzt nach Albumtitel und zeigt gleiche Albennamen nicht mehr mehrfach pro Interpret an.
+- Bei Alben mit mehreren Interpreten steht links „Verschiedene Interpreten“.
+- Klick auf ein Album im Album-Modus öffnet das Album global, also über alle enthaltenen Interpreten hinweg.
+- Analyse/Normalisierung funktioniert im Album-Modus albumweit.
+- Version auf v0.6.2 aktualisiert.
 
-Installation wie bisher: Inhalt nach `/volume1/docker/musiclab` kopieren, Projekt neu starten, Browser hart neu laden.
+Installation:
+1. Inhalt des ZIP nach `/volume1/docker/musiclab` kopieren.
+2. Projekt stoppen/starten oder neu erstellen.
+3. Browser hart neu laden (`Cmd + Shift + R`).
