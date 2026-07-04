@@ -16,9 +16,9 @@ from mutagen import File as MutagenFile
 MUSIC_ROOT = Path(os.getenv("MUSIC_ROOT", "/music"))
 DB_PATH = Path(os.getenv("DB_PATH", "/data/musiclab.sqlite"))
 EXTS = {".mp3", ".m4a", ".aac", ".flac", ".ogg"}
-SCHEMA_VERSION = 7
+SCHEMA_VERSION = 8
 
-app = FastAPI(title="MusicLab API", version="0.7.0")
+app = FastAPI(title="MusicLab API", version="0.8.0")
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
 
 state = {
@@ -228,27 +228,65 @@ def upsert_track(con, item):
     )
 
 
+def is_audio_candidate(path: Path) -> bool:
+    # macOS/SMB AppleDouble files look like audio files (e.g. ._Song.mp3),
+    # but contain metadata/resource forks and ffmpeg/mutagen will fail with
+    # messages like "can't sync to MPEG frame". They are intentionally skipped.
+    if not path.is_file():
+        return False
+    if path.name.startswith("._"):
+        return False
+    if path.name.startswith(".") and path.suffix.lower() not in EXTS:
+        return False
+    if ".tmp" in path.name:
+        return False
+    return path.suffix.lower() in EXTS
+
+
 def scan_worker():
     init_db()
-    files = [p for p in MUSIC_ROOT.rglob("*") if p.is_file() and p.suffix.lower() in EXTS and ".tmp" not in p.name]
+    files = [p for p in MUSIC_ROOT.rglob("*") if is_audio_candidate(p)]
     state.update({"running": True, "mode": "scan", "done": 0, "total": len(files), "current": "", "message": "Scan läuft", "errors": 0, "recent_errors": []})
     add_log(f"Scan gestartet: {len(files)} Dateien")
+
+    seen_paths = set()
+    changed_paths = []
     with db() as con:
-        con.execute("DELETE FROM analysis")
-        con.execute("DELETE FROM tracks")
-        con.commit()
+        existing = {r["path"]: dict(r) for r in con.execute("SELECT id,path,size,mtime FROM tracks").fetchall()}
         for p in files:
-            state["current"] = str(p.relative_to(MUSIC_ROOT))
+            rel = str(p.relative_to(MUSIC_ROOT))
+            seen_paths.add(rel)
+            state["current"] = rel
             try:
                 item = scan_file(p)
                 if item:
+                    old = existing.get(item["path"])
+                    changed = bool(old and (old.get("size") != item.get("size") or float(old.get("mtime") or 0) != float(item.get("mtime") or 0)))
                     upsert_track(con, item)
+                    if changed:
+                        changed_paths.append(item["path"])
             except Exception as e:
                 state["errors"] += 1
-                add_log(f"Scanfehler: {p.relative_to(MUSIC_ROOT)} - {e}", True)
+                add_log(f"Scanfehler: {rel} - {e}", True)
             state["done"] += 1
             if state["done"] % 100 == 0:
                 con.commit()
+
+        # Invalidate analyses only for files that actually changed. Keep old
+        # analysis data for unchanged files so a normal rescan does not wipe
+        # hours of LUFS work.
+        if changed_paths:
+            qmarks = ",".join("?" for _ in changed_paths)
+            con.execute(f"DELETE FROM analysis WHERE track_id IN (SELECT id FROM tracks WHERE path IN ({qmarks}))", changed_paths)
+            add_log(f"Analysewerte für {len(changed_paths)} geänderte Datei(en) zurückgesetzt")
+
+        missing = [path for path in existing.keys() if path not in seen_paths]
+        if missing:
+            qmarks = ",".join("?" for _ in missing)
+            con.execute(f"DELETE FROM analysis WHERE track_id IN (SELECT id FROM tracks WHERE path IN ({qmarks}))", missing)
+            con.execute(f"DELETE FROM tracks WHERE path IN ({qmarks})", missing)
+            add_log(f"Entfernte Dateien aus Datenbank gelöscht: {len(missing)}")
+
         con.commit()
     add_log(f"Scan fertig: {state['done']}/{state['total']} Dateien, Fehler {state['errors']}")
     state.update({"running": False, "mode": "idle", "current": "", "message": "Scan fertig", "last_finished": time.time()})
@@ -444,7 +482,7 @@ def startup():
 
 @app.get("/api/health")
 def health():
-    return {"ok": True, "version": "0.7.2", "music_root": str(MUSIC_ROOT), "db": str(DB_PATH)}
+    return {"ok": True, "version": "0.8.0", "music_root": str(MUSIC_ROOT), "db": str(DB_PATH)}
 
 
 @app.post("/api/scan")
