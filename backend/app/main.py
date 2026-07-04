@@ -18,7 +18,7 @@ DB_PATH = Path(os.getenv("DB_PATH", "/data/musiclab.sqlite"))
 EXTS = {".mp3", ".m4a", ".aac", ".flac", ".ogg"}
 SCHEMA_VERSION = 8
 
-app = FastAPI(title="MusicLab API", version="0.8.0")
+app = FastAPI(title="MusicLab API", version="0.9.0")
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
 
 state = {
@@ -475,6 +475,135 @@ def normalize_worker(artist: Optional[str] = None, album: Optional[str] = None, 
     add_log(f"Normalisierung fertig: {state['done']}/{state['total']} Titel, Fehler {state['errors']}")
     state.update({"running": False, "mode": "idle", "current": "", "message": "Normalisierung fertig", "last_finished": time.time()})
 
+
+def album_label(artist: Optional[str], album: str) -> str:
+    return f"{artist} - {album}" if artist else album
+
+
+def normalize_album_item(item: dict) -> dict:
+    album = str(item.get("album", "")).strip()
+    artist_raw = item.get("artist")
+    artist = str(artist_raw).strip() if artist_raw is not None and str(artist_raw).strip() else None
+    if not album:
+        raise ValueError("Album fehlt")
+    return {"artist": artist, "album": album}
+
+
+def rows_for_album_item(item: dict):
+    return selected_rows(item.get("artist"), item.get("album"))
+
+
+def batch_preview_items(items: list) -> list:
+    settings = get_settings()
+    try:
+        target = float(settings.get("target_lufs", "-16"))
+    except Exception:
+        target = -16.0
+    out = []
+    with db() as con:
+        for raw in items:
+            item = normalize_album_item(raw)
+            summary = album_summary(con, item.get("artist"), item.get("album"))
+            tracks = summary.get("tracks") or 0
+            analyzed = summary.get("analyzed") or 0
+            current = summary.get("avg_lufs")
+            delta = round(target - float(current), 2) if current is not None else None
+            can = bool(tracks and analyzed == tracks and current is not None)
+            reason = None
+            if not tracks:
+                reason = "Album nicht gefunden"
+            elif analyzed != tracks:
+                reason = "Album zuerst vollständig analysieren"
+            elif current is None:
+                reason = "Keine Analysewerte vorhanden"
+            out.append({
+                "artist": item.get("artist"),
+                "album": item.get("album"),
+                "label": album_label(item.get("artist"), item.get("album")),
+                "tracks": tracks,
+                "analyzed": analyzed,
+                "current_lufs": current,
+                "target_lufs": target,
+                "gain_delta": delta,
+                "can_normalize": can,
+                "reason": reason,
+            })
+    return out
+
+
+def analyze_batch_worker(items: list):
+    init_db()
+    albums = []
+    for raw in items:
+        try:
+            albums.append(normalize_album_item(raw))
+        except Exception as e:
+            state["errors"] += 1
+            add_log(f"Batch-Auswahl übersprungen: {e}", True)
+    all_rows = []
+    for item in albums:
+        rows = rows_for_album_item(item)
+        for row in rows:
+            row["_album_label"] = album_label(item.get("artist"), item.get("album"))
+        all_rows.extend(rows)
+    state.update({"running": True, "mode": "batch_analysis", "done": 0, "total": len(all_rows), "current": "", "message": "Batch-Analyse läuft", "errors": 0, "recent_errors": []})
+    add_log(f"Batch-Analyse gestartet: {len(albums)} Album/Alben, {len(all_rows)} Titel")
+    with db() as con:
+        for row in all_rows:
+            state["current"] = f"{row.get('_album_label','')} / {row['path']}".strip(" /")
+            try:
+                result = analyze_track_file(MUSIC_ROOT / row["path"])
+                upsert_analysis(con, row["id"], result)
+            except Exception as e:
+                state["errors"] += 1
+                upsert_analysis(con, row["id"], None, str(e))
+                add_log(f"Analysefehler: {row['path']} - {e}", True)
+            state["done"] += 1
+            con.commit()
+    add_log(f"Batch-Analyse fertig: {state['done']}/{state['total']} Titel, Fehler {state['errors']}")
+    state.update({"running": False, "mode": "idle", "current": "", "message": "Batch-Analyse fertig", "last_finished": time.time()})
+
+
+def normalize_batch_worker(items: list, backup_mode: Optional[str] = None):
+    init_db()
+    settings = get_settings()
+    if backup_mode is not None:
+        settings["backup_mode"] = backup_mode
+    previews = batch_preview_items(items)
+    blocked = [p for p in previews if not p.get("can_normalize")]
+    if blocked:
+        names = "; ".join(f"{p['label']}: {p.get('reason') or 'nicht möglich'}" for p in blocked[:5])
+        state.update({"running": False, "mode": "idle", "done": 0, "total": 0, "current": "", "message": "Batch-Normalisierung abgebrochen", "errors": len(blocked), "recent_errors": []})
+        add_log(f"Batch-Normalisierung abgebrochen: {names}", True)
+        return
+    albums = [normalize_album_item(p) for p in previews]
+    all_rows = []
+    for item in albums:
+        rows = rows_for_album_item(item)
+        for row in rows:
+            row["_album_label"] = album_label(item.get("artist"), item.get("album"))
+        all_rows.extend(rows)
+    state.update({"running": True, "mode": "batch_normalize", "done": 0, "total": len(all_rows), "current": "", "message": f"Batch-Normalisierung auf {settings.get('target_lufs')} LUFS", "errors": 0, "recent_errors": []})
+    add_log(f"Batch-Normalisierung gestartet: {len(albums)} Album/Alben, {len(all_rows)} Titel auf {settings.get('target_lufs')} LUFS, Backup: {settings.get('backup_mode','on')}")
+    with db() as con:
+        for row in all_rows:
+            state["current"] = f"{row.get('_album_label','')} / {row['path']}".strip(" /")
+            try:
+                normalize_file(row["path"], settings, settings.get("backup_mode", "on"))
+                # Direkt nach jedem normalisierten Titel neu analysieren, damit Albumkarte
+                # und Titelliste nach Abschluss aktuelle Werte zeigen.
+                result = analyze_track_file(MUSIC_ROOT / row["path"])
+                upsert_analysis(con, row["id"], result)
+                add_log(f"Normalisiert: {row['path']}")
+            except Exception as e:
+                state["errors"] += 1
+                upsert_analysis(con, row["id"], None, str(e))
+                add_log(f"Normalisierungsfehler: {row['path']} - {e}", True)
+            state["done"] += 1
+            con.commit()
+    add_log(f"Batch-Normalisierung fertig: {state['done']}/{state['total']} Titel, Fehler {state['errors']}")
+    state.update({"running": False, "mode": "idle", "current": "", "message": "Batch-Normalisierung fertig", "last_finished": time.time()})
+
 @app.on_event("startup")
 def startup():
     init_db()
@@ -482,7 +611,7 @@ def startup():
 
 @app.get("/api/health")
 def health():
-    return {"ok": True, "version": "0.8.0", "music_root": str(MUSIC_ROOT), "db": str(DB_PATH)}
+    return {"ok": True, "version": "0.9.0", "music_root": str(MUSIC_ROOT), "db": str(DB_PATH)}
 
 
 @app.post("/api/scan")
@@ -541,6 +670,46 @@ def normalize_preview(album: str, artist: Optional[str] = None):
         "can_normalize": can,
         "reason": reason,
     }
+
+
+@app.post("/api/analyze_batch")
+def analyze_batch(data: dict):
+    items = data.get("albums") or []
+    if not isinstance(items, list) or not items:
+        raise HTTPException(status_code=400, detail="Keine Alben übergeben")
+    if not state["running"]:
+        threading.Thread(target=analyze_batch_worker, args=(items,), daemon=True).start()
+    return state
+
+
+@app.post("/api/normalize_preview_batch")
+def normalize_preview_batch(data: dict):
+    items = data.get("albums") or []
+    if not isinstance(items, list) or not items:
+        raise HTTPException(status_code=400, detail="Keine Alben übergeben")
+    settings = get_settings()
+    preview = batch_preview_items(items)
+    return {
+        "items": preview,
+        "count_albums": len(preview),
+        "count_tracks": sum(int(p.get("tracks") or 0) for p in preview),
+        "can_normalize": all(p.get("can_normalize") for p in preview),
+        "target_lufs": settings.get("target_lufs"),
+        "true_peak": settings.get("true_peak"),
+        "lra": settings.get("lra"),
+        "backup_mode": settings.get("backup_mode", "on"),
+    }
+
+
+@app.post("/api/normalize_batch")
+def normalize_batch(data: dict):
+    items = data.get("albums") or []
+    backup = data.get("backup")
+    if not isinstance(items, list) or not items:
+        raise HTTPException(status_code=400, detail="Keine Alben übergeben")
+    if not state["running"]:
+        threading.Thread(target=normalize_batch_worker, args=(items, backup), daemon=True).start()
+    return state
 
 
 @app.get("/api/settings")

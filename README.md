@@ -1,11 +1,19 @@
-# MusicLab v0.8.0
+# MusicLab v0.9.0
 
-Verbesserungen:
+Größerer Schritt Richtung produktiver Batch-Nutzung.
 
-- Scan ignoriert macOS-AppleDouble-Dateien (`._*.mp3`) sauber.
-- Scan löscht Analysewerte nicht mehr komplett: Unveränderte Dateien behalten ihre LUFS-Werte.
-- Analysewerte werden nur bei geänderten/gelöschten Dateien zurückgesetzt.
-- Referenzalbum wird auf Albumkarten deutlicher mit „Referenz“ markiert.
-- Version auf v0.8.0 aktualisiert.
+Neu:
 
-Hinweis: Bestehende Datenbank kann bleiben. Beim nächsten Scan bleiben vorhandene Analysewerte erhalten.
+- Mehrfachauswahl von Alben über Checkboxen auf den Albumkarten.
+- Sichtbare Alben können gesammelt ausgewählt werden.
+- Ausgewählte Alben können gesammelt analysiert werden.
+- Ausgewählte Alben können gesammelt normalisiert werden.
+- Vor Batch-Normalisierung erscheint eine gemeinsame Vorschau mit Ziel-LUFS und dB-Änderung pro Album.
+- Normalisierung startet nur, wenn alle ausgewählten Alben vollständig analysiert sind.
+- Nach jeder Normalisierung wird der jeweilige Titel direkt neu analysiert, damit Werte danach aktuell sind.
+- Batch-Fortschritt und Log laufen über die bestehende Statusanzeige.
+- `data/` ist wieder im ZIP enthalten.
+
+Hinweis:
+
+Bestehende Datenbank kann bleiben. Nach dem Entpacken wie gewohnt Projekt neu starten und Browser hart neu laden.
