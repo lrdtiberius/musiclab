@@ -1,6 +1,6 @@
-# MusicLab v1.1.1
+# MusicLab v1.1.2
 
-## Änderungen v1.1.1
+## Änderungen v1.1.2
 
 - Referenzalbum-Button in die Albumsektion verschoben.
 - Titelbereich aufgeräumt: dort bleibt nur die Titelnormalisierung.
@@ -17,7 +17,15 @@
 
 
 
-## v1.1.1
+## v1.1.2
 - Ein-Bildschirm-Layout: Header, Inhalte und Footer bleiben sichtbar.
 - Interpreten/Alben, Albumliste, Titelliste, Log und Historie scrollen intern.
 - Footer mit „Idea by Lrd.Tiberius“ bleibt dauerhaft sichtbar.
+
+
+## Änderungen v1.1.2
+- Kompakte Infozeile für Interpreten, Alben, Titel, analysierte Titel und Dauer.
+- Backup/Parallelität statt DB-Schema-Kachel.
+- Stern vor der Referenzalbum-Überschrift entfernt.
+- Logbereich vergrößert und lesbarer gemacht.
+- Ein-Bildschirm-Layout bleibt erhalten.
