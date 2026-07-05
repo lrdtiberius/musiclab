@@ -368,3 +368,7 @@ body.mediaMode .footerCredit{grid-column:1;grid-row:2}
 .mediaTracks th,.mediaTracks td{padding:7px 8px}
 .buttonLike.disabled{opacity:.45;pointer-events:none}
 @media(max-width:1100px){.mediaColumns{grid-template-columns:1fr}.mediaCol{min-height:180px}.mediaPage{grid-template-rows:auto minmax(0,1fr)}}
+
+.tagCoverRow{display:flex;align-items:center;gap:12px;margin:4px 0 12px 0}
+.tagCoverBox{width:72px!important;height:72px!important}
+.mediaCol input#mediaArtistSearch{margin-bottom:10px;width:100%}

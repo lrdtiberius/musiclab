@@ -13,10 +13,11 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 from typing import Optional, Tuple
 
-from fastapi import FastAPI, HTTPException, Response
+from fastapi import FastAPI, HTTPException, Response, UploadFile, File as FastAPIFile
 from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
 from mutagen import File as MutagenFile
+from mutagen.id3 import ID3, APIC, ID3NoHeaderError
 
 DEFAULT_MUSIC_ROOT = Path(os.getenv("MUSIC_ROOT", "/music"))
 DB_PATH = Path(os.getenv("DB_PATH", "/data/musiclab.sqlite"))
@@ -24,9 +25,9 @@ LOG_DIR = Path(os.getenv("LOG_DIR", str(DB_PATH.parent / "logs")))
 LOG_PATH = LOG_DIR / "musiclab.log"
 LOG_MAX_BYTES = int(os.getenv("LOG_MAX_BYTES", str(10 * 1024 * 1024)))
 EXTS = {".mp3", ".m4a", ".aac", ".flac", ".ogg"}
-SCHEMA_VERSION = 16
+SCHEMA_VERSION = 17
 
-app = FastAPI(title="MusicLab API", version="1.5.2")
+app = FastAPI(title="MusicLab API", version="1.5.3")
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
 
 stop_event = threading.Event()
@@ -1804,10 +1805,112 @@ def api_media_album_tracks(folder: str, artist: Optional[str] = None):
     return out
 
 
+
+
+def _folder_image_response(folder: str):
+    """Return common folder cover images if present."""
+    root = get_music_root().resolve()
+    safe_folder = str(folder or "").strip().strip("/")
+    try:
+        base = (root / safe_folder).resolve()
+        if not base.is_relative_to(root) or not base.exists() or not base.is_dir():
+            return None
+        names = [
+            "cover.jpg", "cover.jpeg", "folder.jpg", "folder.jpeg", "front.jpg", "front.jpeg",
+            "album.jpg", "album.jpeg", "AlbumArt.jpg", "AlbumArtSmall.jpg", "Folder.jpg",
+            "cover.png", "folder.png", "front.png", "album.png",
+        ]
+        for name in names:
+            f = base / name
+            if f.exists() and f.is_file():
+                mt = "image/png" if f.suffix.lower() == ".png" else "image/jpeg"
+                return FileResponse(str(f), media_type=mt)
+        # fallback: first jpg/png in folder, but skip macOS metadata
+        for f in sorted(base.iterdir(), key=lambda x: x.name.lower()):
+            if f.name.startswith("._"):
+                continue
+            if f.suffix.lower() in {".jpg", ".jpeg", ".png"} and f.is_file():
+                mt = "image/png" if f.suffix.lower() == ".png" else "image/jpeg"
+                return FileResponse(str(f), media_type=mt)
+    except Exception:
+        return None
+    return None
+
+
+@app.post("/api/tags/cover")
+async def api_tags_cover(folder: str, file: UploadFile = FastAPIFile(...)):
+    """Embed an uploaded cover into all MP3 files of a selected album folder.
+
+    Also stores a cover image in the album folder as cover.jpg/cover.png so the media browser
+    can show it even when some files do not expose embedded art reliably.
+    """
+    folder = str(folder or "").strip().strip("/")
+    if not folder:
+        raise HTTPException(status_code=400, detail="folder fehlt")
+    ctype = (file.content_type or "").lower()
+    raw = await file.read()
+    if not raw:
+        raise HTTPException(status_code=400, detail="Leere Datei")
+    if "png" in ctype:
+        mime = "image/png"; suffix = ".png"
+    elif "jpeg" in ctype or "jpg" in ctype or file.filename.lower().endswith((".jpg", ".jpeg")):
+        mime = "image/jpeg"; suffix = ".jpg"
+    elif file.filename.lower().endswith(".png"):
+        mime = "image/png"; suffix = ".png"
+    else:
+        raise HTTPException(status_code=400, detail="Bitte JPG oder PNG verwenden")
+
+    root = get_music_root().resolve()
+    base = (root / folder).resolve()
+    if not base.is_relative_to(root) or not base.exists() or not base.is_dir():
+        raise HTTPException(status_code=404, detail="Albumordner nicht gefunden")
+
+    rows = [r for r in _media_rows() if parent_folder_key(r.get("path") or "") == folder]
+    updated = 0; errors = []
+    for r in rows:
+        rel = r.get("path") or ""
+        p = (root / rel).resolve()
+        if not p.is_relative_to(root) or not p.exists():
+            continue
+        if p.suffix.lower() != ".mp3":
+            # Folder cover remains available; embedded cover for non-MP3 can be added later.
+            continue
+        try:
+            try:
+                tags = ID3(str(p))
+            except ID3NoHeaderError:
+                tags = ID3()
+            tags.delall("APIC")
+            tags.add(APIC(encoding=3, mime=mime, type=3, desc="Cover", data=raw))
+            tags.save(str(p), v2_version=3)
+            updated += 1
+        except Exception as e:
+            if len(errors) < 20:
+                errors.append(f"{rel}: {e}")
+    try:
+        # Store a folder-level image as stable fallback.
+        for old in base.glob("cover.*"):
+            if old.is_file() and old.suffix.lower() in {".jpg", ".jpeg", ".png"}:
+                try: old.unlink()
+                except Exception: pass
+        (base / ("cover" + suffix)).write_bytes(raw)
+    except Exception as e:
+        if len(errors) < 20:
+            errors.append(f"Ordner-Cover konnte nicht gespeichert werden: {e}")
+    log(f"Cover gesetzt: {folder} ({updated} MP3-Dateien)")
+    return {"ok": True, "updated": updated, "total": len(rows), "errors": errors}
+
 @app.get("/api/media/cover")
 def api_media_cover(folder: str, artist: Optional[str] = None):
     folder = str(folder or "").strip().strip("/")
-    rows = [r for r in _media_rows() if _folder_matches(r, folder, artist)]
+    # First try folder-level images (cover.jpg/folder.jpg/etc.).
+    resp = _folder_image_response(folder)
+    if resp is not None:
+        return resp
+    # For covers, folder match is usually enough and more robust than filtering by artist.
+    rows = [r for r in _media_rows() if parent_folder_key(r.get("path") or "") == folder]
+    if artist and not rows:
+        rows = [r for r in _media_rows() if _folder_matches(r, folder, artist)]
     root = get_music_root().resolve()
     for r in rows:
         try:
