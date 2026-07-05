@@ -276,7 +276,7 @@ body.settingsMode aside.panel{display:none!important}
 .clearSearch{position:absolute;right:6px;top:50%;transform:translateY(-50%);width:26px;height:26px;padding:0;border-radius:999px;background:#303847;color:var(--muted);font-size:17px;line-height:24px}
 .clearSearch:hover{background:#3a4353;color:var(--txt)}
 
-/* v1.4.0: Tag-Suche per Dropdown */
+/* v1.4.1: Tag-Suche per Dropdown */
 .headerStatus{
   flex:1 1 360px;
   min-width:260px;

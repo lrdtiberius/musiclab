@@ -1,5 +1,5 @@
 const API='http://'+location.hostname+':8091/api';
-const APP_VERSION='1.4.0';
+const APP_VERSION='1.4.1';
 let selectedArtist=null, selectedAlbum=null, selectedTagFolder=null;
 let selectedTagGenre=null, selectedTagYear=null;
 let browserMode='artist';
@@ -455,8 +455,11 @@ async function loadAlbumBrowser(){
     browserList.innerHTML=a.map(x=>{
       const active = x.folder===selectedTagFolder;
       const artistData = x.artist && Number(x.artist_count||0)===1 ? ` data-artist="${encodeURIComponent(x.artist)}"` : '';
-      const tagHint = x.tag_album && x.tag_album!==x.album ? ` · Tag: ${escHtml(x.tag_album)}` : '';
-      return `<div class="row ${active?'sel':''}" data-folder="${encodeURIComponent(x.folder||'')}" data-album="${encodeURIComponent(x.album)}"${artistData}><b>${escHtml(x.album)}</b><br><span class="small">${escHtml(x.artist)} · ${x.tracks} Titel · ${x.analyzed}/${x.tracks} analysiert${tagHint}</span></div>`;
+      const cleanTagAlbum = x.tag_album && x.tag_album !== 'Mehrere Album-Tags' ? x.tag_album : '';
+      const shownAlbum = cleanTagAlbum || x.album;
+      const folderHint = cleanTagAlbum && cleanTagAlbum !== x.album ? ` · Ordner: ${escHtml(x.album)}` : '';
+      const tagHint = x.tag_album === 'Mehrere Album-Tags' ? ' · Tag: Mehrere Album-Tags' : folderHint;
+      return `<div class="row ${active?'sel':''}" data-folder="${encodeURIComponent(x.folder||'')}" data-album="${encodeURIComponent(shownAlbum)}"${artistData}><b>${escHtml(shownAlbum)}</b><br><span class="small">${escHtml(x.artist)} · ${x.tracks} Titel · ${x.analyzed}/${x.tracks} analysiert${tagHint}</span></div>`;
     }).join('') || '<div class="empty">Keine Albumordner gefunden.</div>';
     bindAlbumRows();
     return;
@@ -920,8 +923,18 @@ async function saveAlbumTags(){
   const album=document.getElementById('tagAlbumName')?.value||'';
   const year=document.getElementById('tagYear')?.value||'';
   const genre=document.getElementById('tagGenre')?.value||'';
-  const updates=rows.map(r=>({path:r.dataset.path, artist, album, year, genre}));
-  await saveTagUpdates(updates, 'Album-Tags gespeichert. Danach ist ein Scan sinnvoll.');
+  const total=(document.getElementById('tagTrackTotal')?.value||'').trim();
+  const discTotal=(document.getElementById('tagDiscTotal')?.value||'').trim();
+  const updates=rows.map(r=>{
+    const raw=(r.querySelector('.tagTrack')?.value||'').trim();
+    const num=raw.split('/')[0].trim();
+    const tracknumber = num ? (total ? `${num}/${total}` : num) : '';
+    const discRaw=(r.querySelector('.tagDisc')?.value||'').trim();
+    const discNum=discRaw.split('/')[0].trim();
+    const discnumber = discNum ? (discTotal ? `${discNum}/${discTotal}` : discNum) : '';
+    return {path:r.dataset.path, artist, album, year, genre, tracknumber, discnumber};
+  });
+  await saveTagUpdates(updates, 'Album-Tags gespeichert.', {album});
 }
 async function saveTrackTags(){
   const rows=[...document.querySelectorAll('#tagTracks tr[data-path]')];
@@ -939,11 +952,33 @@ async function saveTrackTags(){
   });
   await saveTagUpdates(updates, 'Titel-Tags gespeichert.');
 }
-async function saveTagUpdates(updates, okMsg){
+async function saveTagUpdates(updates, okMsg, opts={}){
+  const wasTags=currentView==='tags';
+  const keepFolder=selectedTagFolder;
+  const keepAlbum=opts.album || selectedAlbum;
+  const keepArtist=selectedArtist;
   try{
     const res=await j(API+'/tags/update',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({updates})});
     alert(`${okMsg}\nGespeichert: ${res.updated}/${res.total}`+(res.errors?.length?'\nFehler:\n'+res.errors.join('\n'):''));
-    await loadStats(); await loadBrowser(); await loadAlbums(); await loadGenreOptions(); if(selectedAlbum) await selectAlbum(selectedAlbum);
+    if(opts.album) selectedAlbum=opts.album;
+    await loadStats();
+    await loadGenreOptions();
+    if(wasTags){
+      if(keepFolder!==null && keepFolder!==undefined){
+        selectedTagFolder=keepFolder;
+        selectedAlbum=keepAlbum || selectedAlbum;
+        selectedArtist=keepArtist;
+        await loadBrowser();
+        await loadTagsPage();
+      }else{
+        await loadBrowser();
+        await loadTagsPage();
+      }
+    }else{
+      await loadBrowser();
+      await loadAlbums();
+      if(selectedAlbum) await selectAlbum(selectedAlbum);
+    }
   }catch(e){alert('Tags konnten nicht gespeichert werden:\n'+e.message)}
 }
 
