@@ -1,5 +1,5 @@
 const API='http://'+location.hostname+':8091/api';
-const APP_VERSION='1.5.1';
+const APP_VERSION='1.5.2';
 let selectedArtist=null, selectedAlbum=null, selectedTagFolder=null;
 let selectedTagGenre=null, selectedTagYear=null;
 let browserMode='artist';
@@ -15,6 +15,10 @@ function fmt(n,d=1){return n===null||n===undefined?'':Number(n).toFixed(d)}
 function dur(s){s=Number(s||0);let h=Math.floor(s/3600),m=Math.floor((s%3600)/60);return h?`${h}h ${m}m`:`${m}m`}
 function trackNo(t){if(!t.track_number)return'';return (!t.track_total || Number(t.track_total)===0) ? String(t.track_number) : `${t.track_number}/${t.track_total}`}
 function relPath(p){return String(p||'').replace(/^\/music\//,'')}
+function coverBox(src, large=false){
+  const cls=large?'mediaCoverBox large':'mediaCoverBox';
+  return `<div class="${cls}"><div class="coverFallback">♪</div><img src="${src}" loading="lazy" onload="this.parentElement.classList.add('hasCover')" onerror="this.remove()" alt=""></div>`;
+}
 function escHtml(v){return String(v ?? '').replace(/[&<>"]/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]))}
 function resetTagFilters(){
   selectedArtist=null;
@@ -1043,7 +1047,7 @@ async function loadMediaAlbums(sort){
   albumsBox.innerHTML=albums.map(x=>{
     const cover=API+'/media/cover?folder='+encodeURIComponent(x.folder||'')+'&artist='+encodeURIComponent(selectedMediaArtist);
     const sel=x.folder===selectedMediaFolder;
-    return `<div class="mediaAlbumRow ${sel?'sel':''}" data-folder="${encodeURIComponent(x.folder||'')}" data-album="${encodeURIComponent(x.album||'')}"><img src="${cover}" onerror="this.style.display='none'" alt=""><div><b>${escHtml(x.album)}</b><br><span class="small">${x.tracks} Titel · ${x.analyzed}/${x.tracks} analysiert · ${dur(x.duration)}</span><br><span class="small">${escHtml(x.folder||'')}</span></div></div>`;
+    return `<div class="mediaAlbumRow ${sel?'sel':''}" data-folder="${encodeURIComponent(x.folder||'')}" data-album="${encodeURIComponent(x.album||'')}">${coverBox(cover)}<div><b>${escHtml(x.album)}</b><br><span class="small">${x.tracks} Titel · ${x.analyzed}/${x.tracks} analysiert · ${dur(x.duration)}</span><br><span class="small">${escHtml(x.folder||'')}</span></div></div>`;
   }).join('') || '<div class="empty">Keine Alben gefunden.</div>';
   albumsBox.querySelectorAll('[data-folder]').forEach(el=>{el.onclick=()=>selectMediaAlbum(decodeURIComponent(el.dataset.folder), decodeURIComponent(el.dataset.album||''));});
   if(selectedMediaFolder) await loadMediaTracks();
@@ -1070,7 +1074,7 @@ async function loadMediaTracks(){
   const album=selectedMediaAlbum || (tracks[0]?.album) || 'Album';
   const duration=tracks.reduce((a,x)=>a+Number(x.duration||0),0);
   if(head){
-    head.innerHTML=`<img class="mediaCoverLarge" src="${cover}" onerror="this.style.display='none'" alt=""><div><b>${escHtml(selectedMediaArtist||'')}</b><br>${escHtml(album)}<br><span>${tracks.length} Titel · ${dur(duration)} · ${escHtml(selectedMediaFolder)}</span></div>`;
+    head.innerHTML=`${coverBox(cover,true)}<div><b>${escHtml(selectedMediaArtist||'')}</b><br>${escHtml(album)}<br><span>${tracks.length} Titel · ${dur(duration)} · ${escHtml(selectedMediaFolder)}</span></div>`;
   }
   if(dl){
     dl.classList.remove('disabled');

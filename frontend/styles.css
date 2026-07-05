@@ -336,7 +336,7 @@ body.settingsMode aside.panel{display:none!important}
 .buttonLike{display:inline-block;background:var(--panel2);color:var(--text);padding:7px 10px;border-radius:8px;text-decoration:none;font-weight:700;border:1px solid var(--line)}
 .buttonLike:hover{filter:brightness(1.1)}
 
-/* v1.5.1: Medienseite als eigener Browser, ohne linke Suchleiste */
+/* v1.5.2: stabile Cover-Platzhalter, Medienseite als eigener Browser */
 body.mediaMode .layout{grid-template-columns:1fr!important}
 body.mediaMode aside.panel{display:none!important}
 body.mediaMode main{grid-template-columns:1fr!important;grid-template-rows:minmax(0,1fr) 18px!important}
@@ -353,7 +353,12 @@ body.mediaMode .footerCredit{grid-column:1;grid-row:2}
 .mediaList{overflow:auto;min-height:0;flex:1;padding-right:4px}
 .mediaAlbumRow{display:grid;grid-template-columns:58px 1fr;gap:10px;align-items:center;background:var(--panel2);border-radius:12px;padding:10px;cursor:pointer;margin-bottom:8px;border:1px solid transparent}
 .mediaAlbumRow:hover,.mediaAlbumRow.sel{border-color:var(--accent);background:#253044}
-.mediaAlbumRow img{width:58px;height:58px;object-fit:cover;border-radius:8px;background:#111722}
+.mediaCoverBox{width:58px;height:58px;border-radius:8px;background:#111722;display:flex;align-items:center;justify-content:center;position:relative;overflow:hidden;flex:0 0 auto}
+.mediaCoverBox.large{width:84px;height:84px;border-radius:10px}
+.mediaCoverBox img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;display:none}
+.mediaCoverBox.hasCover img{display:block}
+.coverFallback{font-size:26px;color:#6f7c91;line-height:1}
+.mediaCoverBox.large .coverFallback{font-size:38px}
 .mediaTracksCol{min-width:0}
 .mediaAlbumHead{display:flex;align-items:center;gap:12px;background:#111722;border:1px solid #303847;border-radius:12px;padding:10px;margin-bottom:10px;color:var(--txt)}
 .mediaAlbumHead span{color:var(--muted)}
