@@ -51,6 +51,7 @@ function renderBatchBar(){
   const disabled = uiBusy || count===0;
   if(btnBatchAnalyze) btnBatchAnalyze.disabled=disabled;
   if(btnBatchNorm) btnBatchNorm.disabled=disabled;
+  if(typeof btnBatchRef !== 'undefined' && btnBatchRef) btnBatchRef.disabled = uiBusy || count!==1;
 }
 
 function clearTrackSelection(){
@@ -92,6 +93,29 @@ function toggleBatchAlbum(artist, album, checked){
 }
 
 function selectedBatchArray(){return Array.from(selectedBatch.values())}
+async function setSelectedBatchReference(){
+  const items=selectedBatchArray();
+  if(items.length!==1) return;
+  const item=items[0];
+  try{
+    const ref=await j(API+'/reference',{
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({artist:item.artist || '', album:item.album})
+    });
+    reference=ref;
+    selectedArtist=item.artist || selectedArtist;
+    selectedAlbum=item.album;
+    await loadSettings();
+    await loadReference();
+    await loadBrowser();
+    await loadAlbums();
+    await selectAlbum(item.album);
+    status.textContent='Referenzalbum gesetzt';
+  }catch(e){
+    alert('Referenz konnte nicht gesetzt werden:\n'+e.message+'\n\nHinweis: Das Album muss zuerst analysiert sein.');
+  }
+}
 function clearBatchSelection(){selectedBatch.clear();document.querySelectorAll('.album .pick').forEach(c=>c.checked=false);renderBatchBar()}
 function selectVisibleAlbums(){
   document.querySelectorAll('#albums .album[data-album]').forEach(el=>{

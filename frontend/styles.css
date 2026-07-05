@@ -172,3 +172,32 @@ th,td{padding:7px 8px}
 /* v1.2.1 Musikpfad-Einstellungen */
 .okText{color:var(--ok)!important}.warnText{color:var(--gold)!important}
 .dialog input#musicRoot{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+
+/* v1.2.2: Albumaktionen auf Checkbox-Auswahl reduziert */
+.albumPanel .sectionHead{
+  display:flex!important;
+  align-items:baseline!important;
+  gap:10px!important;
+  margin-bottom:6px!important;
+}
+.albumPanel .sectionHead h2{margin:0!important;flex:0 0 auto!important}
+.albumPanel .albumTools{margin:0!important;min-height:0!important;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.albumPanel .sectionHead button[style*="display:none"]{display:none!important}
+.albumPanel .batchbar{
+  margin:0 0 8px!important;
+  padding:7px 8px!important;
+  display:none;
+  grid-template-columns:auto repeat(5,max-content);
+  align-items:center;
+  gap:6px!important;
+}
+.albumPanel .batchbar.show{display:grid!important}
+.albumPanel .batchbar b{margin:0 8px 0 0!important;font-size:13px!important;white-space:nowrap;flex:auto!important}
+.albumPanel .batchbar button{padding:6px 8px!important;font-size:12px!important;flex:none!important;white-space:nowrap}
+.albumPanel .albums{flex:1!important;min-height:0!important;overflow-y:auto!important}
+.albumPanel .album{min-height:76px!important}
+@media(max-width:1300px){
+  .albumPanel .batchbar{grid-template-columns:1fr 1fr;}
+  .albumPanel .batchbar b{grid-column:1 / -1}
+  .albumPanel .batchbar button{width:100%}
+}
