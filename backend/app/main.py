@@ -1399,6 +1399,84 @@ def get_library_album(album: str):
         return dict(row)
 
 
+
+
+def parent_folder_key(rel_path: str) -> str:
+    try:
+        parent = Path(str(rel_path)).parent.as_posix()
+        return "" if parent == "." else parent
+    except Exception:
+        return ""
+
+
+def folder_display_name(folder: str) -> str:
+    if not folder:
+        return "Musik"
+    name = Path(folder).name
+    return name or folder
+
+
+@app.get("/api/tag_albums")
+def get_tag_albums(q: str = "", artist: Optional[str] = None):
+    """Folder-based album list for the tag editor.
+
+    This deliberately groups by the physical album folder instead of existing
+    album tags. It prevents broken/foreign tags from merging unrelated files
+    into one pseudo album while the user is trying to repair metadata.
+    """
+    q_norm = (q or "").strip().lower()
+    artist_norm = (artist or "").strip().lower()
+    with db() as con:
+        rows = [dict(r) for r in con.execute(
+            """
+            SELECT t.path,t.artist,t.album,t.title,t.duration,a.track_id AS analyzed
+            FROM tracks t LEFT JOIN analysis a ON a.track_id=t.id AND a.status='ok'
+            ORDER BY t.path COLLATE NOCASE
+            """
+        ).fetchall()]
+    groups = {}
+    for r in rows:
+        folder = parent_folder_key(r.get("path") or "")
+        hay = " ".join([folder, r.get("artist") or "", r.get("album") or "", r.get("title") or ""]).lower()
+        if q_norm and q_norm not in hay:
+            continue
+        if artist_norm and (r.get("artist") or "").strip().lower() != artist_norm:
+            continue
+        g = groups.setdefault(folder, {"folder": folder, "album": folder_display_name(folder), "artists": set(), "tag_albums": set(), "tracks": 0, "analyzed": 0, "duration": 0.0})
+        if r.get("artist"):
+            g["artists"].add(r.get("artist"))
+        if r.get("album"):
+            g["tag_albums"].add(r.get("album"))
+        g["tracks"] += 1
+        g["analyzed"] += 1 if r.get("analyzed") is not None else 0
+        g["duration"] += float(r.get("duration") or 0)
+    out = []
+    for g in groups.values():
+        artists = sorted(g.pop("artists"), key=lambda x: x.lower())
+        tag_albums = sorted(g.pop("tag_albums"), key=lambda x: x.lower())
+        g["artist"] = artists[0] if len(artists) == 1 else ("Verschiedene Interpreten" if artists else "")
+        g["artist_count"] = len(artists)
+        g["tag_album"] = tag_albums[0] if len(tag_albums) == 1 else ("Mehrere Album-Tags" if tag_albums else "")
+        out.append(g)
+    out.sort(key=lambda x: (x.get("album") or "").lower())
+    return out[:1000]
+
+
+@app.get("/api/tracks_by_folder")
+def get_tracks_by_folder(folder: str):
+    folder = str(folder or "").strip().strip("/")
+    with db() as con:
+        rows = [dict(r) for r in con.execute(
+            """
+            SELECT t.id,t.artist,t.album,t.title,t.track_raw,t.track_number,t.track_total,t.disc_raw,t.disc_number,t.disc_total,t.genre,t.year,t.duration,t.codec,t.bitrate,t.sample_rate,t.channels,t.path,t.filename,
+            a.input_i,a.input_tp,a.input_lra,a.status AS analysis_status
+            FROM tracks t LEFT JOIN analysis a ON a.track_id=t.id
+            ORDER BY COALESCE(t.disc_number,1), COALESCE(t.track_number,9999), t.title COLLATE NOCASE, t.path COLLATE NOCASE
+            """
+        ).fetchall()]
+    return [r for r in rows if parent_folder_key(r.get("path") or "") == folder]
+
+
 @app.get("/api/tracks")
 def get_tracks(album: str, artist: Optional[str] = None):
     where = "WHERE t.album=?"

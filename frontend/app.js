@@ -1,6 +1,6 @@
 const API='http://'+location.hostname+':8091/api';
-const APP_VERSION='1.3.5';
-let selectedArtist=null, selectedAlbum=null;
+const APP_VERSION='1.3.6';
+let selectedArtist=null, selectedAlbum=null, selectedTagFolder=null;
 let browserMode='artist';
 let lastRunning=false;
 let uiBusy=false;
@@ -273,7 +273,7 @@ function albumFullyAnalyzed(){
 function updateNormalizeGuard(){
   const ok = !!selectedAlbum && albumFullyAnalyzed() && !uiBusy;
   btnNorm.disabled = !ok;
-  if(!selectedAlbum){
+  if(!selectedAlbum && selectedTagFolder===null){
     normalizePreview.textContent='';
   }else if(!albumFullyAnalyzed()){
     normalizePreview.textContent='Normalisierung gesperrt: Album zuerst vollständig analysieren.';
@@ -316,11 +316,20 @@ function bindArtistRows(){
 }
 
 function bindAlbumRows(){
-  document.querySelectorAll('#browserList .row[data-album]').forEach(el=>{
-    el.onclick=()=>selectAlbumFromBrowser(
-      decodeURIComponent(el.dataset.album),
-      el.dataset.artist ? decodeURIComponent(el.dataset.artist) : null
-    );
+  document.querySelectorAll('#browserList .row[data-album], #browserList .row[data-folder]').forEach(el=>{
+    el.onclick=()=>{
+      if(el.dataset.folder && currentView==='tags'){
+        return selectTagFolder(
+          decodeURIComponent(el.dataset.folder),
+          decodeURIComponent(el.dataset.album || ''),
+          el.dataset.artist ? decodeURIComponent(el.dataset.artist) : null
+        );
+      }
+      return selectAlbumFromBrowser(
+        decodeURIComponent(el.dataset.album),
+        el.dataset.artist ? decodeURIComponent(el.dataset.artist) : null
+      );
+    };
   });
 }
 
@@ -364,13 +373,16 @@ async function loadAlbumBrowser(){
   // Tags-Ansicht: Wenn ein Interpret gewählt ist und kein Suchbegriff gesetzt ist,
   // zeigen wir dessen Alben. Sobald gesucht wird, sucht der Album-Tab wieder global.
   // Dadurch funktioniert die Albumsuche auch nach einem vorherigen Interpreten-Klick.
-  if(currentView==='tags' && selectedArtist && !rawQ){
-    a=await j(API+'/albums?artist='+encodeURIComponent(selectedArtist));
-    browserTitle.textContent='Alben von '+selectedArtist;
+  if(currentView==='tags'){
+    const url = API+'/tag_albums?q='+q + (selectedArtist && !rawQ ? '&artist='+encodeURIComponent(selectedArtist) : '');
+    a=await j(url);
+    browserTitle.textContent = selectedArtist && !rawQ ? 'Albumordner von '+selectedArtist : (rawQ ? 'Albumordner suchen' : 'Albumordner');
     browserList.innerHTML=a.map(x=>{
-      const active = x.album===selectedAlbum;
-      return `<div class="row ${active?'sel':''}" data-album="${encodeURIComponent(x.album)}" data-artist="${encodeURIComponent(selectedArtist)}"><b>${escHtml(x.album)}</b><br><span class="small">${x.tracks} Titel · ${x.analyzed}/${x.tracks} analysiert</span></div>`;
-    }).join('') || '<div class="empty">Keine Alben gefunden.</div>';
+      const active = x.folder===selectedTagFolder;
+      const artistData = x.artist && Number(x.artist_count||0)===1 ? ` data-artist="${encodeURIComponent(x.artist)}"` : '';
+      const tagHint = x.tag_album && x.tag_album!==x.album ? ` · Tag: ${escHtml(x.tag_album)}` : '';
+      return `<div class="row ${active?'sel':''}" data-folder="${encodeURIComponent(x.folder||'')}" data-album="${encodeURIComponent(x.album)}"${artistData}><b>${escHtml(x.album)}</b><br><span class="small">${escHtml(x.artist)} · ${x.tracks} Titel · ${x.analyzed}/${x.tracks} analysiert${tagHint}</span></div>`;
+    }).join('') || '<div class="empty">Keine Albumordner gefunden.</div>';
     bindAlbumRows();
     return;
   }
@@ -399,6 +411,7 @@ async function loadNewBrowser(){
 }
 
 async function selectAlbumFromBrowser(album, artist=null){
+  selectedTagFolder=null;
   selectedArtist=artist;
   selectedAlbum=album;
   await loadBrowser();
@@ -406,10 +419,19 @@ async function selectAlbumFromBrowser(album, artist=null){
   await selectAlbum(album);
 }
 
+async function selectTagFolder(folder, displayAlbum, artist=null){
+  selectedTagFolder=folder || '';
+  selectedAlbum=displayAlbum || folder || '';
+  selectedArtist=artist || null;
+  await loadBrowser();
+  await loadTagsPage();
+}
+
 async function selectArtist(a, keepAlbum=false){
   selectedArtist=a;
   if(!keepAlbum){
     selectedAlbum=null;
+    selectedTagFolder=null;
   }
 
   // Tags-Ansicht: ein Klick auf einen Interpreten zeigt sofort dessen Alben in der linken Liste.
@@ -720,38 +742,40 @@ async function loadGenreOptions(){
 }
 
 async function getTagTrackUrl(){
-  // Sampler/Compilations bestehen aus mehreren Interpreten. In diesem Fall darf
-  // die Tags-Seite nicht auf den zuletzt angeklickten Interpreten filtern,
-  // sonst stimmt z. B. "Tracks pro Album" nicht.
+  if(selectedTagFolder!==null && selectedTagFolder!==undefined){
+    return {url:API+'/tracks_by_folder?folder='+encodeURIComponent(selectedTagFolder), useArtist:null, byFolder:true};
+  }
   let useArtist = selectedArtist;
   try{
     const meta = await j(API+'/library_album?album='+encodeURIComponent(selectedAlbum));
     if(Number(meta.artist_count||0)>1) useArtist = null;
-  }catch(e){/* fallback: aktuelles Verhalten */}
+  }catch(e){/* fallback */}
   let url=API+'/tracks?album='+encodeURIComponent(selectedAlbum);
   if(useArtist) url+='&artist='+encodeURIComponent(useArtist);
-  return {url, useArtist};
+  return {url, useArtist, byFolder:false};
 }
 
 async function loadTagsPage(){
   const body=document.getElementById('tagTracks'); const hint=document.getElementById('tagHint');
   if(!body||!hint)return;
-  if(!selectedAlbum){
+  if(!selectedAlbum && selectedTagFolder===null){
     hint.textContent = selectedArtist ? 'Bitte links ein Album von '+selectedArtist+' auswählen.' : 'Noch kein Album ausgewählt.';
     body.innerHTML='';
     const tt=document.getElementById('tagTrackTotal'); if(tt)tt.value=''; const dt=document.getElementById('tagDiscTotal'); if(dt)dt.value='';
     return;
   }
   try{
-    const {url, useArtist}=await getTagTrackUrl();
+    const {url, useArtist, byFolder}=await getTagTrackUrl();
     const rows=await j(url);
-    hint.textContent=`${useArtist?useArtist+' · ':''}${selectedAlbum} · ${rows.length} Titel`;
+    hint.textContent=`${byFolder?'Ordner · ':''}${useArtist?useArtist+' · ':''}${selectedAlbum} · ${rows.length} Titel`;
     if(rows.length){
       const first=rows[0];
       const aa=document.getElementById('tagAlbumArtist'), al=document.getElementById('tagAlbumName'), tt=document.getElementById('tagTrackTotal'), dt=document.getElementById('tagDiscTotal'), yr=document.getElementById('tagYear'), ge=document.getElementById('tagGenre');
-      if(aa)aa.value=first.artist||selectedArtist||'';
-      if(al)al.value=first.album||selectedAlbum||'';
-      if(tt)tt.value=first.track_total && Number(first.track_total)>0 ? first.track_total : rows.length;
+      const artists=[...new Set(rows.map(r=>r.artist||'').filter(Boolean))];
+      const albums=[...new Set(rows.map(r=>r.album||'').filter(Boolean))];
+      if(aa)aa.value=artists.length===1 ? artists[0] : '';
+      if(al)al.value=byFolder ? (selectedAlbum||first.album||'') : (albums.length===1 ? albums[0] : (selectedAlbum||''));
+      if(tt)tt.value=rows.length;
       const discTotals=rows.map(r=>Number(r.disc_total||0)).filter(n=>n>0);
       if(dt)dt.value=discTotals.length ? Math.max(...discTotals) : '';
       if(yr)yr.value=first.year||'';
