@@ -267,3 +267,10 @@ body.settingsMode aside.panel{display:none}.layout:has(main .settingsPage.active
 
 body.settingsMode .layout{grid-template-columns:1fr!important}
 body.settingsMode aside.panel{display:none!important}
+
+
+/* v1.3.3: Suchfeld mit Löschen-X */
+.searchBox{position:relative;margin-bottom:12px;flex:0 0 auto}
+.searchBox input{width:100%;padding-right:36px;margin:0}
+.clearSearch{position:absolute;right:6px;top:50%;transform:translateY(-50%);width:26px;height:26px;padding:0;border-radius:999px;background:#303847;color:var(--muted);font-size:17px;line-height:24px}
+.clearSearch:hover{background:#3a4353;color:var(--txt)}

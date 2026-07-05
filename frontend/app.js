@@ -1,5 +1,5 @@
 const API='http://'+location.hostname+':8091/api';
-const APP_VERSION='1.3.2';
+const APP_VERSION='1.3.3';
 let selectedArtist=null, selectedAlbum=null;
 let browserMode='artist';
 let lastRunning=false;
@@ -14,6 +14,11 @@ function dur(s){s=Number(s||0);let h=Math.floor(s/3600),m=Math.floor((s%3600)/60
 function trackNo(t){if(!t.track_number)return'';return (!t.track_total || Number(t.track_total)===0) ? String(t.track_number) : `${t.track_number}/${t.track_total}`}
 function relPath(p){return String(p||'').replace(/^\/music\//,'')}
 function escHtml(v){return String(v ?? '').replace(/[&<>"]/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]))}
+function clearSearch(){
+  if(!search) return;
+  search.value='';
+  loadBrowser();
+}
 async function j(url,opt){
   const r = await fetch(url,opt);
   if(!r.ok){
@@ -338,11 +343,13 @@ async function loadArtists(){
 }
 
 async function loadAlbumBrowser(){
-  let q=encodeURIComponent(search.value||'');
+  const rawQ=(search.value||'').trim();
+  let q=encodeURIComponent(rawQ);
   let a;
-  // In der Tags-Ansicht soll ein gewählter Interpret direkt zu dessen Alben führen.
-  // In der Audio-Ansicht bleibt der Album-Tab global.
-  if(currentView==='tags' && selectedArtist){
+  // Tags-Ansicht: Wenn ein Interpret gewählt ist und kein Suchbegriff gesetzt ist,
+  // zeigen wir dessen Alben. Sobald gesucht wird, sucht der Album-Tab wieder global.
+  // Dadurch funktioniert die Albumsuche auch nach einem vorherigen Interpreten-Klick.
+  if(currentView==='tags' && selectedArtist && !rawQ){
     a=await j(API+'/albums?artist='+encodeURIComponent(selectedArtist));
     browserTitle.textContent='Alben von '+selectedArtist;
     browserList.innerHTML=a.map(x=>{
@@ -353,11 +360,11 @@ async function loadAlbumBrowser(){
     return;
   }
   a=await j(API+'/library_albums?q='+q);
-  browserTitle.textContent='Alben';
+  browserTitle.textContent= rawQ ? 'Alben suchen' : 'Alben';
   browserList.innerHTML=a.map(x=>{
     const oneArtist = Number(x.artist_count||0)===1;
     const artistData = oneArtist ? ` data-artist="${encodeURIComponent(x.artist)}"` : '';
-    const active = x.album===selectedAlbum && (!selectedArtist || x.artist===selectedArtist);
+    const active = x.album===selectedAlbum && (!selectedArtist || x.artist===selectedArtist || !oneArtist);
     return `<div class="row ${active?'sel':''}" data-album="${encodeURIComponent(x.album)}"${artistData}><b>${escHtml(x.album)}</b><br><span class="small">${escHtml(x.artist)} · ${x.tracks} Titel · ${x.analyzed}/${x.tracks} analysiert</span></div>`;
   }).join('') || '<div class="empty">Keine Alben gefunden.</div>';
   bindAlbumRows();
@@ -688,6 +695,20 @@ async function checkMusicRootPage(){
     else{dst.textContent='⚠ Pfad nicht nutzbar: '+(res.exists?'kein lesbarer Ordner':'nicht gefunden');dst.className='small warnText'}
   }catch(e){dst.textContent='⚠ Prüfung fehlgeschlagen: '+e.message;dst.className='small warnText'}
 }
+async function getTagTrackUrl(){
+  // Sampler/Compilations bestehen aus mehreren Interpreten. In diesem Fall darf
+  // die Tags-Seite nicht auf den zuletzt angeklickten Interpreten filtern,
+  // sonst stimmt z. B. "Tracks pro Album" nicht.
+  let useArtist = selectedArtist;
+  try{
+    const meta = await j(API+'/library_album?album='+encodeURIComponent(selectedAlbum));
+    if(Number(meta.artist_count||0)>1) useArtist = null;
+  }catch(e){/* fallback: aktuelles Verhalten */}
+  let url=API+'/tracks?album='+encodeURIComponent(selectedAlbum);
+  if(useArtist) url+='&artist='+encodeURIComponent(useArtist);
+  return {url, useArtist};
+}
+
 async function loadTagsPage(){
   const body=document.getElementById('tagTracks'); const hint=document.getElementById('tagHint');
   if(!body||!hint)return;
@@ -697,10 +718,10 @@ async function loadTagsPage(){
     const tt=document.getElementById('tagTrackTotal'); if(tt)tt.value='';
     return;
   }
-  let url=API+'/tracks?album='+encodeURIComponent(selectedAlbum); if(selectedArtist)url+='&artist='+encodeURIComponent(selectedArtist);
   try{
+    const {url, useArtist}=await getTagTrackUrl();
     const rows=await j(url);
-    hint.textContent=`${selectedArtist?selectedArtist+' · ':''}${selectedAlbum} · ${rows.length} Titel`;
+    hint.textContent=`${useArtist?useArtist+' · ':''}${selectedAlbum} · ${rows.length} Titel`;
     if(rows.length){
       const first=rows[0];
       const aa=document.getElementById('tagAlbumArtist'), al=document.getElementById('tagAlbumName'), tt=document.getElementById('tagTrackTotal');

@@ -1,4 +1,4 @@
-# MusicLab v1.3.2
+# MusicLab v1.3.3
 
 Musikbibliothek scannen, LUFS/True-Peak/LRA analysieren und Alben oder Titel normalisieren.
 
@@ -78,3 +78,9 @@ Idea by Lrd.Tiberius.
 - Einstellungen sind jetzt eine eigene Ansicht statt Popup.
 - Neue Tags-Ansicht zum Bearbeiten von Album- und Titel-Tags.
 - Version auf v1.3.2 aktualisiert.
+
+
+## v1.3.3
+- Albumsuche funktioniert wieder global, auch wenn vorher ein Interpret ausgewählt wurde.
+- Suchfeld hat ein X zum schnellen Leeren.
+- Tags-Seite berechnet „Tracks pro Album“ bei Samplern/mehreren Interpreten über das komplette Album statt nur über den zuletzt gewählten Interpreten.
