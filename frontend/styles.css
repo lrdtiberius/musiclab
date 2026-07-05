@@ -201,3 +201,38 @@ th,td{padding:7px 8px}
   .albumPanel .batchbar b{grid-column:1 / -1}
   .albumPanel .batchbar button{width:100%}
 }
+
+/* v1.2.3: Albumaktionen als Dropdown statt gequetschter Buttonleiste */
+.albumPanel .batchbar{
+  display:none;
+  grid-template-columns:1fr minmax(150px,220px) auto;
+  align-items:center;
+  gap:8px;
+  margin:6px 0 8px;
+  padding:8px;
+  overflow:visible;
+}
+.albumPanel .batchbar.show{display:grid!important}
+.albumPanel .batchbar b{
+  margin:0!important;
+  font-size:13px!important;
+  white-space:nowrap;
+  overflow:hidden;
+  text-overflow:ellipsis;
+}
+.albumAction{
+  width:100%;
+  min-width:0;
+  padding:7px 9px;
+  font-size:12px;
+  background:#0f1218;
+  color:var(--txt);
+  border:1px solid #333b49;
+}
+#btnAlbumAction{padding:7px 10px;font-size:12px;white-space:nowrap}
+.albumPanel .albums{min-height:0!important;overflow-y:auto!important}
+@media(max-width:1150px){
+  .albumPanel .batchbar{grid-template-columns:1fr;}
+  .albumPanel .batchbar b{white-space:normal;}
+  #btnAlbumAction,.albumAction{width:100%;}
+}

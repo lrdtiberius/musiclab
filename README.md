@@ -1,4 +1,4 @@
-# MusicLab v1.2.2
+# MusicLab v1.2.3
 
 Musikbibliothek scannen, LUFS/True-Peak/LRA analysieren und Alben oder Titel normalisieren.
 
@@ -52,6 +52,12 @@ Idea by Lrd.Tiberius.
 - Footer mit Idea by Lrd.Tiberius bleibt sichtbar.
 
 
-## v1.2.2
+## v1.2.3
 - Musikpfad kann in den Einstellungen als Container-Pfad angepasst werden.
 - Pfadprüfung für den Musikordner ergänzt.
+
+
+## v1.2.3
+- Albumaktionen im Albumbereich als Dropdown statt breiter Buttonleiste.
+- Albumliste bleibt sichtbar und wird nicht mehr von Aktionsbuttons überlagert.
+- Version auf v1.2.3 aktualisiert.

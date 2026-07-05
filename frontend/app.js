@@ -1,4 +1,5 @@
 const API='http://'+location.hostname+':8091/api';
+const APP_VERSION='1.2.3';
 let selectedArtist=null, selectedAlbum=null;
 let browserMode='artist';
 let lastRunning=false;
@@ -48,10 +49,29 @@ function renderBatchBar(){
   const count=selectedBatch.size;
   batchBar.classList.toggle('show', count>0);
   batchInfo.textContent = count===1 ? '1 Album ausgewählt' : `${count} Alben ausgewählt`;
-  const disabled = uiBusy || count===0;
-  if(btnBatchAnalyze) btnBatchAnalyze.disabled=disabled;
-  if(btnBatchNorm) btnBatchNorm.disabled=disabled;
-  if(typeof btnBatchRef !== 'undefined' && btnBatchRef) btnBatchRef.disabled = uiBusy || count!==1;
+  if(typeof albumAction !== 'undefined' && albumAction){
+    const optRef=albumAction.querySelector('option[value="reference"]');
+    const optAnalyze=albumAction.querySelector('option[value="analyze"]');
+    const optNorm=albumAction.querySelector('option[value="normalize"]');
+    if(optRef) optRef.disabled = count!==1;
+    if(optAnalyze) optAnalyze.disabled = count===0;
+    if(optNorm) optNorm.disabled = count===0;
+    if(count!==1 && albumAction.value==='reference') albumAction.value='';
+    if(count===0 && ['reference','analyze','normalize'].includes(albumAction.value)) albumAction.value='';
+  }
+  if(typeof btnAlbumAction !== 'undefined' && btnAlbumAction){
+    btnAlbumAction.disabled = uiBusy || !(albumAction && albumAction.value);
+  }
+}
+
+async function runAlbumAction(){
+  if(!albumAction || !albumAction.value) return;
+  const action=albumAction.value;
+  if(action==='selectVisible'){ selectVisibleAlbums(); albumAction.value=''; renderBatchBar(); return; }
+  if(action==='clear'){ clearBatchSelection(); albumAction.value=''; renderBatchBar(); return; }
+  if(action==='reference'){ await setSelectedBatchReference(); albumAction.value=''; renderBatchBar(); return; }
+  if(action==='analyze'){ await analyzeSelectedAlbums(); albumAction.value=''; renderBatchBar(); return; }
+  if(action==='normalize'){ await normalizeSelectedAlbums(); albumAction.value=''; renderBatchBar(); return; }
 }
 
 function clearTrackSelection(){
@@ -627,7 +647,7 @@ async function poll(){
   const running=!!s.running;
   if(btnStop) btnStop.disabled=!running;
   if(running){
-    btnAnalyze.disabled=true; btnNorm.disabled=true; btnRef.disabled=true; if(btnTrackNorm)btnTrackNorm.disabled=true; if(btnBatchAnalyze)btnBatchAnalyze.disabled=true; if(btnBatchNorm)btnBatchNorm.disabled=true;
+    btnAnalyze.disabled=true; btnNorm.disabled=true; btnRef.disabled=true; if(btnTrackNorm)btnTrackNorm.disabled=true; if(typeof btnAlbumAction !== 'undefined' && btnAlbumAction) btnAlbumAction.disabled=true;
   }else if(selectedAlbum){
     btnAnalyze.disabled=false; btnRef.disabled=false; updateNormalizeGuard(); updateTrackSelectionUI();
   }
@@ -662,4 +682,5 @@ loadAlbums();
 loadLog();
 loadHistory();
 renderBatchBar();
+if(typeof albumAction !== 'undefined' && albumAction) albumAction.onchange = renderBatchBar;
 poll();
