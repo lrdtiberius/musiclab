@@ -335,3 +335,31 @@ body.settingsMode aside.panel{display:none!important}
 .mediaScroll{overflow:auto;min-height:0;flex:1}
 .buttonLike{display:inline-block;background:var(--panel2);color:var(--text);padding:7px 10px;border-radius:8px;text-decoration:none;font-weight:700;border:1px solid var(--line)}
 .buttonLike:hover{filter:brightness(1.1)}
+
+/* v1.5.1: Medienseite als eigener Browser, ohne linke Suchleiste */
+body.mediaMode .layout{grid-template-columns:1fr!important}
+body.mediaMode aside.panel{display:none!important}
+body.mediaMode main{grid-template-columns:1fr!important;grid-template-rows:minmax(0,1fr) 18px!important}
+body.mediaMode .footerCredit{grid-column:1;grid-row:2}
+.mediaPage{display:none;grid-template-rows:72px minmax(0,1fr);gap:10px;height:100%;min-height:0}
+.mediaPage.active{display:grid!important}
+.mediaPage .tagsHeader{display:flex;align-items:center;justify-content:space-between;gap:14px;min-height:0;padding:12px 16px}
+.mediaPage .tagsHeader h2{margin:0 0 2px 0}
+.mediaTopTools{margin:0;white-space:nowrap}
+.mediaPanel{min-height:0;display:flex;flex-direction:column;padding:12px}
+.mediaColumns{display:grid;grid-template-columns:minmax(230px,24%) minmax(310px,30%) minmax(0,1fr);gap:10px;min-height:0;height:100%}
+.mediaCol{min-height:0;overflow:hidden;background:#171c24;border:1px solid #2a303b;border-radius:14px;padding:12px;display:flex;flex-direction:column}
+.mediaCol h3{margin:0 0 10px 0;font-size:17px}
+.mediaList{overflow:auto;min-height:0;flex:1;padding-right:4px}
+.mediaAlbumRow{display:grid;grid-template-columns:58px 1fr;gap:10px;align-items:center;background:var(--panel2);border-radius:12px;padding:10px;cursor:pointer;margin-bottom:8px;border:1px solid transparent}
+.mediaAlbumRow:hover,.mediaAlbumRow.sel{border-color:var(--accent);background:#253044}
+.mediaAlbumRow img{width:58px;height:58px;object-fit:cover;border-radius:8px;background:#111722}
+.mediaTracksCol{min-width:0}
+.mediaAlbumHead{display:flex;align-items:center;gap:12px;background:#111722;border:1px solid #303847;border-radius:12px;padding:10px;margin-bottom:10px;color:var(--txt)}
+.mediaAlbumHead span{color:var(--muted)}
+.mediaCoverLarge{width:84px;height:84px;object-fit:cover;border-radius:10px;background:#111722;flex:0 0 auto}
+.mediaTracks{overflow:auto;min-height:0;flex:1;border-top:1px solid #303847}
+.mediaTracks table{font-size:13px}
+.mediaTracks th,.mediaTracks td{padding:7px 8px}
+.buttonLike.disabled{opacity:.45;pointer-events:none}
+@media(max-width:1100px){.mediaColumns{grid-template-columns:1fr}.mediaCol{min-height:180px}.mediaPage{grid-template-rows:auto minmax(0,1fr)}}

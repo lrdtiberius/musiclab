@@ -1,4 +1,5 @@
 import json
+import io
 import os
 import re
 import sqlite3
@@ -13,7 +14,7 @@ from pathlib import Path
 from typing import Optional, Tuple
 
 from fastapi import FastAPI, HTTPException, Response
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
 from mutagen import File as MutagenFile
 
@@ -25,7 +26,7 @@ LOG_MAX_BYTES = int(os.getenv("LOG_MAX_BYTES", str(10 * 1024 * 1024)))
 EXTS = {".mp3", ".m4a", ".aac", ".flac", ".ogg"}
 SCHEMA_VERSION = 16
 
-app = FastAPI(title="MusicLab API", version="1.5.0")
+app = FastAPI(title="MusicLab API", version="1.5.1")
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
 
 stop_event = threading.Event()
@@ -1464,6 +1465,26 @@ def folder_display_name(folder: str) -> str:
     return name or folder
 
 
+def _media_rows():
+    with db() as con:
+        return [dict(r) for r in con.execute(
+            """
+            SELECT t.id,t.artist,t.album,t.title,t.track_raw,t.track_number,t.track_total,t.disc_raw,t.disc_number,t.disc_total,t.genre,t.year,t.duration,t.codec,t.bitrate,t.sample_rate,t.channels,t.path,t.filename,
+            a.input_i,a.input_tp,a.input_lra,a.status AS analysis_status
+            FROM tracks t LEFT JOIN analysis a ON a.track_id=t.id
+            ORDER BY t.artist COLLATE NOCASE, t.album COLLATE NOCASE, COALESCE(t.disc_number,1), COALESCE(t.track_number,9999), t.title COLLATE NOCASE, t.path COLLATE NOCASE
+            """
+        ).fetchall()]
+
+
+def _folder_matches(row, folder: str, artist: Optional[str] = None):
+    if parent_folder_key(row.get("path") or "") != folder:
+        return False
+    if artist and (row.get("artist") or "").strip().lower() != artist.strip().lower():
+        return False
+    return True
+
+
 @app.get("/api/tag_albums")
 def get_tag_albums(q: str = "", artist: Optional[str] = None, genre: Optional[str] = None, year: Optional[str] = None):
     """Folder-based album list for the tag editor.
@@ -1730,6 +1751,92 @@ def update_tags(payload: dict):
             msg += f", Fehler {len(errors)}"
         add_log(msg, bool(errors))
     return {"updated": updated, "total": len(updates), "moved": moved, "album_exists": album_exists, "moves": move_preview, "errors": errors[:50]}
+
+
+
+@app.get("/api/media/artists")
+def api_media_artists(sort: str = "artist"):
+    groups = {}
+    for r in _media_rows():
+        artist = r.get("artist") or "Unbekannter Interpret"
+        folder = parent_folder_key(r.get("path") or "")
+        g = groups.setdefault(artist, {"artist": artist, "tracks": 0, "albums": set(), "duration": 0.0})
+        g["tracks"] += 1
+        g["albums"].add(folder)
+        g["duration"] += float(r.get("duration") or 0)
+    out = []
+    for g in groups.values():
+        out.append({"artist": g["artist"], "tracks": g["tracks"], "albums": len(g["albums"]), "duration": g["duration"]})
+    if sort == "album":
+        out.sort(key=lambda x: (x["albums"], x["artist"].lower()))
+    else:
+        out.sort(key=lambda x: x["artist"].lower())
+    return out[:5000]
+
+
+@app.get("/api/media/artist_albums")
+def api_media_artist_albums(artist: str, sort: str = "artist"):
+    artist_norm = (artist or "").strip().lower()
+    groups = {}
+    for r in _media_rows():
+        if artist_norm and (r.get("artist") or "").strip().lower() != artist_norm:
+            continue
+        folder = parent_folder_key(r.get("path") or "")
+        album = r.get("album") or folder_display_name(folder) or "Unbekanntes Album"
+        key = folder
+        g = groups.setdefault(key, {"artist": artist or r.get("artist") or "Unbekannter Interpret", "album": album, "folder": folder, "tracks": 0, "analyzed": 0, "duration": 0.0})
+        g["tracks"] += 1
+        g["analyzed"] += 1 if r.get("analysis_status") == "ok" else 0
+        g["duration"] += float(r.get("duration") or 0)
+    out = list(groups.values())
+    if sort == "album":
+        out.sort(key=lambda x: ((x.get("album") or "").lower(), (x.get("folder") or "").lower()))
+    else:
+        out.sort(key=lambda x: ((x.get("artist") or "").lower(), (x.get("album") or "").lower(), (x.get("folder") or "").lower()))
+    return out[:5000]
+
+
+@app.get("/api/media/album_tracks")
+def api_media_album_tracks(folder: str, artist: Optional[str] = None):
+    folder = str(folder or "").strip().strip("/")
+    out = [r for r in _media_rows() if _folder_matches(r, folder, artist)]
+    out.sort(key=lambda r: (int(r.get("disc_number") or 1), int(r.get("track_number") or 9999), (r.get("title") or "").lower(), (r.get("path") or "").lower()))
+    return out
+
+
+@app.get("/api/media/cover")
+def api_media_cover(folder: str, artist: Optional[str] = None):
+    folder = str(folder or "").strip().strip("/")
+    rows = [r for r in _media_rows() if _folder_matches(r, folder, artist)]
+    root = get_music_root().resolve()
+    for r in rows:
+        try:
+            p = (root / (r.get("path") or "")).resolve()
+            if not p.is_relative_to(root) or not p.exists():
+                continue
+            mf = MutagenFile(str(p))
+            if not mf:
+                continue
+            # MP3 ID3 APIC frames
+            tags = getattr(mf, "tags", None)
+            if tags:
+                for key, val in tags.items():
+                    if str(key).startswith("APIC") and getattr(val, "data", None):
+                        mime = getattr(val, "mime", None) or "image/jpeg"
+                        return StreamingResponse(io.BytesIO(val.data), media_type=mime)
+                # MP4/M4A covr
+                covr = tags.get("covr") if hasattr(tags, "get") else None
+                if covr:
+                    data = bytes(covr[0])
+                    return StreamingResponse(io.BytesIO(data), media_type="image/jpeg")
+            # FLAC pictures
+            pics = getattr(mf, "pictures", None)
+            if pics:
+                pic = pics[0]
+                return StreamingResponse(io.BytesIO(pic.data), media_type=pic.mime or "image/jpeg")
+        except Exception:
+            continue
+    raise HTTPException(status_code=404, detail="Kein Cover gefunden")
 
 
 @app.get("/api/media_albums")

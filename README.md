@@ -1,16 +1,15 @@
-# MusicLab v1.5.0
+# MusicLab v1.5.1
 
-Musikbibliothek analysieren, normalisieren und Tags bearbeiten.
+Musikbibliothek analysieren, normalisieren, Tags bearbeiten und Medien durchsuchen.
 
-## Neu in v1.5.0
+## Neu in v1.5.1
 
-- Neue Hauptseite **Medien** mit Datenbankübersicht der lokalen Bibliothek.
-- Album-Download vorbereitet: Download erzeugt ein ZIP des Albumordners.
-- Option in **Einstellungen → Tags & Sortierung**: Dateien nach Tag-Änderung sortieren.
-- Sortierschema: `Interpret/Album/Titel.ext`.
-- Dateiname entspricht dem Tracktitel.
-- Bestehende Dateien werden nicht überschrieben, sondern als `Duplikat` gekennzeichnet.
-- Wenn ein Ziel-Albumordner bereits existiert, wird dies im Ergebnis/Log berücksichtigt.
+- Medien-Seite überarbeitet als Browser **Interpret → Album → Titel**.
+- Linke Audio-/Tags-Suche wird auf der Medien-Seite ausgeblendet.
+- Sortierung der Medienansicht nach **Interpret** oder **Album**.
+- Albumliste zeigt Coverbilder, wenn sie in den Dateien vorhanden sind.
+- Albumdetails zeigen Cover, Titel, Dauer, Bitrate und Pfad.
+- Download-Button bleibt für Albumordner als ZIP erhalten.
 
 ## Installation Synology
 
