@@ -189,6 +189,8 @@ async function loadSettings(){
   if(s.parallel_analysis) parallelAnalysis.value=s.parallel_analysis;
   if(typeof musicRoot!=='undefined' && s.music_root) musicRoot.value=s.music_root;
   if(typeof watchMode!=='undefined' && s.watch_mode) watchMode.value=s.watch_mode;
+  if(typeof sortAfterTags!=='undefined' && s.sort_after_tags) sortAfterTags.value=s.sort_after_tags;
+  if(typeof sortAfterTagsPage!=='undefined' && s.sort_after_tags) sortAfterTagsPage.value=s.sort_after_tags;
   updateTargetInfo();
   if(typeof syncSettingsPageFromMain==='function') syncSettingsPageFromMain();
 }
@@ -206,7 +208,7 @@ async function saveSettings(){
   await j(API+'/settings',{
     method:'POST',
     headers:{'Content-Type':'application/json'},
-    body:JSON.stringify({target_lufs:targetLufs.value,true_peak:truePeak.value,lra:lra.value,backup_mode:backupMode.value,parallel_analysis:parallelAnalysis.value,music_root:musicRoot.value,watch_mode:watchMode.value})
+    body:JSON.stringify({target_lufs:targetLufs.value,true_peak:truePeak.value,lra:lra.value,backup_mode:backupMode.value,parallel_analysis:parallelAnalysis.value,music_root:musicRoot.value,watch_mode:watchMode.value,sort_after_tags:(typeof sortAfterTags!=='undefined'?sortAfterTags.value:(typeof sortAfterTagsPage!=='undefined'?sortAfterTagsPage.value:'off'))})
   });
   updateTargetInfo();
 }
@@ -799,7 +801,7 @@ let currentView='audio';
 function setAppView(view){
   currentView=view;
   document.querySelectorAll('.appView').forEach(el=>el.classList.toggle('active', el.id===view+'View'));
-  [['tabAudio','audio'],['tabTags','tags'],['tabSettings','settings']].forEach(([id,v])=>{const b=document.getElementById(id); if(b)b.classList.toggle('active', view===v)});
+  [['tabAudio','audio'],['tabTags','tags'],['tabMedia','media'],['tabSettings','settings']].forEach(([id,v])=>{const b=document.getElementById(id); if(b)b.classList.toggle('active', view===v)});
   document.body.classList.toggle('settingsMode', view==='settings');
   if(view==='tags'){
     // Tags arbeitet mit einem Suchtyp-Dropdown. Standard ist Album.
@@ -816,6 +818,9 @@ function setAppView(view){
     if(browserMode==='genre' || browserMode==='year') browserMode='artist';
     updateBrowserTabsForView();
     setBrowserMode(browserMode);
+  }else if(view==='media'){
+    updateBrowserTabsForView();
+    loadMediaPage();
   }else{
     updateBrowserTabsForView();
   }
@@ -824,11 +829,11 @@ function setAppView(view){
 function openSettings(){setAppView('settings')}
 function closeSettings(){setAppView('audio')}
 function syncSettingsPageFromMain(){
-  const pairs=[['targetLufs','targetLufsPage'],['truePeak','truePeakPage'],['lra','lraPage'],['backupMode','backupModePage'],['parallelAnalysis','parallelAnalysisPage'],['musicRoot','musicRootPage'],['watchMode','watchModePage']];
+  const pairs=[['targetLufs','targetLufsPage'],['truePeak','truePeakPage'],['lra','lraPage'],['backupMode','backupModePage'],['parallelAnalysis','parallelAnalysisPage'],['musicRoot','musicRootPage'],['watchMode','watchModePage'],['sortAfterTags','sortAfterTagsPage']];
   for(const [a,b] of pairs){const x=document.getElementById(a), y=document.getElementById(b); if(x&&y)y.value=x.value;}
 }
 function syncSettingsMainFromPage(){
-  const pairs=[['targetLufs','targetLufsPage'],['truePeak','truePeakPage'],['lra','lraPage'],['backupMode','backupModePage'],['parallelAnalysis','parallelAnalysisPage'],['musicRoot','musicRootPage'],['watchMode','watchModePage']];
+  const pairs=[['targetLufs','targetLufsPage'],['truePeak','truePeakPage'],['lra','lraPage'],['backupMode','backupModePage'],['parallelAnalysis','parallelAnalysisPage'],['musicRoot','musicRootPage'],['watchMode','watchModePage'],['sortAfterTags','sortAfterTagsPage']];
   for(const [a,b] of pairs){const x=document.getElementById(a), y=document.getElementById(b); if(x&&y)x.value=y.value;}
 }
 async function saveSettingsAndStay(){
@@ -966,7 +971,7 @@ async function saveTagUpdates(updates, okMsg, opts={}){
   const keepAlbum=opts.album || selectedAlbum;
   const keepArtist=selectedArtist;
   try{
-    const res=await j(API+'/tags/update',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({updates})});
+    const res=await j(API+'/tags/update',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({updates,sort_files:(document.getElementById('sortAfterTags')?.value==='on'||document.getElementById('sortAfterTagsPage')?.value==='on')})});
     const msg = `${okMsg} Gespeichert: ${res.updated}/${res.total}` + (res.errors?.length ? ` · Fehler: ${res.errors.length}` : '');
     progressText.textContent = msg;
     status.textContent = msg;
@@ -991,6 +996,20 @@ async function saveTagUpdates(updates, okMsg, opts={}){
       if(selectedAlbum) await selectAlbum(selectedAlbum);
     }
   }catch(e){alert('Tags konnten nicht gespeichert werden:\n'+e.message)}
+}
+
+
+async function loadMediaPage(){
+  const body=document.getElementById('mediaRows'); if(!body)return;
+  try{
+    const q=(document.getElementById('mediaSearch')?.value||'').trim();
+    const rows=await j(API+'/media_albums?q='+encodeURIComponent(q));
+    if(!rows.length){body.innerHTML='<tr><td colspan="7" class="small">Keine Medien gefunden.</td></tr>';return;}
+    body.innerHTML=rows.map(x=>{
+      const url=API+'/media/download_album?folder='+encodeURIComponent(x.folder||'');
+      return `<tr><td>${escHtml(x.artist)}</td><td>${escHtml(x.album)}</td><td>${x.tracks}</td><td>${x.analyzed}/${x.tracks}</td><td>${dur(x.duration)}</td><td class="small" title="${escAttr(x.folder)}">${escHtml(x.folder)}</td><td><a class="buttonLike" href="${url}">Download</a></td></tr>`;
+    }).join('');
+  }catch(e){body.innerHTML='<tr><td colspan="7" class="small">Medien konnten nicht geladen werden: '+escHtml(e.message)+'</td></tr>';}
 }
 
 async function loadHistory(){

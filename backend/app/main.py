@@ -4,6 +4,8 @@ import re
 import sqlite3
 import subprocess
 import shutil
+import tempfile
+import zipfile
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -11,6 +13,7 @@ from pathlib import Path
 from typing import Optional, Tuple
 
 from fastapi import FastAPI, HTTPException, Response
+from fastapi.responses import FileResponse
 from fastapi.middleware.cors import CORSMiddleware
 from mutagen import File as MutagenFile
 
@@ -20,9 +23,9 @@ LOG_DIR = Path(os.getenv("LOG_DIR", str(DB_PATH.parent / "logs")))
 LOG_PATH = LOG_DIR / "musiclab.log"
 LOG_MAX_BYTES = int(os.getenv("LOG_MAX_BYTES", str(10 * 1024 * 1024)))
 EXTS = {".mp3", ".m4a", ".aac", ".flac", ".ogg"}
-SCHEMA_VERSION = 15
+SCHEMA_VERSION = 16
 
-app = FastAPI(title="MusicLab API", version="1.3.7")
+app = FastAPI(title="MusicLab API", version="1.5.0")
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
 
 stop_event = threading.Event()
@@ -188,7 +191,7 @@ def init_db():
         )
         con.execute("CREATE INDEX IF NOT EXISTS idx_history_job ON history(job_id)")
         con.execute("CREATE INDEX IF NOT EXISTS idx_history_created ON history(created_at)")
-        defaults = {"target_lufs": "-16", "true_peak": "-1.5", "lra": "11", "backup_mode": "on", "parallel_analysis": "2", "music_root": str(DEFAULT_MUSIC_ROOT), "watch_mode": "off"}
+        defaults = {"target_lufs": "-16", "true_peak": "-1.5", "lra": "11", "backup_mode": "on", "parallel_analysis": "2", "music_root": str(DEFAULT_MUSIC_ROOT), "watch_mode": "off", "sort_after_tags": "off"}
         for k, v in defaults.items():
             con.execute("INSERT OR IGNORE INTO settings(key,value) VALUES(?,?)", (k, v))
         con.execute("INSERT OR REPLACE INTO meta(key,value) VALUES('schema_version', ?)", (str(SCHEMA_VERSION),))
@@ -203,7 +206,7 @@ def get_settings():
 
 def save_settings(data: dict):
     with db() as con:
-        for k in ["target_lufs", "true_peak", "lra", "backup_mode", "parallel_analysis", "music_root", "watch_mode"]:
+        for k in ["target_lufs", "true_peak", "lra", "backup_mode", "parallel_analysis", "music_root", "watch_mode", "sort_after_tags"]:
             if k in data:
                 con.execute("INSERT OR REPLACE INTO settings(key,value) VALUES(?,?)", (k, str(data[k])))
         con.commit()
@@ -477,6 +480,49 @@ def analyze_missing_worker():
         add_log(f"Analyse neuer Titel fertig: {state['done']}/{state['total']} Titel, Fehler {state['errors']}")
         finish_job("Analyse neuer Titel fertig")
 
+
+
+def safe_name(value: str, fallback: str = "Unbekannt") -> str:
+    """Filesystem-safe name for artist/album/title folders and files."""
+    v = str(value or "").strip() or fallback
+    v = re.sub(r'[\\/:*?"<>|]+', ' - ', v)
+    v = re.sub(r'\s+', ' ', v).strip(' .')
+    return v or fallback
+
+
+def unique_target_path(root: Path, rel_target: Path, source: Path) -> Path:
+    """Return a non-destructive target path, adding Duplikat suffix if needed."""
+    target = (root / rel_target).resolve()
+    try:
+        if target == source.resolve():
+            return target
+    except Exception:
+        pass
+    if not target.exists():
+        return target
+    stem = target.stem
+    suffix = target.suffix
+    parent = target.parent
+    i = 1
+    while True:
+        cand = parent / f"{stem} (Duplikat {i}){suffix}"
+        if not cand.exists():
+            return cand
+        i += 1
+
+
+def prune_empty_dirs(start: Path, root: Path):
+    try:
+        cur = start
+        root = root.resolve()
+        while cur.resolve() != root and cur.exists():
+            try:
+                cur.rmdir()
+            except OSError:
+                break
+            cur = cur.parent
+    except Exception:
+        pass
 
 def watcher_loop():
     last = music_snapshot()
@@ -1132,7 +1178,7 @@ def startup():
 
 @app.get("/api/health")
 def health():
-    return {"ok": True, "version": "1.3.7", "music_root": str(get_music_root()), "db": str(DB_PATH)}
+    return {"ok": True, "version": "1.5.0", "music_root": str(get_music_root()), "db": str(DB_PATH)}
 
 
 @app.post("/api/scan")
@@ -1556,13 +1602,19 @@ def get_years():
 def update_tags(payload: dict):
     """Update common audio tags for selected files and keep the DB in sync.
 
-    Expected payload: {"updates":[{"path":"Artist/Album/01.mp3", "title":"...", "artist":"...", "album":"...", "tracknumber":"1/12", "discnumber":"1/2", "year":"2024", "genre":"Rock"}]}
+    Optional payload flag `sort_files` moves/renames files after writing tags to:
+    Artist/Album/Title.ext. The filename intentionally equals the title so
+    duplicates are easy to spot. Existing files are never overwritten.
     """
     updates = payload.get("updates") if isinstance(payload, dict) else None
+    sort_files = bool(payload.get("sort_files")) if isinstance(payload, dict) else False
     if not isinstance(updates, list):
         raise HTTPException(status_code=400, detail="updates fehlt")
     root = get_music_root().resolve()
     updated = 0
+    moved = 0
+    album_exists = False
+    move_preview = []
     errors = []
     with db() as con:
         for item in updates:
@@ -1578,6 +1630,8 @@ def update_tags(payload: dict):
                     raise ValueError("Pfad außerhalb der Musikbibliothek")
                 if not p.exists():
                     raise FileNotFoundError(rel)
+                dbrow = con.execute("SELECT * FROM tracks WHERE path=?", (rel,)).fetchone()
+                old = dict(dbrow) if dbrow else {}
                 audio = MutagenFile(p, easy=True)
                 if audio is None:
                     raise ValueError("Datei kann nicht gelesen werden")
@@ -1605,8 +1659,36 @@ def update_tags(payload: dict):
                                 audio[tag] = []
                         changed[src] = val
                 audio.save()
+
+                current_rel = rel
+                current_path = p
+                if sort_files:
+                    final_artist = changed.get("artist", old.get("artist") or "Unbekannter Interpret")
+                    final_album = changed.get("album", old.get("album") or "Unbekanntes Album")
+                    final_title = changed.get("title", old.get("title") or p.stem)
+                    target_dir_rel = Path(safe_name(final_artist, "Unbekannter Interpret")) / safe_name(final_album, "Unbekanntes Album")
+                    target_dir = (root / target_dir_rel).resolve()
+                    if target_dir.exists() and target_dir != current_path.parent.resolve():
+                        album_exists = True
+                    ext = current_path.suffix or Path(old.get("filename") or current_path.name).suffix or ".mp3"
+                    target_rel = target_dir_rel / f"{safe_name(final_title, current_path.stem)}{ext}"
+                    target = unique_target_path(root, target_rel, current_path)
+                    if target != current_path:
+                        target.parent.mkdir(parents=True, exist_ok=True)
+                        before_rel = current_path.relative_to(root).as_posix()
+                        shutil.move(str(current_path), str(target))
+                        prune_empty_dirs(current_path.parent, root)
+                        current_path = target
+                        current_rel = target.relative_to(root).as_posix()
+                        moved += 1
+                        if len(move_preview) < 20:
+                            move_preview.append({"from": before_rel, "to": current_rel})
+
                 db_updates = []
                 args = []
+                if current_rel != rel:
+                    db_updates.append("path=?"); args.append(current_rel)
+                    db_updates.append("filename=?"); args.append(current_path.name)
                 if "title" in changed:
                     db_updates.append("title=?"); args.append(changed["title"])
                 if "artist" in changed:
@@ -1626,7 +1708,7 @@ def update_tags(payload: dict):
                 if "year" in changed:
                     db_updates.append("year=?"); args.append(changed["year"])
                 try:
-                    st = p.stat()
+                    st = current_path.stat()
                     db_updates += ["size=?", "mtime=?"]
                     args += [st.st_size, st.st_mtime]
                 except Exception:
@@ -1639,8 +1721,64 @@ def update_tags(payload: dict):
                 errors.append(f"{rel}: {e}")
         con.commit()
     if updated:
-        add_log(f"Tags gespeichert: {updated}/{len(updates)} Dateien" + (f", Fehler {len(errors)}" if errors else ""), bool(errors))
-    return {"updated": updated, "total": len(updates), "errors": errors[:50]}
+        msg = f"Tags gespeichert: {updated}/{len(updates)} Dateien"
+        if moved:
+            msg += f", verschoben {moved}"
+        if album_exists:
+            msg += ", Albumordner existierte bereits"
+        if errors:
+            msg += f", Fehler {len(errors)}"
+        add_log(msg, bool(errors))
+    return {"updated": updated, "total": len(updates), "moved": moved, "album_exists": album_exists, "moves": move_preview, "errors": errors[:50]}
+
+
+@app.get("/api/media_albums")
+def api_media_albums(q: str = ""):
+    q_norm = (q or "").strip().lower()
+    with db() as con:
+        rows = [dict(r) for r in con.execute(
+            """
+            SELECT t.artist,t.album,t.path,t.duration,t.id,a.track_id AS analyzed
+            FROM tracks t LEFT JOIN analysis a ON a.track_id=t.id AND a.status='ok'
+            ORDER BY t.artist COLLATE NOCASE, t.album COLLATE NOCASE, t.path COLLATE NOCASE
+            """
+        ).fetchall()]
+    groups = {}
+    for r in rows:
+        artist = r.get("artist") or "Unbekannter Interpret"
+        album = r.get("album") or "Unbekanntes Album"
+        path = r.get("path") or ""
+        folder = parent_folder_key(path)
+        hay = " ".join([artist, album, folder, path]).lower()
+        if q_norm and q_norm not in hay:
+            continue
+        key = (artist.lower(), album.lower(), folder)
+        g = groups.setdefault(key, {"artist": artist, "album": album, "folder": folder, "tracks": 0, "analyzed": 0, "duration": 0.0})
+        g["tracks"] += 1
+        g["analyzed"] += 1 if r.get("analyzed") is not None else 0
+        g["duration"] += float(r.get("duration") or 0)
+    out = list(groups.values())
+    out.sort(key=lambda x: ((x.get("artist") or "").lower(), (x.get("album") or "").lower(), (x.get("folder") or "").lower()))
+    return out[:2000]
+
+
+@app.get("/api/media/download_album")
+def api_download_album(folder: str):
+    folder = str(folder or "").strip().strip("/")
+    if not folder:
+        raise HTTPException(status_code=400, detail="folder fehlt")
+    root = get_music_root().resolve()
+    src = (root / folder).resolve()
+    if not src.is_relative_to(root) or not src.exists() or not src.is_dir():
+        raise HTTPException(status_code=404, detail="Albumordner nicht gefunden")
+    tmpdir = Path(tempfile.mkdtemp(prefix="musiclab_zip_"))
+    name = safe_name(src.name or "album") + ".zip"
+    zpath = tmpdir / name
+    with zipfile.ZipFile(zpath, "w", zipfile.ZIP_DEFLATED) as zf:
+        for p in src.rglob("*"):
+            if p.is_file():
+                zf.write(p, p.relative_to(src.parent))
+    return FileResponse(zpath, media_type="application/zip", filename=name)
 
 
 def album_summary(con, artist: Optional[str], album: str):

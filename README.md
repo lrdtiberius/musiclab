@@ -1,15 +1,25 @@
-# MusicLab v1.4.3
+# MusicLab v1.5.0
 
 Musikbibliothek analysieren, normalisieren und Tags bearbeiten.
 
-## v1.4.3
+## Neu in v1.5.0
 
-- Tags-Ansicht: Ordnerauswahl übernimmt jetzt den aktiven Filterkontext, damit z. B. „Unbekanntes Album“ nur die Titel des gewählten Interpreten zeigt.
-- Track-Gesamtzahl basiert dadurch wieder auf der tatsächlich angezeigten Auswahl.
+- Neue Hauptseite **Medien** mit Datenbankübersicht der lokalen Bibliothek.
+- Album-Download vorbereitet: Download erzeugt ein ZIP des Albumordners.
+- Option in **Einstellungen → Tags & Sortierung**: Dateien nach Tag-Änderung sortieren.
+- Sortierschema: `Interpret/Album/Titel.ext`.
+- Dateiname entspricht dem Tracktitel.
+- Bestehende Dateien werden nicht überschrieben, sondern als `Duplikat` gekennzeichnet.
+- Wenn ein Ziel-Albumordner bereits existiert, wird dies im Ergebnis/Log berücksichtigt.
 
+## Installation Synology
 
-- Tags-Seite: Suchtyp jetzt per Dropdown (Interpret / Album / Genre / Jahr).
-- Suchfeld-X leert Suchbegriff und Filter vollständig.
-- Genre kann bewusst leer gespeichert werden, um falsche Genre-Tags zu entfernen.
-- Version auf v1.4.3 aktualisiert.
+1. Ordner nach `/volume1/docker/musiclab` kopieren.
+2. Im Container Manager Projekt aus `docker-compose.yml` erstellen oder aktualisieren.
+3. Container neu bauen/starten.
 
+## Hinweise
+
+- Der Musikpfad im Container ist standardmäßig `/music`.
+- Der NAS-Musikordner wird in `docker-compose.yml` gemountet.
+- Datenbank, Logs und Backups liegen in `/data`.
