@@ -27,7 +27,7 @@ LOG_MAX_BYTES = int(os.getenv("LOG_MAX_BYTES", str(10 * 1024 * 1024)))
 EXTS = {".mp3", ".m4a", ".aac", ".flac", ".ogg"}
 SCHEMA_VERSION = 21
 
-app = FastAPI(title="MusicLab API", version="1.5.8")
+app = FastAPI(title="MusicLab API", version="1.5.9")
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
 
 stop_event = threading.Event()
@@ -1988,7 +1988,7 @@ async def api_tags_cover(request: Request):
 def api_media_cover(folder: str, artist: Optional[str] = None):
     """Return album cover from embedded metadata.
 
-    v1.5.8 deliberately restores the proven v1.5.1 lookup path: the database
+    v1.5.9 deliberately restores the proven v1.5.1 lookup path: the database
     rows of the selected physical album folder are used as source of truth and
     mutagen reads APIC/covr/FLAC pictures from the audio files. Folder images
     are ignored on purpose; no cover.jpg/folder.jpg files are required or

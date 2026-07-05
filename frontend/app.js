@@ -1,5 +1,5 @@
 const API='http://'+location.hostname+':8091/api';
-const APP_VERSION='1.5.8';
+const APP_VERSION='1.5.9';
 let selectedArtist=null, selectedAlbum=null, selectedTagFolder=null;
 let selectedTagGenre=null, selectedTagYear=null;
 let browserMode='artist';
@@ -19,7 +19,10 @@ function relPath(p){return String(p||'').replace(/^\/music\//,'')}
 function parentFolderFromPath(p){const s=relPath(p); const i=s.lastIndexOf('/'); return i>0?s.slice(0,i):''}
 function coverBox(src, large=false){
   const cls=large?'mediaCoverBox large':'mediaCoverBox';
-  return `<div class="${cls}"><div class="coverFallback">♪</div><img src="${src}" loading="lazy" onload="this.parentElement.classList.add('hasCover')" onerror="this.remove()" alt=""></div>`;
+  // Der Platzhalter bleibt immer vorhanden. Wenn kein eingebettetes Cover
+  // geladen werden kann, wird nur das <img> ausgeblendet, aber die Kachel
+  // behält ihre feste Größe. Dadurch zerreißt die Albumkarte nicht mehr.
+  return `<div class="${cls} noCover"><div class="coverFallback">♪</div><img src="${src}" loading="lazy" onload="this.parentElement.classList.add('hasCover');this.parentElement.classList.remove('noCover')" onerror="this.style.display='none';this.parentElement.classList.add('noCover')" alt=""></div>`;
 }
 function coverUrl(folder, artist=''){return API+'/media/cover?folder='+encodeURIComponent(folder||'')+(artist?'&artist='+encodeURIComponent(artist):'')+'&_='+Date.now();}
 function escHtml(v){return String(v ?? '').replace(/[&<>"]/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]))}
@@ -1102,7 +1105,7 @@ async function loadMediaAlbums(sort){
   albumsBox.innerHTML=albums.map(x=>{
     const cover=coverUrl(x.folder||'', selectedMediaArtist||'');
     const sel=x.folder===selectedMediaFolder;
-    return `<div class="mediaAlbumRow ${sel?'sel':''}" data-folder="${encodeURIComponent(x.folder||'')}" data-album="${encodeURIComponent(x.album||'')}">${coverBox(cover)}<div><b>${escHtml(x.album)}</b><br><span class="small">${x.tracks} Titel · ${x.analyzed}/${x.tracks} analysiert · ${dur(x.duration)}</span><br><span class="small">${escHtml(x.folder||'')}</span></div></div>`;
+    return `<div class="mediaAlbumRow ${sel?'sel':''}" data-folder="${encodeURIComponent(x.folder||'')}" data-album="${encodeURIComponent(x.album||'')}">${coverBox(cover)}<div class="mediaAlbumText"><b>${escHtml(x.album)}</b><br><span class="small">${x.tracks} Titel · ${x.analyzed}/${x.tracks} analysiert · ${dur(x.duration)}</span><br><span class="small pathLine">${escHtml(x.folder||'')}</span></div></div>`;
   }).join('') || '<div class="empty">Keine Alben gefunden.</div>';
   albumsBox.querySelectorAll('[data-folder]').forEach(el=>{el.onclick=()=>selectMediaAlbum(decodeURIComponent(el.dataset.folder), decodeURIComponent(el.dataset.album||''));});
   if(selectedMediaFolder) await loadMediaTracks();
@@ -1129,7 +1132,7 @@ async function loadMediaTracks(){
   const album=selectedMediaAlbum || (tracks[0]?.album) || 'Album';
   const duration=tracks.reduce((a,x)=>a+Number(x.duration||0),0);
   if(head){
-    head.innerHTML=`${coverBox(cover,true)}<div><b>${escHtml(selectedMediaArtist||'')}</b><br>${escHtml(album)}<br><span>${tracks.length} Titel · ${dur(duration)} · ${escHtml(selectedMediaFolder)}</span></div>`;
+    head.innerHTML=`${coverBox(cover,true)}<div class="mediaAlbumText"><b>${escHtml(selectedMediaArtist||'')}</b><br>${escHtml(album)}<br><span>${tracks.length} Titel · ${dur(duration)} · ${escHtml(selectedMediaFolder)}</span></div>`;
   }
   if(dl){
     dl.classList.remove('disabled');

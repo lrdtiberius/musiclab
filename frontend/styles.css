@@ -351,12 +351,16 @@ body.mediaMode .footerCredit{grid-column:1;grid-row:2}
 .mediaCol{min-height:0;overflow:hidden;background:#171c24;border:1px solid #2a303b;border-radius:14px;padding:12px;display:flex;flex-direction:column}
 .mediaCol h3{margin:0 0 10px 0;font-size:17px}
 .mediaList{overflow:auto;min-height:0;flex:1;padding-right:4px}
-.mediaAlbumRow{display:grid;grid-template-columns:58px 1fr;gap:10px;align-items:center;background:var(--panel2);border-radius:12px;padding:10px;cursor:pointer;margin-bottom:8px;border:1px solid transparent}
+.mediaAlbumRow{display:grid;grid-template-columns:58px minmax(0,1fr);gap:10px;align-items:center;background:var(--panel2);border-radius:12px;padding:10px;cursor:pointer;margin-bottom:8px;border:1px solid transparent;min-height:78px}
 .mediaAlbumRow:hover,.mediaAlbumRow.sel{border-color:var(--accent);background:#253044}
-.mediaCoverBox{width:58px;height:58px;border-radius:8px;background:#111722;display:flex;align-items:center;justify-content:center;position:relative;overflow:hidden;flex:0 0 auto}
-.mediaCoverBox.large{width:84px;height:84px;border-radius:10px}
+.mediaCoverBox{width:58px;height:58px;border-radius:8px;background:#111722;display:flex;align-items:center;justify-content:center;position:relative;overflow:hidden;flex:0 0 58px;min-width:58px}
+.mediaCoverBox.large{width:84px;height:84px;border-radius:10px;flex-basis:84px;min-width:84px}
 .mediaCoverBox img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;display:none}
 .mediaCoverBox.hasCover img{display:block}
+.mediaCoverBox.noCover .coverFallback{display:block}
+.mediaAlbumText{min-width:0;overflow:hidden}
+.mediaAlbumText b{display:block;white-space:normal;overflow-wrap:break-word;line-height:1.15}
+.mediaAlbumText .pathLine{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .coverFallback{font-size:26px;color:#6f7c91;line-height:1}
 .mediaCoverBox.large .coverFallback{font-size:38px}
 .mediaTracksCol{min-width:0}
@@ -375,4 +379,4 @@ body.mediaMode .footerCredit{grid-column:1;grid-row:2}
 
 .mediaSearchBox{position:relative;margin-bottom:10px}
 .mediaSearchBox input{width:100%;padding-right:34px}
-.mediaClear{position:absolute;right:6px;top:50%;transform:translateY(-50%);width:24px;height:24px;padding:0;border-radius:50%;display:flex;align-items:center;justify-content:center;background:#303847;color:var(--txt)}
+.mediaClear{position:absolute!important;right:6px;top:50%;transform:translateY(-50%);width:24px;height:24px;padding:0;border-radius:50%;display:flex!important;align-items:center;justify-content:center;background:#303847;color:var(--txt);z-index:3;cursor:pointer}
