@@ -1,8 +1,8 @@
-# MusicLab v1.5.3
+# MusicLab v1.5.4
 
 Musikbibliothek analysieren, normalisieren, Tags bearbeiten und Medien durchsuchen.
 
-## Neu in v1.5.3
+## Neu in v1.5.4
 
 - Medien-Seite überarbeitet als Browser **Interpret → Album → Titel**.
 - Linke Audio-/Tags-Suche wird auf der Medien-Seite ausgeblendet.

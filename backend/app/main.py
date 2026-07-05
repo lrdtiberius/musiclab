@@ -25,9 +25,9 @@ LOG_DIR = Path(os.getenv("LOG_DIR", str(DB_PATH.parent / "logs")))
 LOG_PATH = LOG_DIR / "musiclab.log"
 LOG_MAX_BYTES = int(os.getenv("LOG_MAX_BYTES", str(10 * 1024 * 1024)))
 EXTS = {".mp3", ".m4a", ".aac", ".flac", ".ogg"}
-SCHEMA_VERSION = 17
+SCHEMA_VERSION = 18
 
-app = FastAPI(title="MusicLab API", version="1.5.3")
+app = FastAPI(title="MusicLab API", version="1.5.4")
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
 
 stop_event = threading.Event()
@@ -135,14 +135,41 @@ def init_db():
             )
             """
         )
+        cols = {r["name"] for r in con.execute("PRAGMA table_info(tracks)").fetchall()}
+        # Robust migrations for installations that started with older MusicLab versions.
+        # SQLite does not modify an existing CREATE TABLE IF NOT EXISTS table, so every
+        # column added over time must be checked individually. Missing columns caused
+        # scans to fail in older databases after newer tag/media features were added.
+        required_track_cols = {
+            "filename": "TEXT",
+            "artist": "TEXT",
+            "album": "TEXT",
+            "title": "TEXT",
+            "track_raw": "TEXT",
+            "track_number": "INTEGER",
+            "track_total": "INTEGER",
+            "disc_raw": "TEXT",
+            "disc_number": "INTEGER",
+            "disc_total": "INTEGER",
+            "genre": "TEXT",
+            "year": "TEXT",
+            "duration": "REAL",
+            "codec": "TEXT",
+            "bitrate": "INTEGER",
+            "sample_rate": "INTEGER",
+            "channels": "INTEGER",
+            "size": "INTEGER",
+            "mtime": "REAL",
+            "scanned_at": "REAL",
+        }
+        for col, typ in required_track_cols.items():
+            if col not in cols:
+                con.execute(f"ALTER TABLE tracks ADD COLUMN {col} {typ}")
+        # Normalize legacy NULLs so older rows are still readable and sortable.
+        con.execute("UPDATE tracks SET filename=COALESCE(filename, path), artist=COALESCE(NULLIF(artist,''),'Unbekannter Interpret'), album=COALESCE(NULLIF(album,''),'Unbekanntes Album'), title=COALESCE(NULLIF(title,''), filename, path)")
         con.execute("CREATE UNIQUE INDEX IF NOT EXISTS ux_tracks_path ON tracks(path)")
         con.execute("CREATE INDEX IF NOT EXISTS idx_tracks_artist ON tracks(artist COLLATE NOCASE)")
         con.execute("CREATE INDEX IF NOT EXISTS idx_tracks_album ON tracks(artist COLLATE NOCASE, album COLLATE NOCASE)")
-        cols = {r["name"] for r in con.execute("PRAGMA table_info(tracks)").fetchall()}
-        if "genre" not in cols:
-            con.execute("ALTER TABLE tracks ADD COLUMN genre TEXT")
-        if "year" not in cols:
-            con.execute("ALTER TABLE tracks ADD COLUMN year TEXT")
         con.execute(
             """
             CREATE TABLE IF NOT EXISTS analysis (
@@ -1180,7 +1207,7 @@ def startup():
 
 @app.get("/api/health")
 def health():
-    return {"ok": True, "version": "1.5.0", "music_root": str(get_music_root()), "db": str(DB_PATH)}
+    return {"ok": True, "version": "1.5.4", "music_root": str(get_music_root()), "db": str(DB_PATH)}
 
 
 @app.post("/api/scan")
@@ -1897,7 +1924,7 @@ async def api_tags_cover(folder: str, file: UploadFile = FastAPIFile(...)):
     except Exception as e:
         if len(errors) < 20:
             errors.append(f"Ordner-Cover konnte nicht gespeichert werden: {e}")
-    log(f"Cover gesetzt: {folder} ({updated} MP3-Dateien)")
+    add_log(f"Cover gesetzt: {folder} ({updated} MP3-Dateien)")
     return {"ok": True, "updated": updated, "total": len(rows), "errors": errors}
 
 @app.get("/api/media/cover")
