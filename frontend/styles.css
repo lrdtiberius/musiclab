@@ -236,3 +236,7 @@ th,td{padding:7px 8px}
   .albumPanel .batchbar b{white-space:normal;}
   #btnAlbumAction,.albumAction{width:100%;}
 }
+
+/* v1.3.0: dritte linke Ansicht für neue/offene Alben */
+.modeSwitch.three{grid-template-columns:repeat(3,1fr);display:grid;gap:6px}
+.modeSwitch.three button{min-width:0;padding:8px 7px;font-size:12px}

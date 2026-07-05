@@ -1,5 +1,5 @@
 const API='http://'+location.hostname+':8091/api';
-const APP_VERSION='1.2.3';
+const APP_VERSION='1.3.0';
 let selectedArtist=null, selectedAlbum=null;
 let browserMode='artist';
 let lastRunning=false;
@@ -155,6 +155,7 @@ async function loadSettings(){
   if(s.backup_mode) backupMode.value=s.backup_mode;
   if(s.parallel_analysis) parallelAnalysis.value=s.parallel_analysis;
   if(typeof musicRoot!=='undefined' && s.music_root) musicRoot.value=s.music_root;
+  if(typeof watchMode!=='undefined' && s.watch_mode) watchMode.value=s.watch_mode;
   updateTargetInfo();
 }
 
@@ -163,7 +164,8 @@ function updateTargetInfo(){
   const bmShort={on:'ein',sidecar:'.bak',off:'aus'}[backupMode.value]||backupMode.value;
   targetInfo.textContent=`Ziel ${targetLufs.value} LUFS · TP ${truePeak.value} · LRA ${lra.value} · Backup ${bm} · ${parallelAnalysis.value}×`;
   const mr=(typeof musicRoot!=='undefined' && musicRoot.value) ? musicRoot.value : '/music';
-  if(typeof settingsLine!=='undefined') settingsLine.textContent=`Backup: ${bmShort} · Parallel: ${parallelAnalysis.value}× · Musik: ${mr}`;
+  const wm=(typeof watchMode!=='undefined' && watchMode.value && watchMode.value!=='off') ? ` · Watch: ${watchMode.options[watchMode.selectedIndex].text}` : '';
+  if(typeof settingsLine!=='undefined') settingsLine.textContent=`Backup: ${bmShort} · Parallel: ${parallelAnalysis.value}× · Musik: ${mr}${wm}`;
 }
 function openSettings(){settingsModal.classList.add('show');checkMusicRoot()}
 function closeSettings(){settingsModal.classList.remove('show')}
@@ -173,7 +175,7 @@ async function saveSettings(){
   await j(API+'/settings',{
     method:'POST',
     headers:{'Content-Type':'application/json'},
-    body:JSON.stringify({target_lufs:targetLufs.value,true_peak:truePeak.value,lra:lra.value,backup_mode:backupMode.value,parallel_analysis:parallelAnalysis.value,music_root:musicRoot.value})
+    body:JSON.stringify({target_lufs:targetLufs.value,true_peak:truePeak.value,lra:lra.value,backup_mode:backupMode.value,parallel_analysis:parallelAnalysis.value,music_root:musicRoot.value,watch_mode:watchMode.value})
   });
   updateTargetInfo();
 }
@@ -282,13 +284,15 @@ function setBrowserMode(mode){
   search.value='';
   modeArtist.classList.toggle('active', mode==='artist');
   modeAlbum.classList.toggle('active', mode==='album');
-  browserTitle.textContent = mode==='artist' ? 'Interpreten' : 'Alben';
-  search.placeholder = mode==='artist' ? 'Interpreten suchen...' : 'Alben suchen...';
+  if(typeof modeNew !== 'undefined' && modeNew) modeNew.classList.toggle('active', mode==='new');
+  browserTitle.textContent = mode==='artist' ? 'Interpreten' : (mode==='album' ? 'Alben' : 'Neu gefunden');
+  search.placeholder = mode==='artist' ? 'Interpreten suchen...' : (mode==='album' ? 'Alben suchen...' : 'Neue Alben suchen...');
   loadBrowser();
 }
 
 async function loadBrowser(){
   if(browserMode==='album') return loadAlbumBrowser();
+  if(browserMode==='new') return loadNewBrowser();
   return loadArtists();
 }
 
@@ -344,6 +348,19 @@ async function loadAlbumBrowser(){
     const active = x.album===selectedAlbum && (!selectedArtist || x.artist===selectedArtist);
     return `<div class="row ${active?'sel':''}" data-album="${encodeURIComponent(x.album)}"${artistData}><b>${escHtml(x.album)}</b><br><span class="small">${escHtml(x.artist)} · ${x.tracks} Titel · ${x.analyzed}/${x.tracks} analysiert</span></div>`;
   }).join('') || '<div class="empty">Keine Alben gefunden.</div>';
+  bindAlbumRows();
+}
+
+async function loadNewBrowser(){
+  let q=encodeURIComponent(search.value||'');
+  let a=await j(API+'/new_albums?q='+q);
+  browserList.innerHTML=a.map(x=>{
+    const oneArtist = Number(x.artist_count||0)===1;
+    const artistData = oneArtist ? ` data-artist="${encodeURIComponent(x.artist)}"` : '';
+    const active = x.album===selectedAlbum && (!selectedArtist || x.artist===selectedArtist);
+    const missing = Math.max(0, Number(x.tracks||0)-Number(x.analyzed||0));
+    return `<div class="row ${active?'sel':''}" data-album="${encodeURIComponent(x.album)}"${artistData}><b>${escHtml(x.album)}</b><br><span class="small">${escHtml(x.artist)} · ${x.tracks} Titel · ${missing} offen</span></div>`;
+  }).join('') || '<div class="empty">Keine neuen/offenen Alben.</div>';
   bindAlbumRows();
 }
 

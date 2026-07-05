@@ -20,9 +20,9 @@ LOG_DIR = Path(os.getenv("LOG_DIR", str(DB_PATH.parent / "logs")))
 LOG_PATH = LOG_DIR / "musiclab.log"
 LOG_MAX_BYTES = int(os.getenv("LOG_MAX_BYTES", str(10 * 1024 * 1024)))
 EXTS = {".mp3", ".m4a", ".aac", ".flac", ".ogg"}
-SCHEMA_VERSION = 12
+SCHEMA_VERSION = 13
 
-app = FastAPI(title="MusicLab API", version="1.2.2")
+app = FastAPI(title="MusicLab API", version="1.3.0")
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
 
 stop_event = threading.Event()
@@ -181,7 +181,7 @@ def init_db():
         )
         con.execute("CREATE INDEX IF NOT EXISTS idx_history_job ON history(job_id)")
         con.execute("CREATE INDEX IF NOT EXISTS idx_history_created ON history(created_at)")
-        defaults = {"target_lufs": "-16", "true_peak": "-1.5", "lra": "11", "backup_mode": "on", "parallel_analysis": "2", "music_root": str(DEFAULT_MUSIC_ROOT)}
+        defaults = {"target_lufs": "-16", "true_peak": "-1.5", "lra": "11", "backup_mode": "on", "parallel_analysis": "2", "music_root": str(DEFAULT_MUSIC_ROOT), "watch_mode": "off"}
         for k, v in defaults.items():
             con.execute("INSERT OR IGNORE INTO settings(key,value) VALUES(?,?)", (k, v))
         con.execute("INSERT OR REPLACE INTO meta(key,value) VALUES('schema_version', ?)", (str(SCHEMA_VERSION),))
@@ -196,7 +196,7 @@ def get_settings():
 
 def save_settings(data: dict):
     with db() as con:
-        for k in ["target_lufs", "true_peak", "lra", "backup_mode", "parallel_analysis", "music_root"]:
+        for k in ["target_lufs", "true_peak", "lra", "backup_mode", "parallel_analysis", "music_root", "watch_mode"]:
             if k in data:
                 con.execute("INSERT OR REPLACE INTO settings(key,value) VALUES(?,?)", (k, str(data[k])))
         con.commit()
@@ -396,6 +396,101 @@ def analysis_parallelism() -> int:
 
 def stop_requested() -> bool:
     return stop_event.is_set()
+
+
+def music_snapshot() -> tuple:
+    root = get_music_root()
+    if not root.exists() or not root.is_dir():
+        return (str(root), 0, 0.0)
+    count = 0
+    newest = 0.0
+    try:
+        for p in root.rglob("*"):
+            if is_audio_candidate(p):
+                count += 1
+                try:
+                    newest = max(newest, p.stat().st_mtime)
+                except Exception:
+                    pass
+    except Exception:
+        pass
+    return (str(root), count, newest)
+
+
+def selected_unanalyzed_rows(limit: Optional[int] = None):
+    sql = """
+        SELECT t.id,t.path,t.title,t.artist,t.album FROM tracks t
+        LEFT JOIN analysis a ON a.track_id=t.id AND a.status='ok'
+        WHERE a.track_id IS NULL
+        ORDER BY t.artist COLLATE NOCASE, t.album COLLATE NOCASE, COALESCE(t.disc_number,1), COALESCE(t.track_number,9999), t.title COLLATE NOCASE
+    """
+    args = []
+    if limit:
+        sql += " LIMIT ?"
+        args.append(int(limit))
+    with db() as con:
+        return [dict(r) for r in con.execute(sql, args).fetchall()]
+
+
+def analyze_missing_worker():
+    init_db()
+    rows = selected_unanalyzed_rows()
+    workers = analysis_parallelism()
+    begin_job("analysis", len(rows), f"Analyse neuer Titel läuft ({workers} parallel)")
+    add_log(f"Analyse neuer Titel gestartet: {len(rows)} Titel, parallel: {workers}")
+    def work(row):
+        return row, analyze_track_file(get_music_root() / row["path"])
+    with db() as con:
+        with ThreadPoolExecutor(max_workers=workers) as pool:
+            futures = {pool.submit(work, row): row for row in rows}
+            for fut in as_completed(futures):
+                if stop_requested():
+                    for pending in futures:
+                        pending.cancel()
+                    break
+                row = futures[fut]
+                state["current"] = row["path"]
+                try:
+                    _, result = fut.result()
+                    upsert_analysis(con, row["id"], result)
+                except Exception as e:
+                    state["errors"] += 1
+                    upsert_analysis(con, row["id"], None, str(e))
+                    add_log(f"Analysefehler: {row['path']} - {e}", True)
+                state["done"] += 1
+                con.commit()
+    if stop_requested():
+        add_log(f"Analyse neuer Titel abgebrochen: {state['done']}/{state['total']} Titel, Fehler {state['errors']}", True)
+        finish_job("Analyse neuer Titel abgebrochen", True)
+    else:
+        add_log(f"Analyse neuer Titel fertig: {state['done']}/{state['total']} Titel, Fehler {state['errors']}")
+        finish_job("Analyse neuer Titel fertig")
+
+
+def watcher_loop():
+    last = music_snapshot()
+    while True:
+        time.sleep(60)
+        try:
+            settings = get_settings()
+            mode = settings.get("watch_mode", "off")
+            if mode == "off":
+                last = music_snapshot()
+                continue
+            cur = music_snapshot()
+            if cur != last:
+                add_log(f"Überwachung: Änderung im Musikordner erkannt ({cur[1]} Dateien)")
+                last = cur
+                if not state.get("running") and mode in {"scan", "scan_analyze"}:
+                    scan_worker()
+                    if mode == "scan_analyze" and not state.get("running") and not stop_requested():
+                        missing = selected_unanalyzed_rows(limit=1)
+                        if missing:
+                            analyze_missing_worker()
+            else:
+                last = cur
+        except Exception as e:
+            add_log(f"Überwachung Fehler: {e}", True)
 
 
 def scan_worker():
@@ -1019,11 +1114,14 @@ def normalize_batch_worker(items: list, backup_mode: Optional[str] = None):
 @app.on_event("startup")
 def startup():
     init_db()
+    if not getattr(app.state, "watcher_started", False):
+        app.state.watcher_started = True
+        threading.Thread(target=watcher_loop, daemon=True).start()
 
 
 @app.get("/api/health")
 def health():
-    return {"ok": True, "version": "1.2.2", "music_root": str(get_music_root()), "db": str(DB_PATH)}
+    return {"ok": True, "version": "1.3.0", "music_root": str(get_music_root()), "db": str(DB_PATH)}
 
 
 @app.post("/api/scan")
@@ -1234,6 +1332,36 @@ def get_library_albums(q: str = ""):
             {where}
             GROUP BY t.album
             ORDER BY t.album COLLATE NOCASE
+            LIMIT 1000
+            """, args,
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+
+@app.get("/api/new_albums")
+def get_new_albums(q: str = ""):
+    """Work queue for new/open albums: albums with at least one not-yet-analyzed track."""
+    where = ""
+    args = []
+    if q:
+        where = "WHERE t.album LIKE ? OR t.artist LIKE ?"
+        args.extend([f"%{q}%", f"%{q}%"])
+    with db() as con:
+        rows = con.execute(
+            f"""
+            SELECT
+              t.album,
+              CASE WHEN COUNT(DISTINCT t.artist)=1 THEN MIN(t.artist) ELSE 'Verschiedene Interpreten' END AS artist,
+              COUNT(DISTINCT t.artist) AS artist_count,
+              COUNT(*) tracks, COALESCE(SUM(t.duration),0) duration,
+              COUNT(a.track_id) analyzed, ROUND(AVG(a.input_i),2) avg_lufs,
+              ROUND(MAX(a.input_tp),2) max_true_peak, ROUND(AVG(a.input_lra),2) avg_lra,
+              MAX(t.scanned_at) last_seen
+            FROM tracks t LEFT JOIN analysis a ON a.track_id=t.id AND a.status='ok'
+            {where}
+            GROUP BY t.album
+            HAVING analyzed < tracks
+            ORDER BY last_seen DESC, t.album COLLATE NOCASE
             LIMIT 1000
             """, args,
         ).fetchall()

@@ -1,4 +1,4 @@
-# MusicLab v1.2.3
+# MusicLab v1.3.0
 
 Musikbibliothek scannen, LUFS/True-Peak/LRA analysieren und Alben oder Titel normalisieren.
 
@@ -61,3 +61,12 @@ Idea by Lrd.Tiberius.
 - Albumaktionen im Albumbereich als Dropdown statt breiter Buttonleiste.
 - Albumliste bleibt sichtbar und wird nicht mehr von Aktionsbuttons überlagert.
 - Version auf v1.2.3 aktualisiert.
+
+
+## v1.3.0
+
+- Linke Navigation erweitert: Interpreten / Alben / Neu.
+- „Neu“ zeigt Alben mit noch offenen, nicht analysierten Titeln als Arbeitsliste.
+- Einstellungen erweitert: Überwachung aus / nur melden / automatisch scannen / scannen + analysieren.
+- Hintergrund-Watcher prüft den Musikordner regelmäßig auf Änderungen.
+- Version auf v1.3.0 aktualisiert.
