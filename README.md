@@ -1,8 +1,8 @@
-# MusicLab v1.5.15
+# MusicLab v1.5.16
 
 Musikbibliothek analysieren, normalisieren, Tags bearbeiten und Medien durchsuchen.
 
-## Neu in v1.5.15
+## Neu in v1.5.16
 
 - Coveranzeige liest jetzt ausschließlich eingebettete Cover aus den Audiodateien.
 - `cover.jpg`/`folder.jpg` werden nicht mehr benötigt und von MusicLab nicht mehr erzeugt.
@@ -21,3 +21,9 @@ Musikbibliothek analysieren, normalisieren, Tags bearbeiten und Medien durchsuch
 - Der Musikpfad im Container ist standardmäßig `/music`.
 - Der NAS-Musikordner wird in `docker-compose.yml` gemountet.
 - Datenbank, Logs und Backups liegen in `/data`.
+
+
+## Neu in v1.5.16
+- Medienseite: Mehrfach-CD-Alben werden als ein Album zusammengefasst.
+- Titelansicht gruppiert Disc 1 / Disc 2 / usw.
+- Suche-X auf der Medienseite erneut zentriert.

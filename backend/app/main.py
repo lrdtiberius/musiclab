@@ -27,7 +27,7 @@ LOG_MAX_BYTES = int(os.getenv("LOG_MAX_BYTES", str(10 * 1024 * 1024)))
 EXTS = {".mp3", ".m4a", ".aac", ".flac", ".ogg"}
 SCHEMA_VERSION = 21
 
-app = FastAPI(title="MusicLab API", version="1.5.15")
+app = FastAPI(title="MusicLab API", version="1.5.16")
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
 
 stop_event = threading.Event()
@@ -1207,7 +1207,7 @@ def startup():
 
 @app.get("/api/health")
 def health():
-    return {"ok": True, "version": "1.5.15", "music_root": str(get_music_root()), "db": str(DB_PATH)}
+    return {"ok": True, "version": "1.5.16", "music_root": str(get_music_root()), "db": str(DB_PATH)}
 
 
 @app.post("/api/scan")
@@ -1488,9 +1488,14 @@ def parent_folder_key(rel_path: str) -> str:
 
 def _is_disc_folder_name(name: str) -> bool:
     s = (name or "").strip().lower()
-    # Nur reine Disc-Ordner gruppieren: CD1, CD 1, Disc 1, Disk 2, DVD1, 1 ...
-    # Nicht gruppieren: "Disc 4 Worte der Freiheit" etc.
-    return bool(re.match(r"^(cd|disc|disk|dvd)\s*[-_. ]*\d+$", s) or re.match(r"^d\d+$", s) or re.match(r"^\d+$", s))
+    # Mehrfach-CDs werden oft als "CD1", "Disc 1" oder auch
+    # "Disc 4 Worte der Freiheit" abgelegt. Für die Medienansicht sollen
+    # diese Unterordner zu EINEM Album zusammengefasst werden.
+    return bool(
+        re.match(r"^(cd|disc|disk|dvd)\s*[-_. ]*\d+\b", s)
+        or re.match(r"^d\d+$", s)
+        or re.match(r"^\d+$", s)
+    )
 
 
 def media_album_folder_key(rel_path: str) -> str:
@@ -1525,8 +1530,12 @@ def _media_rows():
 
 def _folder_matches(row, folder: str, artist: Optional[str] = None):
     wanted = str(folder or "").strip().strip("/")
-    # Medienansicht: Album kann aus mehreren Disc-Unterordnern bestehen.
-    if media_album_folder_key(row.get("path") or "") != wanted and parent_folder_key(row.get("path") or "") != wanted:
+    parent = parent_folder_key(row.get("path") or "")
+    album_folder = media_album_folder_key(row.get("path") or "")
+    # Medienansicht: Ein Album kann Unterordner für mehrere Discs haben.
+    # Deshalb passt neben dem exakten Albumordner auch jeder Unterordner
+    # darunter, z. B. ".../Lieder wie Orkane/Disc 1 ...".
+    if album_folder != wanted and parent != wanted and not (wanted and parent.startswith(wanted + "/")):
         return False
     if artist and (row.get("artist") or "").strip().lower() != artist.strip().lower():
         return False
@@ -2036,7 +2045,7 @@ def api_media_cover_by_path(path: str):
 def api_media_cover(folder: str, artist: Optional[str] = None):
     """Return embedded album cover.
 
-    v1.5.15: intentionally restored to the proven v1.5.1 lookup path:
+    v1.5.16: intentionally restored to the proven v1.5.1 lookup path:
     query DB rows for the selected album folder/artist and inspect each real
     track file for embedded artwork. A physical-folder fallback remains, but
     no cover.jpg/folder.jpg files are created or required.
