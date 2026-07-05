@@ -1,4 +1,4 @@
-# MusicLab v1.3.6
+# MusicLab v1.3.7
 
 Musikbibliothek scannen, LUFS/True-Peak/LRA analysieren und Alben oder Titel normalisieren.
 
@@ -63,32 +63,38 @@ Idea by Lrd.Tiberius.
 - Version auf v1.2.3 aktualisiert.
 
 
-## v1.3.2
+## v1.3.7
 
 - Linke Navigation erweitert: Interpreten / Alben / Neu.
 - „Neu“ zeigt Alben mit noch offenen, nicht analysierten Titeln als Arbeitsliste.
 - Einstellungen erweitert: Überwachung aus / nur melden / automatisch scannen / scannen + analysieren.
 - Hintergrund-Watcher prüft den Musikordner regelmäßig auf Änderungen.
-- Version auf v1.3.2 aktualisiert.
+- Version auf v1.3.7 aktualisiert.
 
 
-## v1.3.2
+## v1.3.7
 
 - Hauptnavigation mit Audio / Tags / Einstellungen oben rechts.
 - Einstellungen sind jetzt eine eigene Ansicht statt Popup.
 - Neue Tags-Ansicht zum Bearbeiten von Album- und Titel-Tags.
-- Version auf v1.3.2 aktualisiert.
+- Version auf v1.3.7 aktualisiert.
 
 
-## v1.3.4
+## v1.3.7
 - Albumsuche funktioniert wieder global, auch wenn vorher ein Interpret ausgewählt wurde.
 - Suchfeld hat ein X zum schnellen Leeren.
 - Tags-Seite berechnet „Tracks pro Album“ bei Samplern/mehreren Interpreten über das komplette Album statt nur über den zuletzt gewählten Interpreten.
 
 
-## v1.3.6
+## v1.3.7
 
 - Genre-Feld als Combo-Feld mit vorhandenen Genres aus der Bibliothek.
 - Disc-Anzahl ergänzt: Disc pro Titel + Discs pro Album.
 - Track-/Disc-Speicherung erzeugt automatisch Werte wie 1/10 und 1/2.
 - Datenbank-Schema auf 15 aktualisiert.
+
+
+## v1.3.7
+- Scan-Fehler behoben: fehlender `genre`-Parameter beim Speichern von Tracks.
+- Versionsnummern in Backend, Frontend und README vereinheitlicht.
+- Cache-/Pycache-Dateien aus dem ZIP entfernt.

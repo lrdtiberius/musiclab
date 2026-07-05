@@ -22,7 +22,7 @@ LOG_MAX_BYTES = int(os.getenv("LOG_MAX_BYTES", str(10 * 1024 * 1024)))
 EXTS = {".mp3", ".m4a", ".aac", ".flac", ".ogg"}
 SCHEMA_VERSION = 15
 
-app = FastAPI(title="MusicLab API", version="1.3.5")
+app = FastAPI(title="MusicLab API", version="1.3.7")
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
 
 stop_event = threading.Event()
@@ -329,6 +329,8 @@ def scan_file(path: Path, root: Optional[Path] = None) -> Optional[dict]:
         "disc_raw": disc_raw,
         "disc_number": disc_number,
         "disc_total": disc_total,
+        "genre": genre.strip() if isinstance(genre, str) else genre,
+        "year": year.strip() if isinstance(year, str) else year,
         "duration": float(getattr(info, "length", 0)) if info and getattr(info, "length", None) else None,
         "codec": path.suffix.lower().lstrip("."),
         "bitrate": int(getattr(info, "bitrate", 0)) if info and getattr(info, "bitrate", None) else None,
@@ -1130,7 +1132,7 @@ def startup():
 
 @app.get("/api/health")
 def health():
-    return {"ok": True, "version": "1.3.5", "music_root": str(get_music_root()), "db": str(DB_PATH)}
+    return {"ok": True, "version": "1.3.7", "music_root": str(get_music_root()), "db": str(DB_PATH)}
 
 
 @app.post("/api/scan")

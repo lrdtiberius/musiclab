@@ -1,5 +1,5 @@
 const API='http://'+location.hostname+':8091/api';
-const APP_VERSION='1.3.6';
+const APP_VERSION='1.3.7';
 let selectedArtist=null, selectedAlbum=null, selectedTagFolder=null;
 let browserMode='artist';
 let lastRunning=false;
