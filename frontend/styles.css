@@ -74,3 +74,97 @@ main > section.panel:nth-of-type(1) .sectionHead button{padding:7px 9px}
 @media(max-height:820px) and (min-width:1151px){
   main{grid-template-columns:minmax(280px,34%) minmax(0,1fr);grid-template-rows:auto auto auto minmax(0,1fr) 158px 18px}
 }
+
+/* v1.2.0: aufgeräumtes Arbeitslayout */
+header h1 .muted{font-size:.85em}
+.layout{grid-template-columns:292px minmax(0,1fr)}
+main{
+  grid-template-columns:minmax(260px,30%) minmax(0,1fr);
+  grid-template-rows:44px 60px 50px minmax(0,1fr) 184px 18px;
+  gap:10px;
+}
+main > .statsLine{grid-column:1 / -1;grid-row:1;min-height:44px;padding:10px 12px}
+main > .refbox{grid-column:1 / -1;grid-row:2;min-height:60px!important;padding:10px 12px!important}
+main > .refbox + .panel{grid-column:1 / -1;grid-row:3;min-height:50px;padding:10px 12px!important}
+main > section.panel:nth-of-type(1){grid-column:1;grid-row:4;display:flex;flex-direction:column;overflow:hidden;min-width:0}
+main > section.panel:nth-of-type(2){grid-column:2;grid-row:4;display:flex;flex-direction:column;overflow:hidden;min-width:0}
+main > .bottomGrid{grid-column:1 / -1;grid-row:5;min-height:0;display:grid;grid-template-columns:minmax(0,1.1fr) minmax(320px,.9fr);gap:10px}
+main > .footerCredit{grid-column:1 / -1;grid-row:6;line-height:18px}
+
+/* Albumsektion: Toolbar kompakt, Liste bekommt den Rest */
+main > section.panel:nth-of-type(1) .sectionHead{
+  display:grid;
+  grid-template-columns:1fr;
+  gap:7px;
+  margin-bottom:8px;
+}
+main > section.panel:nth-of-type(1) .sectionHead h2{font-size:18px;margin:0}
+main > section.panel:nth-of-type(1) .sectionHead button{
+  width:100%;
+  padding:8px 9px;
+  text-align:center;
+}
+.albumTools{margin-bottom:7px;min-height:16px}
+.batchbar{
+  margin:6px 0 8px;
+  padding:8px;
+  gap:6px;
+}
+.batchbar b{flex:1 0 100%;font-size:14px;margin:0 0 2px 0}
+.batchbar button{padding:7px 8px;font-size:12px;flex:1 1 45%}
+.albums{
+  grid-template-columns:1fr;
+  gap:8px;
+  min-height:0;
+  height:auto;
+  flex:1;
+  overflow-y:auto;
+  padding-right:6px;
+}
+.album{min-height:82px;padding:10px 34px 10px 10px}
+.album b{font-size:15px;line-height:1.2}
+.reflabel{display:block;width:max-content;margin:5px 0 0 0}
+
+/* Titelsektion: mehr Tabellenfläche */
+main > section.panel:nth-of-type(2) .toolbar{
+  display:grid;
+  grid-template-columns:auto 1fr auto;
+  gap:8px;
+  align-items:center;
+  margin-bottom:6px;
+}
+main > section.panel:nth-of-type(2) .toolbar h2{font-size:18px;margin:0}
+#btnTrackNorm{justify-self:end}
+#targetInfo{grid-column:1 / -1;justify-self:end;margin:0;white-space:normal;text-align:right;font-size:12px}
+#albumSummary{margin:2px 0 4px 0}
+#normalizePreview{margin:4px 0 6px 0!important}
+.trackScroll{flex:1;min-height:0;overflow:auto;border-top:1px solid #303847}
+th,td{padding:7px 8px}
+#tracks td:nth-child(3){min-width:310px}
+
+/* Log/Historie lesbarer und gleichmäßig */
+.bottomGrid .panel{margin-top:0!important;display:flex;flex-direction:column;overflow:hidden;min-height:0}
+.bottomGrid .toolbar{margin-bottom:8px}
+.bottomGrid .toolbar h2{font-size:18px}
+.bottomGrid .toolbar button{padding:7px 9px;font-size:12px}
+#logBox{flex:1;min-height:0;line-height:1.45;font-size:12px;margin:0}
+.historyList{flex:1;min-height:0;max-height:none!important;overflow:auto}
+
+/* Kleine Bildschirme: sinnvoll stapeln */
+@media(max-width:1150px){
+  main{grid-template-columns:1fr;grid-template-rows:44px 60px 50px 150px minmax(0,1fr) 170px 18px}
+  main > section.panel:nth-of-type(1){grid-column:1;grid-row:4}
+  main > section.panel:nth-of-type(2){grid-column:1;grid-row:5}
+  main > .bottomGrid{grid-column:1;grid-row:6;grid-template-columns:1fr 1fr}
+  main > .footerCredit{grid-column:1;grid-row:7}
+  .albums{grid-template-columns:repeat(auto-fill,minmax(200px,1fr))}
+  main > section.panel:nth-of-type(1) .sectionHead{grid-template-columns:1fr 1fr 1fr 1fr;align-items:center}
+  main > section.panel:nth-of-type(1) .sectionHead h2{grid-column:1 / -1}
+}
+@media(max-height:820px) and (min-width:1151px){
+  main{grid-template-columns:minmax(250px,30%) minmax(0,1fr);grid-template-rows:40px 54px 44px minmax(0,1fr) 166px 18px}
+  .panel{padding:9px}
+  .refbox{min-height:54px!important}
+  main > .refbox + .panel{min-height:44px!important}
+  .bottomGrid{grid-template-columns:minmax(0,1.1fr) minmax(300px,.9fr)}
+}

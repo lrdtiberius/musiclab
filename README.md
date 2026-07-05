@@ -1,4 +1,4 @@
-# MusicLab v1.1.5
+# MusicLab v1.2.0
 
 Musikbibliothek scannen, LUFS/True-Peak/LRA analysieren und Alben oder Titel normalisieren.
 
@@ -40,3 +40,13 @@ MusicLab/
 - macOS-Metadatenordner wie `__MACOSX` und `._*` sind nicht enthalten.
 
 Idea by Lrd.Tiberius.
+
+
+## Version 1.2.0
+
+- Layout-Refactoring: Albumliste und Titelliste ergonomischer nebeneinander.
+- Album-Aktionen kompakter in der Albumsektion.
+- Titelbereich deutlich breiter.
+- Log/Historie größer und gleichmäßiger.
+- Ein-Bildschirm-Layout bleibt erhalten.
+- Footer mit Idea by Lrd.Tiberius bleibt sichtbar.

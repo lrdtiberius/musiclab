@@ -7,7 +7,7 @@
 <link rel="stylesheet" href="styles.css" />
 </head>
 <body>
-<header><h1>🎵 MusicLab <span class="muted">v1.1.5</span></h1><button onclick="scan()">Bibliothek neu scannen</button><button class="secondary" onclick="analyzeAll()">Alles analysieren</button><button class="danger" id="btnStop" onclick="stopJob()" disabled>Stop</button><button class="secondary" onclick="openSettings()">⚙ Einstellungen</button><span id="status" class="muted" style="display:none"></span></header>
+<header><h1>🎵 MusicLab <span class="muted">v1.2.0</span></h1><button onclick="scan()">Bibliothek neu scannen</button><button class="secondary" onclick="analyzeAll()">Alles analysieren</button><button class="danger" id="btnStop" onclick="stopJob()" disabled>Stop</button><button class="secondary" onclick="openSettings()">⚙ Einstellungen</button><span id="status" class="muted" style="display:none"></span></header>
 <div class="layout">
 <aside class="panel"><div class="modeSwitch"><button id="modeArtist" class="active" onclick="setBrowserMode('artist')">Interpreten</button><button id="modeAlbum" onclick="setBrowserMode('album')">Alben</button></div><input id="search" placeholder="Interpreten suchen..." oninput="loadBrowser()" style="width:100%;margin-bottom:12px"><h3 id="browserTitle">Interpreten</h3><div id="browserList" class="list"></div></aside>
 <main>
