@@ -27,7 +27,7 @@ LOG_MAX_BYTES = int(os.getenv("LOG_MAX_BYTES", str(10 * 1024 * 1024)))
 EXTS = {".mp3", ".m4a", ".aac", ".flac", ".ogg"}
 SCHEMA_VERSION = 21
 
-app = FastAPI(title="MusicLab API", version="1.5.14")
+app = FastAPI(title="MusicLab API", version="1.5.15")
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
 
 stop_event = threading.Event()
@@ -1207,7 +1207,7 @@ def startup():
 
 @app.get("/api/health")
 def health():
-    return {"ok": True, "version": "1.5.14", "music_root": str(get_music_root()), "db": str(DB_PATH)}
+    return {"ok": True, "version": "1.5.15", "music_root": str(get_music_root()), "db": str(DB_PATH)}
 
 
 @app.post("/api/scan")
@@ -1486,6 +1486,24 @@ def parent_folder_key(rel_path: str) -> str:
         return ""
 
 
+def _is_disc_folder_name(name: str) -> bool:
+    s = (name or "").strip().lower()
+    # Nur reine Disc-Ordner gruppieren: CD1, CD 1, Disc 1, Disk 2, DVD1, 1 ...
+    # Nicht gruppieren: "Disc 4 Worte der Freiheit" etc.
+    return bool(re.match(r"^(cd|disc|disk|dvd)\s*[-_. ]*\d+$", s) or re.match(r"^d\d+$", s) or re.match(r"^\d+$", s))
+
+
+def media_album_folder_key(rel_path: str) -> str:
+    folder = parent_folder_key(rel_path)
+    if not folder:
+        return folder
+    p = Path(folder)
+    if _is_disc_folder_name(p.name):
+        parent = p.parent.as_posix()
+        return "" if parent == "." else parent
+    return folder
+
+
 def folder_display_name(folder: str) -> str:
     if not folder:
         return "Musik"
@@ -1506,7 +1524,9 @@ def _media_rows():
 
 
 def _folder_matches(row, folder: str, artist: Optional[str] = None):
-    if parent_folder_key(row.get("path") or "") != folder:
+    wanted = str(folder or "").strip().strip("/")
+    # Medienansicht: Album kann aus mehreren Disc-Unterordnern bestehen.
+    if media_album_folder_key(row.get("path") or "") != wanted and parent_folder_key(row.get("path") or "") != wanted:
         return False
     if artist and (row.get("artist") or "").strip().lower() != artist.strip().lower():
         return False
@@ -1809,7 +1829,7 @@ def api_media_artist_albums(artist: str, sort: str = "artist"):
     for r in _media_rows():
         if artist_norm and (r.get("artist") or "").strip().lower() != artist_norm:
             continue
-        folder = parent_folder_key(r.get("path") or "")
+        folder = media_album_folder_key(r.get("path") or "")
         album = r.get("album") or folder_display_name(folder) or "Unbekanntes Album"
         key = folder
         g = groups.setdefault(key, {"artist": artist or r.get("artist") or "Unbekannter Interpret", "album": album, "folder": folder, "tracks": 0, "analyzed": 0, "duration": 0.0, "first_path": r.get("path") or ""})
@@ -1847,7 +1867,7 @@ def _album_audio_paths(folder: str):
 
     # 1) Database rows for the exact physical album folder.
     try:
-        rows = [r for r in _media_rows() if parent_folder_key(r.get("path") or "") == safe_folder]
+        rows = [r for r in _media_rows() if media_album_folder_key(r.get("path") or "") == safe_folder or parent_folder_key(r.get("path") or "") == safe_folder]
         for r in rows:
             rel = r.get("path") or ""
             p = (root / rel).resolve()
@@ -2016,7 +2036,7 @@ def api_media_cover_by_path(path: str):
 def api_media_cover(folder: str, artist: Optional[str] = None):
     """Return embedded album cover.
 
-    v1.5.14: intentionally restored to the proven v1.5.1 lookup path:
+    v1.5.15: intentionally restored to the proven v1.5.1 lookup path:
     query DB rows for the selected album folder/artist and inspect each real
     track file for embedded artwork. A physical-folder fallback remains, but
     no cover.jpg/folder.jpg files are created or required.
@@ -2100,7 +2120,7 @@ def api_media_albums(q: str = ""):
         artist = r.get("artist") or "Unbekannter Interpret"
         album = r.get("album") or "Unbekanntes Album"
         path = r.get("path") or ""
-        folder = parent_folder_key(path)
+        folder = media_album_folder_key(path)
         hay = " ".join([artist, album, folder, path]).lower()
         if q_norm and q_norm not in hay:
             continue

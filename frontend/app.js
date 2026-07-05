@@ -1,5 +1,5 @@
 const API='http://'+location.hostname+':8091/api';
-const APP_VERSION='1.5.14';
+const APP_VERSION='1.5.15';
 let selectedArtist=null, selectedAlbum=null, selectedTagFolder=null;
 let selectedTagGenre=null, selectedTagYear=null;
 let browserMode='artist';
@@ -12,6 +12,7 @@ let selectedTracks=new Map();
 let selectedMediaArtist=null, selectedMediaFolder=null, selectedMediaAlbum=null;
 let mediaArtistsCache=[];
 let mediaAlbumsCache=[];
+let tagDiscTotals={};
 
 function fmt(n,d=1){return n===null||n===undefined?'':Number(n).toFixed(d)}
 function dur(s){s=Number(s||0);let h=Math.floor(s/3600),m=Math.floor((s%3600)/60);return h?`${h}h ${m}m`:`${m}m`}
@@ -911,36 +912,77 @@ async function loadTagsPage(){
     const {url, useArtist, byFolder}=await getTagTrackUrl();
     const rows=await j(url);
     hint.textContent=`${byFolder?'Ordner · ':''}${useArtist?useArtist+' · ':''}${selectedAlbum} · ${rows.length} Titel`;
+    tagDiscTotals={};
     if(rows.length){
       const first=rows[0];
       const cp=document.getElementById('tagCoverPreview'); const ci=document.getElementById('tagCoverInfo');
       if(cp){ cp.outerHTML = coverBox(coverUrl(selectedTagFolder || parentFolderFromPath(first.path||''), selectedArtist||''), true).replace('mediaCoverBox large','mediaCoverBox large tagCoverBox'); }
-      if(ci) ci.textContent = 'Cover wird für den gewählten Albumordner gespeichert.';
+      if(ci) ci.textContent = 'Cover wird in die MP3s des gewählten Albumordners eingebettet.';
       const aa=document.getElementById('tagAlbumArtist'), al=document.getElementById('tagAlbumName'), tt=document.getElementById('tagTrackTotal'), dt=document.getElementById('tagDiscTotal'), yr=document.getElementById('tagYear'), ge=document.getElementById('tagGenre');
       const artists=[...new Set(rows.map(r=>r.artist||'').filter(Boolean))];
       const albums=[...new Set(rows.map(r=>r.album||'').filter(Boolean))];
       if(aa)aa.value=artists.length===1 ? artists[0] : '';
       if(al)al.value=byFolder ? (selectedAlbum||first.album||'') : (albums.length===1 ? albums[0] : (selectedAlbum||''));
-      if(tt)tt.value=rows.length;
-      const discTotals=rows.map(r=>Number(r.disc_total||0)).filter(n=>n>0);
-      if(dt)dt.value=discTotals.length ? Math.max(...discTotals) : '';
+      const discNums=[...new Set(rows.map(r=>Number(r.disc_number||parseInt(String(r.disc_raw||'').split('/')[0],10)||1)).filter(n=>n>0))].sort((a,b)=>a-b);
+      const discTotalsExisting=rows.map(r=>Number(r.disc_total||0)).filter(n=>n>0);
+      const discTotalCount=discTotalsExisting.length ? Math.max(...discTotalsExisting) : (discNums.length>1 ? discNums.length : '');
+      if(dt)dt.value=discTotalCount;
+      if(tt){
+        if(discNums.length>1){
+          tt.value='';
+          tt.placeholder='je Disc unten';
+          tt.disabled=true;
+        }else{
+          tt.disabled=false;
+          tt.placeholder='z. B. 10';
+          tt.value=rows.length;
+        }
+      }
+      for(const d of discNums){
+        const rowsForDisc=rows.filter(r=>(Number(r.disc_number||parseInt(String(r.disc_raw||'').split('/')[0],10)||1)===d));
+        const tagged=rowsForDisc.map(r=>Number(r.track_total||0)).filter(n=>n>0);
+        tagDiscTotals[d]=tagged.length ? Math.max(...tagged) : rowsForDisc.length;
+      }
+      renderDiscTotalsEditor(discNums);
       if(yr)yr.value=first.year||'';
       if(ge)ge.value=first.genre||'';
+    } else {
+      renderDiscTotalsEditor([]);
     }
     await loadGenreOptions();
-    const totalValue = document.getElementById('tagTrackTotal')?.value || (rows.length?String(rows.length):'');
+    const singleTotalValue = document.getElementById('tagTrackTotal')?.value || (rows.length?String(rows.length):'');
     const discTotalValue = document.getElementById('tagDiscTotal')?.value || '';
     body.innerHTML=rows.map((x,i)=>{
       const trackNumber = x.track_number || parseInt(String(x.track_raw||'').split('/')[0],10) || (i+1);
-      const discNumber = x.disc_number || parseInt(String(x.disc_raw||'').split('/')[0],10) || '';
-      return `<tr data-path="${escAttr(relPath(x.path))}"><td>${i+1}</td><td><input class="tagTitle" value="${escAttr(x.title||'')}"></td><td><input class="tagArtist" value="${escAttr(x.artist||'')}"></td><td><input class="tagTrack" value="${escAttr(trackNumber)}"></td><td class="tagTotalShow">${escHtml(totalValue)}</td><td><input class="tagDisc" value="${escAttr(discNumber)}" placeholder="1"></td><td class="tagDiscTotalShow">${escHtml(discTotalValue||'-')}</td><td class="small" title="${escAttr(relPath(x.path))}">${escHtml(relPath(x.path))}</td></tr>`;
+      const discNumber = x.disc_number || parseInt(String(x.disc_raw||'').split('/')[0],10) || 1;
+      const totalValue = (tagDiscTotals[discNumber] || singleTotalValue || rows.length || '');
+      return `<tr data-path="${escAttr(relPath(x.path))}"><td>${i+1}</td><td><input class="tagTitle" value="${escAttr(x.title||'')}"></td><td><input class="tagArtist" value="${escAttr(x.artist||'')}"></td><td><input class="tagTrack" value="${escAttr(trackNumber)}"></td><td class="tagTotalShow" data-disc="${escAttr(discNumber)}">${escHtml(totalValue)}</td><td><input class="tagDisc" value="${escAttr(discNumber)}" placeholder="1" oninput="syncTrackTotalPreview()"></td><td class="tagDiscTotalShow">${escHtml(discTotalValue||'-')}</td><td class="small" title="${escAttr(relPath(x.path))}">${escHtml(relPath(x.path))}</td></tr>`;
     }).join('');
   }catch(e){hint.textContent='Tags konnten nicht geladen werden: '+e.message; body.innerHTML='';}
 }
 function escAttr(s){return String(s ?? '').replaceAll('&','&amp;').replaceAll('"','&quot;').replaceAll('<','&lt;').replaceAll('>','&gt;')}
+function renderDiscTotalsEditor(discs){
+  const box=document.getElementById('tagDiscTotalsBox');
+  if(!box) return;
+  if(!discs || discs.length<=1){
+    box.innerHTML='';
+    box.style.display='none';
+    return;
+  }
+  box.style.display='grid';
+  box.innerHTML='<label>Tracks pro Disc</label><div class="discTotalsGrid">'+discs.map(d=>`<span>Disc ${d}</span><input data-disc-total="${d}" value="${escAttr(tagDiscTotals[d]||'')}" oninput="syncTrackTotalPreview()">`).join('')+'</div>';
+}
+function discTotalFor(d, fallback=''){
+  const input=document.querySelector(`[data-disc-total="${CSS.escape(String(d))}"]`);
+  return (input?.value||tagDiscTotals[d]||fallback||'').toString().trim();
+}
 function syncTrackTotalPreview(){
-  const total=(document.getElementById('tagTrackTotal')?.value||'').trim();
-  document.querySelectorAll('.tagTotalShow').forEach(el=>el.textContent=total||'-');
+  const single=(document.getElementById('tagTrackTotal')?.value||'').trim();
+  document.querySelectorAll('.tagTotalShow').forEach(el=>{
+    const d=(el.dataset.disc||'').trim();
+    const total=d ? discTotalFor(d, single) : single;
+    el.textContent=total||'-';
+  });
 }
 function syncDiscTotalPreview(){
   const total=(document.getElementById('tagDiscTotal')?.value||'').trim();
@@ -987,9 +1029,10 @@ async function saveAlbumTags(){
   const updates=rows.map(r=>{
     const raw=(r.querySelector('.tagTrack')?.value||'').trim();
     const num=raw.split('/')[0].trim();
-    const tracknumber = num ? (total ? `${num}/${total}` : num) : '';
     const discRaw=(r.querySelector('.tagDisc')?.value||'').trim();
-    const discNum=discRaw.split('/')[0].trim();
+    const discNum=discRaw.split('/')[0].trim() || '1';
+    const perDiscTotal = discTotalFor(discNum, total);
+    const tracknumber = num ? (perDiscTotal ? `${num}/${perDiscTotal}` : num) : '';
     const discnumber = discNum ? (discTotal ? `${discNum}/${discTotal}` : discNum) : '';
     return {path:r.dataset.path, artist, album, year, genre, tracknumber, discnumber};
   });
@@ -1003,9 +1046,10 @@ async function saveTrackTags(){
   const updates=rows.map(r=>{
     const raw=(r.querySelector('.tagTrack')?.value||'').trim();
     const num=raw.split('/')[0].trim();
-    const tracknumber = num ? (total ? `${num}/${total}` : num) : '';
     const discRaw=(r.querySelector('.tagDisc')?.value||'').trim();
-    const discNum=discRaw.split('/')[0].trim();
+    const discNum=discRaw.split('/')[0].trim() || '1';
+    const perDiscTotal = discTotalFor(discNum, total);
+    const tracknumber = num ? (perDiscTotal ? `${num}/${perDiscTotal}` : num) : '';
     const discnumber = discNum ? (discTotal ? `${discNum}/${discTotal}` : discNum) : '';
     return {path:r.dataset.path,title:r.querySelector('.tagTitle')?.value||'',artist:r.querySelector('.tagArtist')?.value||'',tracknumber,discnumber};
   });
@@ -1177,7 +1221,18 @@ async function loadMediaTracks(){
     dl.removeAttribute('aria-disabled');
     dl.href=API+'/media/download_album?folder='+encodeURIComponent(selectedMediaFolder);
   }
-  tracksBox.innerHTML=tracks.length ? `<table><thead><tr><th>#</th><th>Titel</th><th>Interpret</th><th>Dauer</th><th>Bitrate</th><th>Pfad</th></tr></thead><tbody>${tracks.map(x=>`<tr><td>${escHtml(trackNo(x)||'')}</td><td>${escHtml(x.title||'')}</td><td>${escHtml(x.artist||'')}</td><td>${dur(x.duration)}</td><td>${x.bitrate?Math.round(x.bitrate/1000):''}</td><td class="small">${escHtml(relPath(x.path))}</td></tr>`).join('')}</tbody></table>` : '<div class="empty">Keine Titel gefunden.</div>';
+  if(tracks.length){
+    const discNums=[...new Set(tracks.map(x=>Number(x.disc_number||parseInt(String(x.disc_raw||'').split('/')[0],10)||1)))].sort((a,b)=>a-b);
+    const rowsHtml=tracks.map((x,idx)=>{
+      const d=Number(x.disc_number||parseInt(String(x.disc_raw||'').split('/')[0],10)||1);
+      const prev=idx>0 ? Number(tracks[idx-1].disc_number||parseInt(String(tracks[idx-1].disc_raw||'').split('/')[0],10)||1) : null;
+      const discHeader=(discNums.length>1 && d!==prev) ? `<tr class="discHeader"><td colspan="6">Disc ${d}</td></tr>` : '';
+      return discHeader+`<tr><td>${escHtml(trackNo(x)||'')}</td><td>${escHtml(x.title||'')}</td><td>${escHtml(x.artist||'')}</td><td>${dur(x.duration)}</td><td>${x.bitrate?Math.round(x.bitrate/1000):''}</td><td class="small">${escHtml(relPath(x.path))}</td></tr>`;
+    }).join('');
+    tracksBox.innerHTML=`<table><thead><tr><th>#</th><th>Titel</th><th>Interpret</th><th>Dauer</th><th>Bitrate</th><th>Pfad</th></tr></thead><tbody>${rowsHtml}</tbody></table>`;
+  }else{
+    tracksBox.innerHTML='<div class="empty">Keine Titel gefunden.</div>';
+  }
 }
 
 
