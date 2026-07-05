@@ -1,5 +1,5 @@
 const API='http://'+location.hostname+':8091/api';
-const APP_VERSION='1.5.13';
+const APP_VERSION='1.5.14';
 let selectedArtist=null, selectedAlbum=null, selectedTagFolder=null;
 let selectedTagGenre=null, selectedTagYear=null;
 let browserMode='artist';
@@ -1140,7 +1140,7 @@ async function loadMediaAlbums(sort){
     selectedMediaAlbum=albums[0].album;
   }
   albumsBox.innerHTML=albums.map(x=>{
-    const cover=x.first_path ? coverUrlPath(x.first_path) : coverUrl(x.folder||'', selectedMediaArtist||'');
+    const cover=coverUrl(x.folder||'', selectedMediaArtist||'');
     const sel=x.folder===selectedMediaFolder;
     return `<div class="mediaAlbumRow ${sel?'sel':''}" data-folder="${encodeURIComponent(x.folder||'')}" data-album="${encodeURIComponent(x.album||'')}">${coverBox(cover)}<div class="mediaAlbumText"><b>${escHtml(x.album)}</b><br><span class="small">${x.tracks} Titel · ${x.analyzed}/${x.tracks} analysiert · ${dur(x.duration)}</span><br><span class="small pathLine">${escHtml(x.folder||'')}</span></div></div>`;
   }).join('') || '<div class="empty">Keine Alben gefunden.</div>';
@@ -1166,7 +1166,7 @@ async function loadMediaTracks(){
   const dl=document.getElementById('mediaDownload');
   if(!selectedMediaFolder){return;}
   const tracks=await j(API+'/media/album_tracks?folder='+encodeURIComponent(selectedMediaFolder)+'&artist='+encodeURIComponent(selectedMediaArtist||''));
-  const cover=tracks[0]?.path ? coverUrlPath(tracks[0].path) : coverUrl(selectedMediaFolder, selectedMediaArtist||'');
+  const cover=coverUrl(selectedMediaFolder, selectedMediaArtist||'');
   const album=selectedMediaAlbum || (tracks[0]?.album) || 'Album';
   const duration=tracks.reduce((a,x)=>a+Number(x.duration||0),0);
   if(head){

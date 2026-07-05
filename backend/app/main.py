@@ -27,7 +27,7 @@ LOG_MAX_BYTES = int(os.getenv("LOG_MAX_BYTES", str(10 * 1024 * 1024)))
 EXTS = {".mp3", ".m4a", ".aac", ".flac", ".ogg"}
 SCHEMA_VERSION = 21
 
-app = FastAPI(title="MusicLab API", version="1.5.13")
+app = FastAPI(title="MusicLab API", version="1.5.14")
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
 
 stop_event = threading.Event()
@@ -1207,7 +1207,7 @@ def startup():
 
 @app.get("/api/health")
 def health():
-    return {"ok": True, "version": "1.5.13", "music_root": str(get_music_root()), "db": str(DB_PATH)}
+    return {"ok": True, "version": "1.5.14", "music_root": str(get_music_root()), "db": str(DB_PATH)}
 
 
 @app.post("/api/scan")
@@ -2014,58 +2014,74 @@ def api_media_cover_by_path(path: str):
 
 @app.get("/api/media/cover")
 def api_media_cover(folder: str, artist: Optional[str] = None):
-    """Return the embedded album cover from the selected album folder.
+    """Return embedded album cover.
 
-    v1.5.13: the cover lookup no longer depends on the broad MutagenFile
-    path alone. It first resolves the real audio files for the album folder and
-    then uses the shared _embedded_cover_from_file() helper, which reads MP3
-    ID3/APIC directly. This fixes libraries where Mp3tag shows the cover but
-    MusicLab only showed the fallback note.
+    v1.5.14: intentionally restored to the proven v1.5.1 lookup path:
+    query DB rows for the selected album folder/artist and inspect each real
+    track file for embedded artwork. A physical-folder fallback remains, but
+    no cover.jpg/folder.jpg files are created or required.
     """
     folder = str(folder or "").strip().strip("/")
     root = get_music_root().resolve()
     headers = {"Cache-Control": "no-store, no-cache, must-revalidate, max-age=0", "Pragma": "no-cache"}
-
-    if not folder:
-        raise HTTPException(status_code=404, detail="cover not found")
-
     paths = []
 
-    # 1) Prefer the exact physical folder. This also works when the database is
-    # stale or an artist filter is too narrow.
-    try:
-        base = (root / folder).resolve()
-        if base.is_relative_to(root) and base.exists() and base.is_dir():
-            for p in sorted(base.rglob("*"), key=lambda x: x.as_posix().lower()):
-                if p.name.startswith("._"):
-                    continue
-                if p.is_file() and p.suffix.lower() in EXTS:
-                    paths.append(p.resolve())
-    except Exception:
-        pass
-
-    # 2) DB fallback for folders that were selected from a logical media row.
     try:
         rows = [r for r in _media_rows() if _folder_matches(r, folder, artist)]
         if not rows:
             rows = [r for r in _media_rows() if parent_folder_key(r.get("path") or "") == folder]
         for r in rows:
             try:
-                p = (root / (r.get("path") or "")).resolve()
-                if p.is_relative_to(root) and p.exists() and p.is_file() and p.suffix.lower() in EXTS and p not in paths:
-                    paths.append(p)
+                pp = (root / (r.get("path") or "")).resolve()
+                if pp.is_relative_to(root) and pp.exists() and pp.is_file() and pp not in paths:
+                    paths.append(pp)
             except Exception:
                 continue
     except Exception:
         pass
 
-    for p in paths:
-        hit = _embedded_cover_from_file(p)
+    # Fallback: scan the exact physical folder if the DB lookup did not find anything.
+    if folder:
+        try:
+            base = (root / folder).resolve()
+            if base.is_relative_to(root) and base.exists() and base.is_dir():
+                for pp in sorted(base.rglob("*"), key=lambda x: x.as_posix().lower()):
+                    if pp.name.startswith("._"):
+                        continue
+                    if pp.is_file() and pp.suffix.lower() in EXTS and pp not in paths:
+                        paths.append(pp.resolve())
+        except Exception:
+            pass
+
+    for pp in paths:
+        # First use the exact old mutagen approach from v1.5.1.
+        try:
+            mf = MutagenFile(str(pp))
+            if mf:
+                tags = getattr(mf, "tags", None)
+                if tags:
+                    for key, val in tags.items():
+                        if str(key).startswith("APIC") and getattr(val, "data", None):
+                            mime = getattr(val, "mime", None) or "image/jpeg"
+                            return StreamingResponse(io.BytesIO(val.data), media_type=mime, headers=headers)
+                    covr = tags.get("covr") if hasattr(tags, "get") else None
+                    if covr:
+                        data = bytes(covr[0])
+                        return StreamingResponse(io.BytesIO(data), media_type="image/jpeg", headers=headers)
+                pics = getattr(mf, "pictures", None)
+                if pics:
+                    pic = pics[0]
+                    return StreamingResponse(io.BytesIO(pic.data), media_type=pic.mime or "image/jpeg", headers=headers)
+        except Exception:
+            pass
+
+        # Then explicit ID3 helper as extra safety.
+        hit = _embedded_cover_from_file(pp)
         if hit:
             mime, data = hit
             return StreamingResponse(io.BytesIO(data), media_type=mime or "image/jpeg", headers=headers)
 
-    raise HTTPException(status_code=404, detail="cover not found")
+    raise HTTPException(status_code=404, detail="Kein Cover gefunden")
 
 
 @app.get("/api/media_albums")

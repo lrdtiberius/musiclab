@@ -386,3 +386,41 @@ body.mediaMode .footerCredit{grid-column:1;grid-row:2}
 .mediaClear{position:absolute!important;right:8px!important;top:50%!important;transform:translateY(-50%)!important;width:22px!important;height:22px!important;min-width:22px!important;line-height:22px!important;padding:0!important;border-radius:50%;display:grid!important;place-items:center!important;background:#303847;color:var(--txt);z-index:3;cursor:pointer;font-size:16px;font-weight:700;text-align:center;border:0}
 
 .mediaSearchBox .mediaClear{appearance:none;-webkit-appearance:none}
+
+/* v1.5.14: Medien-Suche X optisch exakt zentrieren */
+.mediaSearchBox{position:relative;margin-bottom:10px}
+.mediaSearchBox input{width:100%;padding-right:38px}
+.mediaSearchBox .mediaClear{
+  position:absolute!important;
+  right:8px!important;
+  top:50%!important;
+  transform:translateY(-50%)!important;
+  width:24px!important;
+  height:24px!important;
+  min-width:24px!important;
+  padding:0!important;
+  border:0!important;
+  border-radius:999px!important;
+  background:#303847!important;
+  color:transparent!important;
+  font-size:0!important;
+  line-height:1!important;
+  display:flex!important;
+  align-items:center!important;
+  justify-content:center!important;
+  text-align:center!important;
+  appearance:none!important;
+  -webkit-appearance:none!important;
+  z-index:5!important;
+}
+.mediaSearchBox .mediaClear::before{
+  content:'×';
+  color:var(--txt);
+  font-size:18px;
+  line-height:1;
+  font-weight:700;
+  font-family:Arial, Helvetica, sans-serif;
+  display:block;
+  transform:translateY(-1px);
+}
+.mediaSearchBox .mediaClear:hover{background:#3a4353!important}
