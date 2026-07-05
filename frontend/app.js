@@ -1,5 +1,5 @@
 const API='http://'+location.hostname+':8091/api';
-const APP_VERSION='1.5.4';
+const APP_VERSION='1.5.5';
 let selectedArtist=null, selectedAlbum=null, selectedTagFolder=null;
 let selectedTagGenre=null, selectedTagYear=null;
 let browserMode='artist';
@@ -952,9 +952,14 @@ async function uploadTagCover(){
     folder=parentFolderFromPath(first||'');
   }
   if(!folder){alert('Bitte zuerst ein Album/einen Ordner auswählen.'); return;}
-  const fd=new FormData(); fd.append('file', f);
   try{
-    const res=await j(API+'/tags/cover?folder='+encodeURIComponent(folder), {method:'POST', body:fd});
+    const data=await new Promise((resolve,reject)=>{
+      const r=new FileReader();
+      r.onload=()=>resolve(String(r.result||''));
+      r.onerror=()=>reject(new Error('Datei konnte nicht gelesen werden'));
+      r.readAsDataURL(f);
+    });
+    const res=await j(API+'/tags/cover', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({folder, filename:f.name, content_type:f.type, data})});
     const msg=`Cover gespeichert: ${res.updated}/${res.total} MP3-Dateien`+(res.errors?.length?` · Fehler: ${res.errors.length}`:'');
     progressText.textContent=msg;
     status.textContent=msg;

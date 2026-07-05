@@ -13,7 +13,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 from typing import Optional, Tuple
 
-from fastapi import FastAPI, HTTPException, Response, UploadFile, File as FastAPIFile
+from fastapi import FastAPI, HTTPException, Response, Request
 from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
 from mutagen import File as MutagenFile
@@ -25,9 +25,9 @@ LOG_DIR = Path(os.getenv("LOG_DIR", str(DB_PATH.parent / "logs")))
 LOG_PATH = LOG_DIR / "musiclab.log"
 LOG_MAX_BYTES = int(os.getenv("LOG_MAX_BYTES", str(10 * 1024 * 1024)))
 EXTS = {".mp3", ".m4a", ".aac", ".flac", ".ogg"}
-SCHEMA_VERSION = 18
+SCHEMA_VERSION = 19
 
-app = FastAPI(title="MusicLab API", version="1.5.4")
+app = FastAPI(title="MusicLab API", version="1.5.5")
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
 
 stop_event = threading.Event()
@@ -1207,7 +1207,7 @@ def startup():
 
 @app.get("/api/health")
 def health():
-    return {"ok": True, "version": "1.5.4", "music_root": str(get_music_root()), "db": str(DB_PATH)}
+    return {"ok": True, "version": "1.5.5", "music_root": str(get_music_root()), "db": str(DB_PATH)}
 
 
 @app.post("/api/scan")
@@ -1865,25 +1865,35 @@ def _folder_image_response(folder: str):
 
 
 @app.post("/api/tags/cover")
-async def api_tags_cover(folder: str, file: UploadFile = FastAPIFile(...)):
+async def api_tags_cover(request: Request):
     """Embed an uploaded cover into all MP3 files of a selected album folder.
 
-    Also stores a cover image in the album folder as cover.jpg/cover.png so the media browser
-    can show it even when some files do not expose embedded art reliably.
+    The frontend sends JSON with base64 data instead of multipart/form-data.
+    That keeps the backend startable even when python-multipart is not installed in an older cached image.
     """
-    folder = str(folder or "").strip().strip("/")
+    import base64
+    try:
+        payload = await request.json()
+    except Exception:
+        raise HTTPException(status_code=400, detail="Ungültige Cover-Daten")
+    folder = str(payload.get("folder") or "").strip().strip("/")
     if not folder:
         raise HTTPException(status_code=400, detail="folder fehlt")
-    ctype = (file.content_type or "").lower()
-    raw = await file.read()
+    filename = str(payload.get("filename") or "cover").lower()
+    ctype = str(payload.get("content_type") or "").lower()
+    data_url = str(payload.get("data") or "")
+    if "," in data_url and data_url.startswith("data:"):
+        data_url = data_url.split(",", 1)[1]
+    try:
+        raw = base64.b64decode(data_url, validate=False)
+    except Exception:
+        raise HTTPException(status_code=400, detail="Cover konnte nicht gelesen werden")
     if not raw:
         raise HTTPException(status_code=400, detail="Leere Datei")
-    if "png" in ctype:
+    if "png" in ctype or filename.endswith(".png"):
         mime = "image/png"; suffix = ".png"
-    elif "jpeg" in ctype or "jpg" in ctype or file.filename.lower().endswith((".jpg", ".jpeg")):
+    elif "jpeg" in ctype or "jpg" in ctype or filename.endswith((".jpg", ".jpeg")):
         mime = "image/jpeg"; suffix = ".jpg"
-    elif file.filename.lower().endswith(".png"):
-        mime = "image/png"; suffix = ".png"
     else:
         raise HTTPException(status_code=400, detail="Bitte JPG oder PNG verwenden")
 
