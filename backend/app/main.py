@@ -1571,7 +1571,14 @@ def update_tags(payload: dict):
                         val = str(item.get(src) or "").strip()
                         if val:
                             audio[tag] = [val]
-                            changed[src] = val
+                        else:
+                            # Leeres Feld bedeutet bewusst entfernen/leeren (wichtig z. B. für falsche Genres).
+                            try:
+                                if tag in audio:
+                                    del audio[tag]
+                            except Exception:
+                                audio[tag] = []
+                        changed[src] = val
                 audio.save()
                 db_updates = []
                 args = []

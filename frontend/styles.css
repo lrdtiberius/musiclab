@@ -276,7 +276,7 @@ body.settingsMode aside.panel{display:none!important}
 .clearSearch{position:absolute;right:6px;top:50%;transform:translateY(-50%);width:26px;height:26px;padding:0;border-radius:999px;background:#303847;color:var(--muted);font-size:17px;line-height:24px}
 .clearSearch:hover{background:#3a4353;color:var(--txt)}
 
-/* v1.3.9: Statusleiste in den Header verschoben */
+/* v1.4.0: Tag-Suche per Dropdown */
 .headerStatus{
   flex:1 1 360px;
   min-width:260px;
@@ -325,3 +325,7 @@ body.settingsMode aside.panel{display:none!important}
   .headerStatus{min-width:0;grid-template-columns:1fr}
   .headerStatus .miniBar{display:none}
 }
+
+.tagSearchControls{display:flex;align-items:center;gap:8px;margin-bottom:10px}
+.tagSearchControls label{white-space:nowrap}
+.tagSearchControls select{flex:1;min-width:0}

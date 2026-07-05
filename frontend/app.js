@@ -1,5 +1,5 @@
 const API='http://'+location.hostname+':8091/api';
-const APP_VERSION='1.3.8';
+const APP_VERSION='1.4.0';
 let selectedArtist=null, selectedAlbum=null, selectedTagFolder=null;
 let selectedTagGenre=null, selectedTagYear=null;
 let browserMode='artist';
@@ -15,21 +15,32 @@ function dur(s){s=Number(s||0);let h=Math.floor(s/3600),m=Math.floor((s%3600)/60
 function trackNo(t){if(!t.track_number)return'';return (!t.track_total || Number(t.track_total)===0) ? String(t.track_number) : `${t.track_number}/${t.track_total}`}
 function relPath(p){return String(p||'').replace(/^\/music\//,'')}
 function escHtml(v){return String(v ?? '').replace(/[&<>"]/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]))}
+function resetTagFilters(){
+  selectedArtist=null;
+  selectedTagGenre=null;
+  selectedTagYear=null;
+}
 function clearSearch(){
   if(!search) return;
   search.value='';
-  // Im Album-Filter soll X wirklich auf die komplette Albumliste zurücksetzen.
-  if(browserMode==='album'){
+  // X bedeutet: Suche komplett leeren und die Standardliste des gewählten Suchtyps zeigen.
+  if(currentView==='tags'){
+    resetTagFilters();
+    selectedAlbum=null;
+    selectedTagFolder=null;
+  }else if(browserMode==='album'){
     selectedArtist=null;
     selectedTagGenre=null;
     selectedTagYear=null;
   }
   loadBrowser();
+  if(currentView==='tags') loadTagsPage();
 }
 function handleSearchInput(){
-  // Im Album-Modus soll eine eingegebene Suche immer global suchen –
-  // auch wenn vorher ein Interpret/Genre/Jahr angeklickt wurde.
-  if(browserMode==='album' && (search.value||'').trim()){
+  // In der Tags-Seite ist die Suche immer global nach dem gewählten Suchtyp.
+  if(currentView==='tags'){
+    resetTagFilters();
+  }else if(browserMode==='album' && (search.value||'').trim()){
     selectedArtist=null;
     selectedTagGenre=null;
     selectedTagYear=null;
@@ -300,28 +311,35 @@ async function loadStats(){
 }
 
 function updateBrowserTabsForView(){
-  if(typeof modeGenre !== 'undefined' && modeGenre){
-    modeGenre.textContent = currentView==='tags' ? 'Genre' : 'Neu';
-    modeGenre.style.display = '';
-  }
-  if(typeof modeYear !== 'undefined' && modeYear){
-    modeYear.style.display = currentView==='tags' ? '' : 'none';
-  }
+  const audioSwitch=document.getElementById('audioModeSwitch');
+  const tagControls=document.getElementById('tagSearchControls');
+  const tagSelect=document.getElementById('tagSearchType');
+  if(audioSwitch) audioSwitch.style.display = currentView==='tags' ? 'none' : '';
+  if(tagControls) tagControls.style.display = currentView==='tags' ? '' : 'none';
+  if(currentView==='tags' && tagSelect) tagSelect.value = browserMode;
+}
+function setTagSearchType(type){
+  setBrowserMode(type || 'album');
 }
 function setBrowserMode(mode){
   if(currentView==='audio' && (mode==='genre' || mode==='year')) mode='artist';
-  if(currentView==='tags' && mode==='new') mode='genre';
+  if(currentView==='audio' && mode==='new'){};
+  if(currentView==='tags' && mode==='new') mode='album';
   browserMode=mode;
   search.value='';
-  if(mode==='album'){
+  if(currentView==='tags'){
+    resetTagFilters();
+    selectedAlbum=null;
+    selectedTagFolder=null;
+  }else if(mode==='album'){
     selectedArtist=null;
     selectedTagGenre=null;
     selectedTagYear=null;
   }
-  modeArtist.classList.toggle('active', mode==='artist');
-  modeAlbum.classList.toggle('active', mode==='album');
-  if(typeof modeGenre !== 'undefined' && modeGenre) modeGenre.classList.toggle('active', mode==='new' || mode==='genre');
-  if(typeof modeYear !== 'undefined' && modeYear) modeYear.classList.toggle('active', mode==='year');
+  if(typeof modeArtist !== 'undefined' && modeArtist) modeArtist.classList.toggle('active', mode==='artist');
+  if(typeof modeAlbum !== 'undefined' && modeAlbum) modeAlbum.classList.toggle('active', mode==='album');
+  if(typeof modeGenre !== 'undefined' && modeGenre) modeGenre.classList.toggle('active', mode==='new');
+  if(typeof modeYear !== 'undefined' && modeYear) modeYear.style.display = 'none';
   const titleMap={artist:'Interpreten', album:'Alben', new:'Neu gefunden', genre:'Genres', year:'Jahre'};
   const phMap={artist:'Interpreten suchen...', album:'Alben suchen...', new:'Neue Alben suchen...', genre:'Genre suchen...', year:'Jahr suchen...'};
   browserTitle.textContent = titleMap[mode] || 'Interpreten';
@@ -370,18 +388,15 @@ function bindFilterRows(){
   });
 }
 async function selectTagFilter(kind, value){
-  selectedArtist=null;
+  resetTagFilters();
   selectedTagGenre = kind==='genre' ? value : null;
   selectedTagYear = kind==='year' ? value : null;
   selectedAlbum=null;
   selectedTagFolder=null;
   browserMode='album';
   search.value='';
-  modeArtist.classList.remove('active');
-  modeAlbum.classList.add('active');
-  if(typeof modeGenre !== 'undefined' && modeGenre) modeGenre.classList.remove('active');
-  if(typeof modeYear !== 'undefined' && modeYear) modeYear.classList.remove('active');
-  search.placeholder='Alben suchen...';
+  const tagSelect=document.getElementById('tagSearchType');
+  if(tagSelect) tagSelect.value='album';
   await loadBrowser();
   await loadTagsPage();
 }
@@ -515,6 +530,8 @@ async function selectArtist(a, keepAlbum=false){
   // Tags-Ansicht: ein Klick auf einen Interpreten zeigt sofort dessen Alben in der linken Liste.
   if(currentView==='tags' && !keepAlbum){
     browserMode='album';
+    const tagSelect=document.getElementById('tagSearchType');
+    if(tagSelect) tagSelect.value='album';
     modeArtist.classList.remove('active');
     modeAlbum.classList.add('active');
     if(typeof modeGenre !== 'undefined' && modeGenre) modeGenre.classList.remove('active');
@@ -781,14 +798,23 @@ function setAppView(view){
   document.querySelectorAll('.appView').forEach(el=>el.classList.toggle('active', el.id===view+'View'));
   [['tabAudio','audio'],['tabTags','tags'],['tabSettings','settings']].forEach(([id,v])=>{const b=document.getElementById(id); if(b)b.classList.toggle('active', view===v)});
   document.body.classList.toggle('settingsMode', view==='settings');
-  updateBrowserTabsForView();
   if(view==='tags'){
-    if(browserMode==='new') browserMode='artist';
-    setBrowserMode(browserMode);
+    // Tags arbeitet mit einem Suchtyp-Dropdown. Standard ist Album.
+    if(!['artist','album','genre','year'].includes(browserMode)) browserMode='album';
+    const tagSelect=document.getElementById('tagSearchType');
+    if(tagSelect) tagSelect.value=browserMode;
+    resetTagFilters();
+    selectedAlbum=null;
+    selectedTagFolder=null;
+    updateBrowserTabsForView();
+    loadBrowser();
     loadTagsPage();
-  }
-  if(view==='audio'){
-    if(browserMode==='genre' || browserMode==='year') setBrowserMode('artist');
+  }else if(view==='audio'){
+    if(browserMode==='genre' || browserMode==='year') browserMode='artist';
+    updateBrowserTabsForView();
+    setBrowserMode(browserMode);
+  }else{
+    updateBrowserTabsForView();
   }
   if(view==='settings'){ syncSettingsPageFromMain(); checkMusicRootPage(); }
 }
