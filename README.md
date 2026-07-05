@@ -1,4 +1,4 @@
-# MusicLab v1.3.8
+# MusicLab v1.3.9
 
 Musikbibliothek scannen, LUFS/True-Peak/LRA analysieren und Alben oder Titel normalisieren.
 
@@ -63,30 +63,30 @@ Idea by Lrd.Tiberius.
 - Version auf v1.2.3 aktualisiert.
 
 
-## v1.3.8
+## v1.3.9
 
 - Linke Navigation erweitert: Interpreten / Alben / Neu.
 - „Neu“ zeigt Alben mit noch offenen, nicht analysierten Titeln als Arbeitsliste.
 - Einstellungen erweitert: Überwachung aus / nur melden / automatisch scannen / scannen + analysieren.
 - Hintergrund-Watcher prüft den Musikordner regelmäßig auf Änderungen.
-- Version auf v1.3.8 aktualisiert.
+- Version auf v1.3.9 aktualisiert.
 
 
-## v1.3.8
+## v1.3.9
 
 - Hauptnavigation mit Audio / Tags / Einstellungen oben rechts.
 - Einstellungen sind jetzt eine eigene Ansicht statt Popup.
 - Neue Tags-Ansicht zum Bearbeiten von Album- und Titel-Tags.
-- Version auf v1.3.8 aktualisiert.
+- Version auf v1.3.9 aktualisiert.
 
 
-## v1.3.8
+## v1.3.9
 - Albumsuche funktioniert wieder global, auch wenn vorher ein Interpret ausgewählt wurde.
 - Suchfeld hat ein X zum schnellen Leeren.
 - Tags-Seite berechnet „Tracks pro Album“ bei Samplern/mehreren Interpreten über das komplette Album statt nur über den zuletzt gewählten Interpreten.
 
 
-## v1.3.8
+## v1.3.9
 
 - Genre-Feld als Combo-Feld mit vorhandenen Genres aus der Bibliothek.
 - Disc-Anzahl ergänzt: Disc pro Titel + Discs pro Album.
@@ -94,13 +94,13 @@ Idea by Lrd.Tiberius.
 - Datenbank-Schema auf 15 aktualisiert.
 
 
-## v1.3.8
+## v1.3.9
 - Scan-Fehler behoben: fehlender `genre`-Parameter beim Speichern von Tracks.
 - Versionsnummern in Backend, Frontend und README vereinheitlicht.
 - Cache-/Pycache-Dateien aus dem ZIP entfernt.
 
-## v1.3.8
+## v1.3.9
 - Tags-Seite: Filter links jetzt nach Interpret, Album, Genre oder Jahr.
 - Track-/Disc-Anzeige auf "Track von" und "Disc von" umgestellt.
 - Such-X im Albumfilter zeigt wieder alle Alben.
-- Version auf v1.3.8 aktualisiert.
+- Version auf v1.3.9 aktualisiert.

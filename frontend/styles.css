@@ -275,3 +275,53 @@ body.settingsMode aside.panel{display:none!important}
 .searchBox input{width:100%;padding-right:36px;margin:0}
 .clearSearch{position:absolute;right:6px;top:50%;transform:translateY(-50%);width:26px;height:26px;padding:0;border-radius:999px;background:#303847;color:var(--muted);font-size:17px;line-height:24px}
 .clearSearch:hover{background:#3a4353;color:var(--txt)}
+
+/* v1.3.9: Statusleiste in den Header verschoben */
+.headerStatus{
+  flex:1 1 360px;
+  min-width:260px;
+  max-width:560px;
+  display:grid;
+  grid-template-columns:120px minmax(0,1fr);
+  align-items:center;
+  gap:10px;
+  background:#121722;
+  border:1px solid #303847;
+  border-radius:12px;
+  padding:7px 10px;
+}
+.headerStatus .miniBar{height:8px;min-width:90px}
+.headerStatus #progressText{
+  white-space:nowrap;
+  overflow:hidden;
+  text-overflow:ellipsis;
+  color:var(--muted);
+  font-size:12px;
+}
+.viewTabs{margin-left:0!important;flex:0 0 auto}
+
+/* Progress-Panel entfernt: Audio bekommt mehr vertikalen Raum */
+#audioView.appView.active{
+  grid-template-columns:minmax(260px,30%) minmax(0,1fr)!important;
+  grid-template-rows:44px 60px minmax(0,1fr) 184px!important;
+  gap:10px!important;
+}
+#audioView > .statsLine{grid-column:1 / -1!important;grid-row:1!important}
+#audioView > .refbox{grid-column:1 / -1!important;grid-row:2!important}
+#audioView > section.panel:nth-of-type(1){grid-column:1!important;grid-row:3!important}
+#audioView > section.panel:nth-of-type(2){grid-column:2!important;grid-row:3!important}
+#audioView > .bottomGrid{grid-column:1 / -1!important;grid-row:4!important}
+
+@media(max-width:1150px){
+  .headerStatus{order:10;flex-basis:100%;max-width:none;grid-template-columns:120px 1fr}
+  header{height:auto;min-height:54px;flex-wrap:wrap;padding:8px 16px}
+  .layout{height:calc(100vh - 92px)}
+  #audioView.appView.active{grid-template-columns:1fr!important;grid-template-rows:44px 60px 150px minmax(0,1fr) 170px!important}
+  #audioView > section.panel:nth-of-type(1){grid-column:1!important;grid-row:3!important}
+  #audioView > section.panel:nth-of-type(2){grid-column:1!important;grid-row:4!important}
+  #audioView > .bottomGrid{grid-column:1!important;grid-row:5!important}
+}
+@media(max-width:900px){
+  .headerStatus{min-width:0;grid-template-columns:1fr}
+  .headerStatus .miniBar{display:none}
+}
