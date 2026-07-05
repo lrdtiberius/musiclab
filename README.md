@@ -1,4 +1,4 @@
-# MusicLab v1.2.0
+# MusicLab v1.2.1
 
 Musikbibliothek scannen, LUFS/True-Peak/LRA analysieren und Alben oder Titel normalisieren.
 
@@ -50,3 +50,8 @@ Idea by Lrd.Tiberius.
 - Log/Historie größer und gleichmäßiger.
 - Ein-Bildschirm-Layout bleibt erhalten.
 - Footer mit Idea by Lrd.Tiberius bleibt sichtbar.
+
+
+## v1.2.1
+- Musikpfad kann in den Einstellungen als Container-Pfad angepasst werden.
+- Pfadprüfung für den Musikordner ergänzt.

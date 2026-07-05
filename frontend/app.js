@@ -110,6 +110,7 @@ async function loadSettings(){
   lra.value=s.lra;
   if(s.backup_mode) backupMode.value=s.backup_mode;
   if(s.parallel_analysis) parallelAnalysis.value=s.parallel_analysis;
+  if(typeof musicRoot!=='undefined' && s.music_root) musicRoot.value=s.music_root;
   updateTargetInfo();
 }
 
@@ -117,21 +118,44 @@ function updateTargetInfo(){
   const bm={on:'/data/backups',sidecar:'.bak',off:'kein Backup'}[backupMode.value]||backupMode.value;
   const bmShort={on:'ein',sidecar:'.bak',off:'aus'}[backupMode.value]||backupMode.value;
   targetInfo.textContent=`Ziel ${targetLufs.value} LUFS · TP ${truePeak.value} · LRA ${lra.value} · Backup ${bm} · ${parallelAnalysis.value}×`;
-  if(typeof settingsLine!=='undefined') settingsLine.textContent=`Backup: ${bmShort} · Parallel: ${parallelAnalysis.value}×`;
+  const mr=(typeof musicRoot!=='undefined' && musicRoot.value) ? musicRoot.value : '/music';
+  if(typeof settingsLine!=='undefined') settingsLine.textContent=`Backup: ${bmShort} · Parallel: ${parallelAnalysis.value}× · Musik: ${mr}`;
 }
-function openSettings(){settingsModal.classList.add('show')}
+function openSettings(){settingsModal.classList.add('show');checkMusicRoot()}
 function closeSettings(){settingsModal.classList.remove('show')}
-async function saveSettingsAndClose(){await saveSettings();closeSettings()}
+async function saveSettingsAndClose(){await saveSettings();await checkMusicRoot();closeSettings()}
 
 async function saveSettings(){
   await j(API+'/settings',{
     method:'POST',
     headers:{'Content-Type':'application/json'},
-    body:JSON.stringify({target_lufs:targetLufs.value,true_peak:truePeak.value,lra:lra.value,backup_mode:backupMode.value,parallel_analysis:parallelAnalysis.value})
+    body:JSON.stringify({target_lufs:targetLufs.value,true_peak:truePeak.value,lra:lra.value,backup_mode:backupMode.value,parallel_analysis:parallelAnalysis.value,music_root:musicRoot.value})
   });
   updateTargetInfo();
 }
 
+
+async function checkMusicRoot(){
+  try{
+    const path=(musicRoot.value||'/music').trim();
+    const res=await j(API+'/settings/check_music_root?path='+encodeURIComponent(path));
+    if(musicRootStatus){
+      if(res.ok){
+        const suffix=res.sample_audio_files>0 ? ` · Audiodateien gefunden` : ' · keine Audiodateien im Stichprobentest';
+        musicRootStatus.textContent=`✓ Pfad erreichbar${suffix}`;
+        musicRootStatus.className='small okText';
+      }else{
+        musicRootStatus.textContent=`⚠ Pfad nicht nutzbar: ${res.exists?'kein lesbarer Ordner':'nicht gefunden'}`;
+        musicRootStatus.className='small warnText';
+      }
+    }
+  }catch(e){
+    if(musicRootStatus){
+      musicRootStatus.textContent='⚠ Prüfung fehlgeschlagen: '+e.message;
+      musicRootStatus.className='small warnText';
+    }
+  }
+}
 
 async function loadReference(){
   try{

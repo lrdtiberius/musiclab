@@ -168,3 +168,7 @@ th,td{padding:7px 8px}
   main > .refbox + .panel{min-height:44px!important}
   .bottomGrid{grid-template-columns:minmax(0,1.1fr) minmax(300px,.9fr)}
 }
+
+/* v1.2.1 Musikpfad-Einstellungen */
+.okText{color:var(--ok)!important}.warnText{color:var(--gold)!important}
+.dialog input#musicRoot{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}

@@ -14,15 +14,15 @@ from fastapi import FastAPI, HTTPException, Response
 from fastapi.middleware.cors import CORSMiddleware
 from mutagen import File as MutagenFile
 
-MUSIC_ROOT = Path(os.getenv("MUSIC_ROOT", "/music"))
+DEFAULT_MUSIC_ROOT = Path(os.getenv("MUSIC_ROOT", "/music"))
 DB_PATH = Path(os.getenv("DB_PATH", "/data/musiclab.sqlite"))
 LOG_DIR = Path(os.getenv("LOG_DIR", str(DB_PATH.parent / "logs")))
 LOG_PATH = LOG_DIR / "musiclab.log"
 LOG_MAX_BYTES = int(os.getenv("LOG_MAX_BYTES", str(10 * 1024 * 1024)))
 EXTS = {".mp3", ".m4a", ".aac", ".flac", ".ogg"}
-SCHEMA_VERSION = 11
+SCHEMA_VERSION = 12
 
-app = FastAPI(title="MusicLab API", version="1.1.0")
+app = FastAPI(title="MusicLab API", version="1.2.1")
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
 
 stop_event = threading.Event()
@@ -181,7 +181,7 @@ def init_db():
         )
         con.execute("CREATE INDEX IF NOT EXISTS idx_history_job ON history(job_id)")
         con.execute("CREATE INDEX IF NOT EXISTS idx_history_created ON history(created_at)")
-        defaults = {"target_lufs": "-16", "true_peak": "-1.5", "lra": "11", "backup_mode": "on", "parallel_analysis": "2"}
+        defaults = {"target_lufs": "-16", "true_peak": "-1.5", "lra": "11", "backup_mode": "on", "parallel_analysis": "2", "music_root": str(DEFAULT_MUSIC_ROOT)}
         for k, v in defaults.items():
             con.execute("INSERT OR IGNORE INTO settings(key,value) VALUES(?,?)", (k, v))
         con.execute("INSERT OR REPLACE INTO meta(key,value) VALUES('schema_version', ?)", (str(SCHEMA_VERSION),))
@@ -196,11 +196,51 @@ def get_settings():
 
 def save_settings(data: dict):
     with db() as con:
-        for k in ["target_lufs", "true_peak", "lra", "backup_mode", "parallel_analysis"]:
+        for k in ["target_lufs", "true_peak", "lra", "backup_mode", "parallel_analysis", "music_root"]:
             if k in data:
                 con.execute("INSERT OR REPLACE INTO settings(key,value) VALUES(?,?)", (k, str(data[k])))
         con.commit()
 
+
+
+def get_music_root() -> Path:
+    """Return the currently configured container music path.
+
+    The path must be visible inside the container, usually because docker-compose
+    mounts the NAS music folder to it, e.g. /volume1/DS420/Musik:/music.
+    """
+    try:
+        val = get_settings().get("music_root") or str(DEFAULT_MUSIC_ROOT)
+    except Exception:
+        val = str(DEFAULT_MUSIC_ROOT)
+    val = str(val).strip() or str(DEFAULT_MUSIC_ROOT)
+    return Path(val)
+
+def check_music_root(path_value: Optional[str] = None) -> dict:
+    root = Path((path_value or str(get_music_root())).strip() or str(DEFAULT_MUSIC_ROOT))
+    exists = root.exists()
+    is_dir = root.is_dir() if exists else False
+    readable = os.access(root, os.R_OK) if exists else False
+    audio_count = 0
+    error = None
+    if exists and is_dir and readable:
+        try:
+            for p in root.rglob("*"):
+                if is_audio_candidate(p):
+                    audio_count += 1
+                    if audio_count >= 20:
+                        break
+        except Exception as e:
+            error = str(e)
+    return {
+        "path": str(root),
+        "exists": exists,
+        "is_dir": is_dir,
+        "readable": readable,
+        "ok": bool(exists and is_dir and readable),
+        "sample_audio_files": audio_count,
+        "error": error,
+    }
 
 def value_to_str(value):
     if value is None:
@@ -238,8 +278,9 @@ def parse_number_pair(raw: Optional[str]) -> Tuple[Optional[int], Optional[int]]
     return n, total
 
 
-def fallback_from_path(path: Path):
-    rel = path.relative_to(MUSIC_ROOT).parts
+def fallback_from_path(path: Path, root: Optional[Path] = None):
+    root = root or get_music_root()
+    rel = path.relative_to(root).parts
     if len(rel) >= 3:
         return rel[0], rel[1]
     if len(rel) == 2:
@@ -252,10 +293,11 @@ def audio_channels(info):
     return v if isinstance(v, int) else None
 
 
-def scan_file(path: Path) -> Optional[dict]:
+def scan_file(path: Path, root: Optional[Path] = None) -> Optional[dict]:
+    root = root or get_music_root()
     st = path.stat()
-    rel = str(path.relative_to(MUSIC_ROOT))
-    fallback_artist, fallback_album = fallback_from_path(path)
+    rel = str(path.relative_to(root))
+    fallback_artist, fallback_album = fallback_from_path(path, root)
     audio = MutagenFile(path, easy=True)
     tags = audio.tags if audio and getattr(audio, "tags", None) else {}
     info = audio.info if audio and getattr(audio, "info", None) else None
@@ -358,7 +400,14 @@ def stop_requested() -> bool:
 
 def scan_worker():
     init_db()
-    files = [p for p in MUSIC_ROOT.rglob("*") if is_audio_candidate(p)]
+    root = get_music_root()
+    if not root.exists() or not root.is_dir():
+        begin_job("scan", 0, "Musikpfad nicht gefunden")
+        state["errors"] += 1
+        add_log(f"Scanfehler: Musikpfad nicht gefunden oder kein Ordner: {root}", True)
+        finish_job("Musikpfad nicht gefunden", True)
+        return
+    files = [p for p in root.rglob("*") if is_audio_candidate(p)]
     begin_job("scan", len(files), "Scan läuft")
     add_log(f"Scan gestartet: {len(files)} Dateien")
 
@@ -370,11 +419,11 @@ def scan_worker():
             if stop_requested():
                 add_log("Scan abgebrochen")
                 break
-            rel = str(p.relative_to(MUSIC_ROOT))
+            rel = str(p.relative_to(root))
             seen_paths.add(rel)
             state["current"] = rel
             try:
-                item = scan_file(p)
+                item = scan_file(p, root)
                 if item:
                     old = existing.get(item["path"])
                     changed = bool(old and (old.get("size") != item.get("size") or float(old.get("mtime") or 0) != float(item.get("mtime") or 0)))
@@ -555,7 +604,7 @@ def analysis_worker(artist: Optional[str] = None, album: Optional[str] = None):
     add_log(f"Analyse gestartet: {len(rows)} Titel, parallel: {workers}")
 
     def work(row):
-        return row, analyze_track_file(MUSIC_ROOT / row["path"])
+        return row, analyze_track_file(get_music_root() / row["path"])
 
     with db() as con:
         with ThreadPoolExecutor(max_workers=workers) as pool:
@@ -609,7 +658,7 @@ def backup_file(file: Path, rel_path: str, mode: str) -> Optional[str]:
 
 
 def normalize_file(rel_path: str, settings: dict, backup_mode: Optional[str] = None) -> bool:
-    file = MUSIC_ROOT / rel_path
+    file = get_music_root() / rel_path
     if not file.exists():
         raise RuntimeError("Datei nicht gefunden")
     if not os.access(file, os.W_OK):
@@ -669,7 +718,7 @@ def insert_history(con, job_id: str, row, album_artist: Optional[str], album_nam
 
 
 def analyze_and_store(con, track_id: int, rel_path: str) -> dict:
-    result = analyze_track_file(MUSIC_ROOT / rel_path)
+    result = analyze_track_file(get_music_root() / rel_path)
     upsert_analysis(con, track_id, result)
     return result
 
@@ -697,7 +746,7 @@ def normalize_worker(artist: Optional[str] = None, album: Optional[str] = None, 
                 break
             state["current"] = row["path"]
             try:
-                before = analyze_track_file(MUSIC_ROOT / row["path"])
+                before = analyze_track_file(get_music_root() / row["path"])
                 backup_path = normalize_file(row["path"], settings, settings.get("backup_mode", "on"))
                 result = analyze_and_store(con, row["id"], row["path"])
                 insert_history(con, job_id, row, artist, album or row["album"], backup_path, settings.get("backup_mode", "on"), settings, before, result)
@@ -810,7 +859,7 @@ def normalize_tracks_worker(paths: list, backup_mode: Optional[str] = None):
                 break
             state["current"] = row["path"]
             try:
-                before = analyze_track_file(MUSIC_ROOT / row["path"])
+                before = analyze_track_file(get_music_root() / row["path"])
                 backup_path = normalize_file(row["path"], settings, settings.get("backup_mode", "on"))
                 result = analyze_and_store(con, row["id"], row["path"])
                 insert_history(con, job_id, row, row.get("artist"), row.get("album"), backup_path, settings.get("backup_mode", "on"), settings, before, result)
@@ -888,7 +937,7 @@ def analyze_batch_worker(items: list):
     add_log(f"Batch-Analyse gestartet: {len(albums)} Album/Alben, {len(all_rows)} Titel, parallel: {workers}")
 
     def work(row):
-        return row, analyze_track_file(MUSIC_ROOT / row["path"])
+        return row, analyze_track_file(get_music_root() / row["path"])
 
     with db() as con:
         with ThreadPoolExecutor(max_workers=workers) as pool:
@@ -947,7 +996,7 @@ def normalize_batch_worker(items: list, backup_mode: Optional[str] = None):
                 break
             state["current"] = f"{row.get('_album_label','')} / {row['path']}".strip(" /")
             try:
-                before = analyze_track_file(MUSIC_ROOT / row["path"])
+                before = analyze_track_file(get_music_root() / row["path"])
                 backup_path = normalize_file(row["path"], settings, settings.get("backup_mode", "on"))
                 # Direkt nach jedem normalisierten Titel neu analysieren, damit Albumkarte
                 # und Titelliste nach Abschluss aktuelle Werte zeigen.
@@ -974,7 +1023,7 @@ def startup():
 
 @app.get("/api/health")
 def health():
-    return {"ok": True, "version": "1.1.0", "music_root": str(MUSIC_ROOT), "db": str(DB_PATH)}
+    return {"ok": True, "version": "1.2.1", "music_root": str(get_music_root()), "db": str(DB_PATH)}
 
 
 @app.post("/api/scan")
@@ -1108,6 +1157,11 @@ def api_settings():
 def api_save_settings(data: dict):
     save_settings(data)
     return get_settings()
+
+
+@app.get("/api/settings/check_music_root")
+def api_check_music_root(path: Optional[str] = None):
+    return check_music_root(path)
 
 
 @app.get("/api/status")
@@ -1349,7 +1403,7 @@ def api_history_restore(data: dict):
                 errors.append(f"Kein Backup für {r['path']}")
                 continue
             backup = Path(bp)
-            target = MUSIC_ROOT / r["path"]
+            target = get_music_root() / r["path"]
             if not backup.exists():
                 errors.append(f"Backup fehlt: {bp}")
                 continue
