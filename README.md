@@ -1,15 +1,14 @@
-# MusicLab v1.5.6
+# MusicLab v1.5.7
 
 Musikbibliothek analysieren, normalisieren, Tags bearbeiten und Medien durchsuchen.
 
-## Neu in v1.5.6
+## Neu in v1.5.7
 
-- Medien-Seite überarbeitet als Browser **Interpret → Album → Titel**.
-- Linke Audio-/Tags-Suche wird auf der Medien-Seite ausgeblendet.
-- Sortierung der Medienansicht nach **Interpret** oder **Album**.
-- Albumliste zeigt Coverbilder, wenn sie in den Dateien vorhanden sind.
-- Albumdetails zeigen Cover, Titel, Dauer, Bitrate und Pfad.
-- Download-Button bleibt für Albumordner als ZIP erhalten.
+- Coveranzeige liest jetzt ausschließlich eingebettete Cover aus den Audiodateien.
+- `cover.jpg`/`folder.jpg` werden nicht mehr benötigt und von MusicLab nicht mehr erzeugt.
+- Cover-Upload auf der Tags-Seite bettet das Bild in alle MP3s des Albumordners ein.
+- Medienseite zeigt weiterhin einen Platzhalter, wenn wirklich kein eingebettetes Cover vorhanden ist.
+- Backend benötigt weiterhin kein `python-multipart`.
 
 ## Installation Synology
 
