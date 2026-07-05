@@ -1480,8 +1480,18 @@ def get_tag_albums(q: str = "", artist: Optional[str] = None, genre: Optional[st
 
 
 @app.get("/api/tracks_by_folder")
-def get_tracks_by_folder(folder: str):
+def get_tracks_by_folder(folder: str, artist: Optional[str] = None, genre: Optional[str] = None, year: Optional[str] = None, q: str = ""):
+    """Return tracks from one physical folder, optionally limited by the active tag-browser context.
+
+    This matters for repair cases like many root-level/unknown-album files: a folder
+    entry shown under a selected artist must not expand to all other artists that
+    happen to live in the same physical folder.
+    """
     folder = str(folder or "").strip().strip("/")
+    artist_norm = (artist or "").strip().lower()
+    genre_norm = (genre or "").strip().lower()
+    year_norm = (year or "").strip().lower()
+    q_norm = (q or "").strip().lower()
     with db() as con:
         rows = [dict(r) for r in con.execute(
             """
@@ -1491,7 +1501,22 @@ def get_tracks_by_folder(folder: str):
             ORDER BY COALESCE(t.disc_number,1), COALESCE(t.track_number,9999), t.title COLLATE NOCASE, t.path COLLATE NOCASE
             """
         ).fetchall()]
-    return [r for r in rows if parent_folder_key(r.get("path") or "") == folder]
+    out = []
+    for r in rows:
+        if parent_folder_key(r.get("path") or "") != folder:
+            continue
+        if artist_norm and (r.get("artist") or "").strip().lower() != artist_norm:
+            continue
+        if genre_norm and (r.get("genre") or "").strip().lower() != genre_norm:
+            continue
+        if year_norm and not str(r.get("year") or "").strip().lower().startswith(year_norm):
+            continue
+        if q_norm:
+            hay = " ".join([r.get("artist") or "", r.get("album") or "", r.get("title") or "", r.get("genre") or "", r.get("year") or "", r.get("path") or ""]).lower()
+            if q_norm not in hay:
+                continue
+        out.append(r)
+    return out
 
 
 @app.get("/api/tracks")

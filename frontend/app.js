@@ -1,5 +1,5 @@
 const API='http://'+location.hostname+':8091/api';
-const APP_VERSION='1.4.2';
+const APP_VERSION='1.4.3';
 let selectedArtist=null, selectedAlbum=null, selectedTagFolder=null;
 let selectedTagGenre=null, selectedTagYear=null;
 let browserMode='artist';
@@ -859,7 +859,15 @@ async function loadGenreOptions(){
 
 async function getTagTrackUrl(){
   if(selectedTagFolder!==null && selectedTagFolder!==undefined){
-    return {url:API+'/tracks_by_folder?folder='+encodeURIComponent(selectedTagFolder), useArtist:null, byFolder:true};
+    let url=API+'/tracks_by_folder?folder='+encodeURIComponent(selectedTagFolder);
+    // Preserve the current browser context. This prevents e.g. "Unbekanntes Album"
+    // from expanding to every artist when it was opened from "Albumordner von ASP".
+    const rawQ=(search.value||'').trim();
+    if(selectedArtist) url+='&artist='+encodeURIComponent(selectedArtist);
+    if(selectedTagGenre) url+='&genre='+encodeURIComponent(selectedTagGenre);
+    if(selectedTagYear) url+='&year='+encodeURIComponent(selectedTagYear);
+    if(rawQ) url+='&q='+encodeURIComponent(rawQ);
+    return {url, useArtist:selectedArtist||null, byFolder:true};
   }
   let useArtist = selectedArtist;
   try{
