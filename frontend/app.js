@@ -1,5 +1,5 @@
 const API='http://'+location.hostname+':8091/api';
-const APP_VERSION='1.3.4';
+const APP_VERSION='1.3.5';
 let selectedArtist=null, selectedAlbum=null;
 let browserMode='artist';
 let lastRunning=false;
@@ -710,6 +710,15 @@ async function checkMusicRootPage(){
     else{dst.textContent='⚠ Pfad nicht nutzbar: '+(res.exists?'kein lesbarer Ordner':'nicht gefunden');dst.className='small warnText'}
   }catch(e){dst.textContent='⚠ Prüfung fehlgeschlagen: '+e.message;dst.className='small warnText'}
 }
+async function loadGenreOptions(){
+  const list=document.getElementById('genreOptions');
+  if(!list)return;
+  try{
+    const genres=await j(API+'/genres');
+    list.innerHTML=(genres||[]).map(g=>`<option value="${escAttr(g)}"></option>`).join('');
+  }catch(e){/* Genre-Liste optional */}
+}
+
 async function getTagTrackUrl(){
   // Sampler/Compilations bestehen aus mehreren Interpreten. In diesem Fall darf
   // die Tags-Seite nicht auf den zuletzt angeklickten Interpreten filtern,
@@ -730,7 +739,7 @@ async function loadTagsPage(){
   if(!selectedAlbum){
     hint.textContent = selectedArtist ? 'Bitte links ein Album von '+selectedArtist+' auswählen.' : 'Noch kein Album ausgewählt.';
     body.innerHTML='';
-    const tt=document.getElementById('tagTrackTotal'); if(tt)tt.value='';
+    const tt=document.getElementById('tagTrackTotal'); if(tt)tt.value=''; const dt=document.getElementById('tagDiscTotal'); if(dt)dt.value='';
     return;
   }
   try{
@@ -739,15 +748,22 @@ async function loadTagsPage(){
     hint.textContent=`${useArtist?useArtist+' · ':''}${selectedAlbum} · ${rows.length} Titel`;
     if(rows.length){
       const first=rows[0];
-      const aa=document.getElementById('tagAlbumArtist'), al=document.getElementById('tagAlbumName'), tt=document.getElementById('tagTrackTotal');
+      const aa=document.getElementById('tagAlbumArtist'), al=document.getElementById('tagAlbumName'), tt=document.getElementById('tagTrackTotal'), dt=document.getElementById('tagDiscTotal'), yr=document.getElementById('tagYear'), ge=document.getElementById('tagGenre');
       if(aa)aa.value=first.artist||selectedArtist||'';
       if(al)al.value=first.album||selectedAlbum||'';
       if(tt)tt.value=first.track_total && Number(first.track_total)>0 ? first.track_total : rows.length;
+      const discTotals=rows.map(r=>Number(r.disc_total||0)).filter(n=>n>0);
+      if(dt)dt.value=discTotals.length ? Math.max(...discTotals) : '';
+      if(yr)yr.value=first.year||'';
+      if(ge)ge.value=first.genre||'';
     }
+    await loadGenreOptions();
     const totalValue = document.getElementById('tagTrackTotal')?.value || (rows.length?String(rows.length):'');
+    const discTotalValue = document.getElementById('tagDiscTotal')?.value || '';
     body.innerHTML=rows.map((x,i)=>{
       const trackNumber = x.track_number || parseInt(String(x.track_raw||'').split('/')[0],10) || (i+1);
-      return `<tr data-path="${escAttr(relPath(x.path))}"><td>${i+1}</td><td><input class="tagTitle" value="${escAttr(x.title||'')}"></td><td><input class="tagArtist" value="${escAttr(x.artist||'')}"></td><td><input class="tagTrack" value="${escAttr(trackNumber)}"></td><td class="tagTotalShow">${escHtml(totalValue)}</td><td class="small" title="${escAttr(relPath(x.path))}">${escHtml(relPath(x.path))}</td></tr>`;
+      const discNumber = x.disc_number || parseInt(String(x.disc_raw||'').split('/')[0],10) || '';
+      return `<tr data-path="${escAttr(relPath(x.path))}"><td>${i+1}</td><td><input class="tagTitle" value="${escAttr(x.title||'')}"></td><td><input class="tagArtist" value="${escAttr(x.artist||'')}"></td><td><input class="tagTrack" value="${escAttr(trackNumber)}"></td><td class="tagTotalShow">${escHtml(totalValue)}</td><td><input class="tagDisc" value="${escAttr(discNumber)}" placeholder="1"></td><td class="tagDiscTotalShow">${escHtml(discTotalValue||'-')}</td><td class="small" title="${escAttr(relPath(x.path))}">${escHtml(relPath(x.path))}</td></tr>`;
     }).join('');
   }catch(e){hint.textContent='Tags konnten nicht geladen werden: '+e.message; body.innerHTML='';}
 }
@@ -755,6 +771,10 @@ function escAttr(s){return String(s ?? '').replaceAll('&','&amp;').replaceAll('"
 function syncTrackTotalPreview(){
   const total=(document.getElementById('tagTrackTotal')?.value||'').trim();
   document.querySelectorAll('.tagTotalShow').forEach(el=>el.textContent=total||'-');
+}
+function syncDiscTotalPreview(){
+  const total=(document.getElementById('tagDiscTotal')?.value||'').trim();
+  document.querySelectorAll('.tagDiscTotalShow').forEach(el=>el.textContent=total||'-');
 }
 async function saveAlbumTags(){
   const rows=[...document.querySelectorAll('#tagTracks tr[data-path]')];
@@ -770,11 +790,15 @@ async function saveTrackTags(){
   const rows=[...document.querySelectorAll('#tagTracks tr[data-path]')];
   if(!rows.length){alert('Keine Titel geladen.');return;}
   const total=(document.getElementById('tagTrackTotal')?.value||'').trim();
+  const discTotal=(document.getElementById('tagDiscTotal')?.value||'').trim();
   const updates=rows.map(r=>{
     const raw=(r.querySelector('.tagTrack')?.value||'').trim();
     const num=raw.split('/')[0].trim();
     const tracknumber = num ? (total ? `${num}/${total}` : num) : '';
-    return {path:r.dataset.path,title:r.querySelector('.tagTitle')?.value||'',artist:r.querySelector('.tagArtist')?.value||'',tracknumber};
+    const discRaw=(r.querySelector('.tagDisc')?.value||'').trim();
+    const discNum=discRaw.split('/')[0].trim();
+    const discnumber = discNum ? (discTotal ? `${discNum}/${discTotal}` : discNum) : '';
+    return {path:r.dataset.path,title:r.querySelector('.tagTitle')?.value||'',artist:r.querySelector('.tagArtist')?.value||'',tracknumber,discnumber};
   });
   await saveTagUpdates(updates, 'Titel-Tags gespeichert.');
 }
@@ -782,7 +806,7 @@ async function saveTagUpdates(updates, okMsg){
   try{
     const res=await j(API+'/tags/update',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({updates})});
     alert(`${okMsg}\nGespeichert: ${res.updated}/${res.total}`+(res.errors?.length?'\nFehler:\n'+res.errors.join('\n'):''));
-    await loadStats(); await loadBrowser(); await loadAlbums(); if(selectedAlbum) await selectAlbum(selectedAlbum);
+    await loadStats(); await loadBrowser(); await loadAlbums(); await loadGenreOptions(); if(selectedAlbum) await selectAlbum(selectedAlbum);
   }catch(e){alert('Tags konnten nicht gespeichert werden:\n'+e.message)}
 }
 

@@ -20,9 +20,9 @@ LOG_DIR = Path(os.getenv("LOG_DIR", str(DB_PATH.parent / "logs")))
 LOG_PATH = LOG_DIR / "musiclab.log"
 LOG_MAX_BYTES = int(os.getenv("LOG_MAX_BYTES", str(10 * 1024 * 1024)))
 EXTS = {".mp3", ".m4a", ".aac", ".flac", ".ogg"}
-SCHEMA_VERSION = 14
+SCHEMA_VERSION = 15
 
-app = FastAPI(title="MusicLab API", version="1.3.3")
+app = FastAPI(title="MusicLab API", version="1.3.5")
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
 
 stop_event = threading.Event()
@@ -117,6 +117,8 @@ def init_db():
                 disc_raw TEXT,
                 disc_number INTEGER,
                 disc_total INTEGER,
+                genre TEXT,
+                year TEXT,
                 duration REAL,
                 codec TEXT,
                 bitrate INTEGER,
@@ -131,6 +133,11 @@ def init_db():
         con.execute("CREATE UNIQUE INDEX IF NOT EXISTS ux_tracks_path ON tracks(path)")
         con.execute("CREATE INDEX IF NOT EXISTS idx_tracks_artist ON tracks(artist COLLATE NOCASE)")
         con.execute("CREATE INDEX IF NOT EXISTS idx_tracks_album ON tracks(artist COLLATE NOCASE, album COLLATE NOCASE)")
+        cols = {r["name"] for r in con.execute("PRAGMA table_info(tracks)").fetchall()}
+        if "genre" not in cols:
+            con.execute("ALTER TABLE tracks ADD COLUMN genre TEXT")
+        if "year" not in cols:
+            con.execute("ALTER TABLE tracks ADD COLUMN year TEXT")
         con.execute(
             """
             CREATE TABLE IF NOT EXISTS analysis (
@@ -306,6 +313,8 @@ def scan_file(path: Path, root: Optional[Path] = None) -> Optional[dict]:
     title = tag_first(tags, ["title"]) or path.stem
     track_raw = tag_first(tags, ["tracknumber", "track"])
     disc_raw = tag_first(tags, ["discnumber", "disc"])
+    genre = tag_first(tags, ["genre"])
+    year = tag_first(tags, ["date", "year"])
     track_number, track_total = parse_number_pair(track_raw)
     disc_number, disc_total = parse_number_pair(disc_raw)
     return {
@@ -334,10 +343,10 @@ def scan_file(path: Path, root: Optional[Path] = None) -> Optional[dict]:
 def upsert_track(con, item):
     con.execute(
         """
-        INSERT INTO tracks(path,filename,artist,album,title,track_raw,track_number,track_total,disc_raw,disc_number,disc_total,duration,codec,bitrate,sample_rate,channels,size,mtime,scanned_at)
-        VALUES(:path,:filename,:artist,:album,:title,:track_raw,:track_number,:track_total,:disc_raw,:disc_number,:disc_total,:duration,:codec,:bitrate,:sample_rate,:channels,:size,:mtime,:scanned_at)
+        INSERT INTO tracks(path,filename,artist,album,title,track_raw,track_number,track_total,disc_raw,disc_number,disc_total,genre,year,duration,codec,bitrate,sample_rate,channels,size,mtime,scanned_at)
+        VALUES(:path,:filename,:artist,:album,:title,:track_raw,:track_number,:track_total,:disc_raw,:disc_number,:disc_total,:genre,:year,:duration,:codec,:bitrate,:sample_rate,:channels,:size,:mtime,:scanned_at)
         ON CONFLICT(path) DO UPDATE SET
-        filename=excluded.filename,artist=excluded.artist,album=excluded.album,title=excluded.title,track_raw=excluded.track_raw,track_number=excluded.track_number,track_total=excluded.track_total,disc_raw=excluded.disc_raw,disc_number=excluded.disc_number,disc_total=excluded.disc_total,duration=excluded.duration,codec=excluded.codec,bitrate=excluded.bitrate,sample_rate=excluded.sample_rate,channels=excluded.channels,size=excluded.size,mtime=excluded.mtime,scanned_at=excluded.scanned_at
+        filename=excluded.filename,artist=excluded.artist,album=excluded.album,title=excluded.title,track_raw=excluded.track_raw,track_number=excluded.track_number,track_total=excluded.track_total,disc_raw=excluded.disc_raw,disc_number=excluded.disc_number,disc_total=excluded.disc_total,genre=excluded.genre,year=excluded.year,duration=excluded.duration,codec=excluded.codec,bitrate=excluded.bitrate,sample_rate=excluded.sample_rate,channels=excluded.channels,size=excluded.size,mtime=excluded.mtime,scanned_at=excluded.scanned_at
         """,
         item,
     )
@@ -1121,7 +1130,7 @@ def startup():
 
 @app.get("/api/health")
 def health():
-    return {"ok": True, "version": "1.3.3", "music_root": str(get_music_root()), "db": str(DB_PATH)}
+    return {"ok": True, "version": "1.3.5", "music_root": str(get_music_root()), "db": str(DB_PATH)}
 
 
 @app.post("/api/scan")
@@ -1400,7 +1409,7 @@ def get_tracks(album: str, artist: Optional[str] = None):
     with db() as con:
         return [dict(r) for r in con.execute(
             f"""
-            SELECT t.id,t.artist,t.album,t.title,t.track_raw,t.track_number,t.track_total,t.disc_raw,t.disc_number,t.disc_total,t.duration,t.codec,t.bitrate,t.sample_rate,t.channels,t.path,t.filename,
+            SELECT t.id,t.artist,t.album,t.title,t.track_raw,t.track_number,t.track_total,t.disc_raw,t.disc_number,t.disc_total,t.genre,t.year,t.duration,t.codec,t.bitrate,t.sample_rate,t.channels,t.path,t.filename,
             a.input_i,a.input_tp,a.input_lra,a.status AS analysis_status
             FROM tracks t LEFT JOIN analysis a ON a.track_id=t.id
             {where}
@@ -1409,11 +1418,18 @@ def get_tracks(album: str, artist: Optional[str] = None):
         ).fetchall()]
 
 
+@app.get("/api/genres")
+def get_genres():
+    with db() as con:
+        rows = con.execute("SELECT DISTINCT genre FROM tracks WHERE genre IS NOT NULL AND TRIM(genre)<>'' ORDER BY genre COLLATE NOCASE").fetchall()
+        return [r["genre"] for r in rows]
+
+
 @app.post("/api/tags/update")
 def update_tags(payload: dict):
     """Update common audio tags for selected files and keep the DB in sync.
 
-    Expected payload: {"updates":[{"path":"Artist/Album/01.mp3", "title":"...", "artist":"...", "album":"...", "tracknumber":"1/12", "year":"2024", "genre":"Rock"}]}
+    Expected payload: {"updates":[{"path":"Artist/Album/01.mp3", "title":"...", "artist":"...", "album":"...", "tracknumber":"1/12", "discnumber":"1/2", "year":"2024", "genre":"Rock"}]}
     """
     updates = payload.get("updates") if isinstance(payload, dict) else None
     if not isinstance(updates, list):
@@ -1444,6 +1460,7 @@ def update_tags(payload: dict):
                     "artist": "artist",
                     "album": "album",
                     "tracknumber": "tracknumber",
+                    "discnumber": "discnumber",
                     "year": "date",
                     "genre": "genre",
                 }
@@ -1466,6 +1483,14 @@ def update_tags(payload: dict):
                     tn, tt = parse_number_pair(changed["tracknumber"])
                     db_updates += ["track_raw=?", "track_number=?", "track_total=?"]
                     args += [changed["tracknumber"], tn, tt]
+                if "discnumber" in changed:
+                    dn, dt = parse_number_pair(changed["discnumber"])
+                    db_updates += ["disc_raw=?", "disc_number=?", "disc_total=?"]
+                    args += [changed["discnumber"], dn, dt]
+                if "genre" in changed:
+                    db_updates.append("genre=?"); args.append(changed["genre"])
+                if "year" in changed:
+                    db_updates.append("year=?"); args.append(changed["year"])
                 try:
                     st = p.stat()
                     db_updates += ["size=?", "mtime=?"]

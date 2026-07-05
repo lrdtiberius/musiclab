@@ -1,4 +1,4 @@
-# MusicLab v1.3.4
+# MusicLab v1.3.5
 
 Musikbibliothek scannen, LUFS/True-Peak/LRA analysieren und Alben oder Titel normalisieren.
 
@@ -84,3 +84,11 @@ Idea by Lrd.Tiberius.
 - Albumsuche funktioniert wieder global, auch wenn vorher ein Interpret ausgewählt wurde.
 - Suchfeld hat ein X zum schnellen Leeren.
 - Tags-Seite berechnet „Tracks pro Album“ bei Samplern/mehreren Interpreten über das komplette Album statt nur über den zuletzt gewählten Interpreten.
+
+
+## v1.3.5
+
+- Genre-Feld als Combo-Feld mit vorhandenen Genres aus der Bibliothek.
+- Disc-Anzahl ergänzt: Disc pro Titel + Discs pro Album.
+- Track-/Disc-Speicherung erzeugt automatisch Werte wie 1/10 und 1/2.
+- Datenbank-Schema auf 15 aktualisiert.
