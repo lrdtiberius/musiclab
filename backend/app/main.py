@@ -25,9 +25,9 @@ LOG_DIR = Path(os.getenv("LOG_DIR", str(DB_PATH.parent / "logs")))
 LOG_PATH = LOG_DIR / "musiclab.log"
 LOG_MAX_BYTES = int(os.getenv("LOG_MAX_BYTES", str(10 * 1024 * 1024)))
 EXTS = {".mp3", ".m4a", ".aac", ".flac", ".ogg"}
-SCHEMA_VERSION = 20
+SCHEMA_VERSION = 21
 
-app = FastAPI(title="MusicLab API", version="1.5.7")
+app = FastAPI(title="MusicLab API", version="1.5.8")
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
 
 stop_event = threading.Event()
@@ -1986,26 +1986,59 @@ async def api_tags_cover(request: Request):
 
 @app.get("/api/media/cover")
 def api_media_cover(folder: str, artist: Optional[str] = None):
-    """Return album cover from embedded metadata only.
+    """Return album cover from embedded metadata.
 
-    Folder images are intentionally ignored so the user's album folders do not
-    need cover.jpg/folder.jpg files. Missing covers return 404, then the frontend
-    shows the music-note placeholder.
+    v1.5.8 deliberately restores the proven v1.5.1 lookup path: the database
+    rows of the selected physical album folder are used as source of truth and
+    mutagen reads APIC/covr/FLAC pictures from the audio files. Folder images
+    are ignored on purpose; no cover.jpg/folder.jpg files are required or
+    created by MusicLab.
     """
     folder = str(folder or "").strip().strip("/")
+    artist_norm = (artist or "").strip().lower()
     headers = {"Cache-Control": "no-store, max-age=0"}
-    paths = _album_audio_paths(folder)
+    root = get_music_root().resolve()
 
-    # If an artist was supplied and the exact folder lookup found nothing, fall
-    # back to the DB matching helper. This keeps older URLs working.
-    if artist and not paths:
+    paths = []
+
+    # 1) Preferred: DB rows for the exact album folder. This is the same
+    # mechanism that worked in v1.5.1 and correctly handles umlauts, !, &, etc.
+    try:
+        for r in _media_rows():
+            if parent_folder_key(r.get("path") or "") != folder:
+                continue
+            if artist_norm and (r.get("artist") or "").strip().lower() != artist_norm:
+                continue
+            p = (root / (r.get("path") or "")).resolve()
+            if p.is_relative_to(root) and p.exists() and p.is_file() and p.suffix.lower() in EXTS:
+                paths.append(p)
+    except Exception:
+        paths = []
+
+    # 2) Fallback: all DB rows for this folder, ignoring artist. Needed for
+    # sampler albums or if the selected media artist differs from title artists.
+    if not paths:
         try:
-            root = get_music_root().resolve()
-            rows = [r for r in _media_rows() if _folder_matches(r, folder, artist)]
-            for r in rows:
+            for r in _media_rows():
+                if parent_folder_key(r.get("path") or "") != folder:
+                    continue
                 p = (root / (r.get("path") or "")).resolve()
                 if p.is_relative_to(root) and p.exists() and p.is_file() and p.suffix.lower() in EXTS:
                     paths.append(p)
+        except Exception:
+            paths = []
+
+    # 3) Fallback: direct folder scan. This helps immediately after moving files
+    # or when the DB has not caught up yet. Embedded covers only.
+    if not paths:
+        try:
+            base = (root / folder).resolve()
+            if base.is_relative_to(root) and base.exists() and base.is_dir():
+                for p in sorted(base.rglob("*"), key=lambda x: x.as_posix().lower()):
+                    if p.name.startswith("._"):
+                        continue
+                    if p.is_file() and p.suffix.lower() in EXTS:
+                        paths.append(p.resolve())
         except Exception:
             pass
 
@@ -2014,6 +2047,32 @@ def api_media_cover(folder: str, artist: Optional[str] = None):
         if cover:
             mime, data = cover
             return Response(content=data, media_type=mime, headers=headers)
+
+        # Extra compatibility: exact generic mutagen logic from v1.5.1.
+        try:
+            mf = MutagenFile(str(p))
+            tags = getattr(mf, "tags", None) if mf else None
+            if tags:
+                try:
+                    for key, val in tags.items():
+                        if str(key).startswith("APIC") and getattr(val, "data", None):
+                            mime = getattr(val, "mime", None) or "image/jpeg"
+                            return Response(content=val.data, media_type=mime, headers=headers)
+                except Exception:
+                    pass
+                try:
+                    covr = tags.get("covr") if hasattr(tags, "get") else None
+                    if covr:
+                        return Response(content=bytes(covr[0]), media_type="image/jpeg", headers=headers)
+                except Exception:
+                    pass
+            pics = getattr(mf, "pictures", None) if mf else None
+            if pics:
+                pic = pics[0]
+                return Response(content=pic.data, media_type=pic.mime or "image/jpeg", headers=headers)
+        except Exception:
+            continue
+
     raise HTTPException(status_code=404, detail="Kein eingebettetes Cover gefunden")
 
 
