@@ -1,5 +1,5 @@
 const API='http://'+location.hostname+':8091/api';
-const APP_VERSION='1.4.1';
+const APP_VERSION='1.4.2';
 let selectedArtist=null, selectedAlbum=null, selectedTagFolder=null;
 let selectedTagGenre=null, selectedTagYear=null;
 let browserMode='artist';
@@ -959,7 +959,10 @@ async function saveTagUpdates(updates, okMsg, opts={}){
   const keepArtist=selectedArtist;
   try{
     const res=await j(API+'/tags/update',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({updates})});
-    alert(`${okMsg}\nGespeichert: ${res.updated}/${res.total}`+(res.errors?.length?'\nFehler:\n'+res.errors.join('\n'):''));
+    const msg = `${okMsg} Gespeichert: ${res.updated}/${res.total}` + (res.errors?.length ? ` · Fehler: ${res.errors.length}` : '');
+    progressText.textContent = msg;
+    status.textContent = msg;
+    if(res.errors?.length) alert(`${okMsg}\nGespeichert: ${res.updated}/${res.total}\nFehler:\n${res.errors.join('\n')}`);
     if(opts.album) selectedAlbum=opts.album;
     await loadStats();
     await loadGenreOptions();
@@ -1009,6 +1012,20 @@ async function restoreHistory(job_id, artist, album){
   }catch(e){alert('Wiederherstellung fehlgeschlagen:\n'+e.message)}
 }
 
+
+async function refreshCurrentViewAfterChange(){
+  await loadStats();
+  await loadReference();
+  await loadHistory();
+  await loadBrowser();
+  if(currentView==='tags'){
+    await loadTagsPage();
+    return;
+  }
+  await loadAlbums();
+  if(selectedAlbum) await selectAlbum(selectedAlbum);
+}
+
 async function poll(){
   let s=await j(API+'/status');
   let p=s.total?Math.round(s.done/s.total*100):0;
@@ -1029,17 +1046,9 @@ async function poll(){
   await loadLog();
 
   if(lastRunning && !s.running){
-    await loadStats();
-    await loadReference();
-    await loadHistory();
-    await loadBrowser();
-    if(selectedArtist){
-      await selectArtist(selectedArtist,true);
-      if(selectedAlbum) await selectAlbum(selectedAlbum);
-    }else if(selectedAlbum){
-      await loadAlbums();
-      await selectAlbum(selectedAlbum);
-    }
+    // Auto-Refresh nach Scan, Analyse, Normalisierung oder Wiederherstellung.
+    // Dadurch müssen Audio-/Tag-Werte nicht mehr manuell aktualisiert werden.
+    await refreshCurrentViewAfterChange();
   }
 
   lastRunning=s.running;
