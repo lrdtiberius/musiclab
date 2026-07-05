@@ -1,5 +1,5 @@
 const API='http://'+location.hostname+':8091/api';
-const APP_VERSION='1.5.9';
+const APP_VERSION='1.5.10';
 let selectedArtist=null, selectedAlbum=null, selectedTagFolder=null;
 let selectedTagGenre=null, selectedTagYear=null;
 let browserMode='artist';
@@ -24,7 +24,7 @@ function coverBox(src, large=false){
   // behält ihre feste Größe. Dadurch zerreißt die Albumkarte nicht mehr.
   return `<div class="${cls} noCover"><div class="coverFallback">♪</div><img src="${src}" loading="lazy" onload="this.parentElement.classList.add('hasCover');this.parentElement.classList.remove('noCover')" onerror="this.style.display='none';this.parentElement.classList.add('noCover')" alt=""></div>`;
 }
-function coverUrl(folder, artist=''){return API+'/media/cover?folder='+encodeURIComponent(folder||'')+(artist?'&artist='+encodeURIComponent(artist):'')+'&_='+Date.now();}
+function coverUrl(folder, artist=''){return API+'/media/cover?folder='+encodeURIComponent(folder||'')+(artist?'&artist='+encodeURIComponent(artist):'')+'&v='+encodeURIComponent(APP_VERSION);}
 function escHtml(v){return String(v ?? '').replace(/[&<>"]/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]))}
 function resetTagFilters(){
   selectedArtist=null;

@@ -27,7 +27,7 @@ LOG_MAX_BYTES = int(os.getenv("LOG_MAX_BYTES", str(10 * 1024 * 1024)))
 EXTS = {".mp3", ".m4a", ".aac", ".flac", ".ogg"}
 SCHEMA_VERSION = 21
 
-app = FastAPI(title="MusicLab API", version="1.5.9")
+app = FastAPI(title="MusicLab API", version="1.5.10")
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
 
 stop_event = threading.Event()
@@ -1986,50 +1986,40 @@ async def api_tags_cover(request: Request):
 
 @app.get("/api/media/cover")
 def api_media_cover(folder: str, artist: Optional[str] = None):
-    """Return album cover from embedded metadata.
+    """Return embedded album cover.
 
-    v1.5.9 deliberately restores the proven v1.5.1 lookup path: the database
-    rows of the selected physical album folder are used as source of truth and
-    mutagen reads APIC/covr/FLAC pictures from the audio files. Folder images
-    are ignored on purpose; no cover.jpg/folder.jpg files are required or
-    created by MusicLab.
+    v1.5.10: use the proven v1.5.1 cover path again, but keep the safer
+    fallback scan. MusicLab does not create cover.jpg/folder.jpg files; covers
+    are read from the audio files themselves.
     """
     folder = str(folder or "").strip().strip("/")
-    artist_norm = (artist or "").strip().lower()
-    headers = {"Cache-Control": "no-store, max-age=0"}
     root = get_music_root().resolve()
+    headers = {"Cache-Control": "no-store, max-age=0"}
+
+    # Same source of truth that worked in v1.5.1.
+    try:
+        rows = [r for r in _media_rows() if _folder_matches(r, folder, artist)]
+    except Exception:
+        rows = []
+
+    # Sampler/edge fallback: ignore artist if the selected folder exists but the
+    # current artist filter is too narrow.
+    if not rows:
+        try:
+            rows = [r for r in _media_rows() if parent_folder_key(r.get("path") or "") == folder]
+        except Exception:
+            rows = []
 
     paths = []
-
-    # 1) Preferred: DB rows for the exact album folder. This is the same
-    # mechanism that worked in v1.5.1 and correctly handles umlauts, !, &, etc.
-    try:
-        for r in _media_rows():
-            if parent_folder_key(r.get("path") or "") != folder:
-                continue
-            if artist_norm and (r.get("artist") or "").strip().lower() != artist_norm:
-                continue
+    for r in rows:
+        try:
             p = (root / (r.get("path") or "")).resolve()
             if p.is_relative_to(root) and p.exists() and p.is_file() and p.suffix.lower() in EXTS:
                 paths.append(p)
-    except Exception:
-        paths = []
-
-    # 2) Fallback: all DB rows for this folder, ignoring artist. Needed for
-    # sampler albums or if the selected media artist differs from title artists.
-    if not paths:
-        try:
-            for r in _media_rows():
-                if parent_folder_key(r.get("path") or "") != folder:
-                    continue
-                p = (root / (r.get("path") or "")).resolve()
-                if p.is_relative_to(root) and p.exists() and p.is_file() and p.suffix.lower() in EXTS:
-                    paths.append(p)
         except Exception:
-            paths = []
+            continue
 
-    # 3) Fallback: direct folder scan. This helps immediately after moving files
-    # or when the DB has not caught up yet. Embedded covers only.
+    # Fallback if DB is stale: scan the folder directly.
     if not paths:
         try:
             base = (root / folder).resolve()
@@ -2043,33 +2033,48 @@ def api_media_cover(folder: str, artist: Optional[str] = None):
             pass
 
     for p in paths:
-        cover = _embedded_cover_from_file(p)
-        if cover:
-            mime, data = cover
-            return Response(content=data, media_type=mime, headers=headers)
-
-        # Extra compatibility: exact generic mutagen logic from v1.5.1.
         try:
             mf = MutagenFile(str(p))
-            tags = getattr(mf, "tags", None) if mf else None
+            if not mf:
+                continue
+            tags = getattr(mf, "tags", None)
             if tags:
+                # MP3 ID3 APIC frames. This is intentionally the old, broad
+                # check because it handled the user's files correctly.
                 try:
                     for key, val in tags.items():
                         if str(key).startswith("APIC") and getattr(val, "data", None):
                             mime = getattr(val, "mime", None) or "image/jpeg"
-                            return Response(content=val.data, media_type=mime, headers=headers)
+                            return StreamingResponse(io.BytesIO(val.data), media_type=mime, headers=headers)
                 except Exception:
                     pass
+
+                # Explicit ID3 fallback for some mutagen variants.
+                try:
+                    if p.suffix.lower() == ".mp3":
+                        id3 = ID3(str(p))
+                        frames = id3.getall("APIC")
+                        frames = sorted(frames, key=lambda f: 0 if getattr(f, "type", None) == 3 else 1)
+                        for frame in frames:
+                            data = getattr(frame, "data", None)
+                            if data:
+                                return StreamingResponse(io.BytesIO(data), media_type=getattr(frame, "mime", None) or "image/jpeg", headers=headers)
+                except Exception:
+                    pass
+
+                # MP4/M4A covr.
                 try:
                     covr = tags.get("covr") if hasattr(tags, "get") else None
                     if covr:
-                        return Response(content=bytes(covr[0]), media_type="image/jpeg", headers=headers)
+                        return StreamingResponse(io.BytesIO(bytes(covr[0])), media_type="image/jpeg", headers=headers)
                 except Exception:
                     pass
-            pics = getattr(mf, "pictures", None) if mf else None
+
+            # FLAC pictures.
+            pics = getattr(mf, "pictures", None)
             if pics:
                 pic = pics[0]
-                return Response(content=pic.data, media_type=pic.mime or "image/jpeg", headers=headers)
+                return StreamingResponse(io.BytesIO(pic.data), media_type=pic.mime or "image/jpeg", headers=headers)
         except Exception:
             continue
 
