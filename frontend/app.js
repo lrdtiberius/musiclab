@@ -1,5 +1,5 @@
 const API='http://'+location.hostname+':8091/api';
-const APP_VERSION='1.3.3';
+const APP_VERSION='1.3.4';
 let selectedArtist=null, selectedAlbum=null;
 let browserMode='artist';
 let lastRunning=false;
@@ -17,6 +17,16 @@ function escHtml(v){return String(v ?? '').replace(/[&<>"]/g, c=>({'&':'&amp;','
 function clearSearch(){
   if(!search) return;
   search.value='';
+  loadBrowser();
+}
+function handleSearchInput(){
+  // Im Album-Modus soll eine eingegebene Suche immer global suchen –
+  // auch wenn vorher ein Interpret angeklickt wurde.
+  // Ohne diese Entkopplung blieb die Albumliste optisch/inhaltlich auf
+  // "Alben von <Interpret>" hängen.
+  if(browserMode==='album' && (search.value||'').trim()){
+    selectedArtist=null;
+  }
   loadBrowser();
 }
 async function j(url,opt){
@@ -346,6 +356,11 @@ async function loadAlbumBrowser(){
   const rawQ=(search.value||'').trim();
   let q=encodeURIComponent(rawQ);
   let a;
+  if(rawQ){
+    // Sobald im Album-Tab gesucht wird, wird immer global gesucht.
+    // Das verhindert, dass ein vorher ausgewählter Interpret die Treffer begrenzt.
+    selectedArtist=null;
+  }
   // Tags-Ansicht: Wenn ein Interpret gewählt ist und kein Suchbegriff gesetzt ist,
   // zeigen wir dessen Alben. Sobald gesucht wird, sucht der Album-Tab wieder global.
   // Dadurch funktioniert die Albumsuche auch nach einem vorherigen Interpreten-Klick.
