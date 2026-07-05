@@ -1,6 +1,7 @@
 const API='http://'+location.hostname+':8091/api';
-const APP_VERSION='1.3.7';
+const APP_VERSION='1.3.8';
 let selectedArtist=null, selectedAlbum=null, selectedTagFolder=null;
+let selectedTagGenre=null, selectedTagYear=null;
 let browserMode='artist';
 let lastRunning=false;
 let uiBusy=false;
@@ -17,15 +18,21 @@ function escHtml(v){return String(v ?? '').replace(/[&<>"]/g, c=>({'&':'&amp;','
 function clearSearch(){
   if(!search) return;
   search.value='';
+  // Im Album-Filter soll X wirklich auf die komplette Albumliste zurücksetzen.
+  if(browserMode==='album'){
+    selectedArtist=null;
+    selectedTagGenre=null;
+    selectedTagYear=null;
+  }
   loadBrowser();
 }
 function handleSearchInput(){
   // Im Album-Modus soll eine eingegebene Suche immer global suchen –
-  // auch wenn vorher ein Interpret angeklickt wurde.
-  // Ohne diese Entkopplung blieb die Albumliste optisch/inhaltlich auf
-  // "Alben von <Interpret>" hängen.
+  // auch wenn vorher ein Interpret/Genre/Jahr angeklickt wurde.
   if(browserMode==='album' && (search.value||'').trim()){
     selectedArtist=null;
+    selectedTagGenre=null;
+    selectedTagYear=null;
   }
   loadBrowser();
 }
@@ -292,20 +299,42 @@ async function loadStats(){
   sDuration.textContent=dur(s.duration);
 }
 
+function updateBrowserTabsForView(){
+  if(typeof modeGenre !== 'undefined' && modeGenre){
+    modeGenre.textContent = currentView==='tags' ? 'Genre' : 'Neu';
+    modeGenre.style.display = '';
+  }
+  if(typeof modeYear !== 'undefined' && modeYear){
+    modeYear.style.display = currentView==='tags' ? '' : 'none';
+  }
+}
 function setBrowserMode(mode){
+  if(currentView==='audio' && (mode==='genre' || mode==='year')) mode='artist';
+  if(currentView==='tags' && mode==='new') mode='genre';
   browserMode=mode;
   search.value='';
+  if(mode==='album'){
+    selectedArtist=null;
+    selectedTagGenre=null;
+    selectedTagYear=null;
+  }
   modeArtist.classList.toggle('active', mode==='artist');
   modeAlbum.classList.toggle('active', mode==='album');
-  if(typeof modeNew !== 'undefined' && modeNew) modeNew.classList.toggle('active', mode==='new');
-  browserTitle.textContent = mode==='artist' ? 'Interpreten' : (mode==='album' ? 'Alben' : 'Neu gefunden');
-  search.placeholder = mode==='artist' ? 'Interpreten suchen...' : (mode==='album' ? 'Alben suchen...' : 'Neue Alben suchen...');
+  if(typeof modeGenre !== 'undefined' && modeGenre) modeGenre.classList.toggle('active', mode==='new' || mode==='genre');
+  if(typeof modeYear !== 'undefined' && modeYear) modeYear.classList.toggle('active', mode==='year');
+  const titleMap={artist:'Interpreten', album:'Alben', new:'Neu gefunden', genre:'Genres', year:'Jahre'};
+  const phMap={artist:'Interpreten suchen...', album:'Alben suchen...', new:'Neue Alben suchen...', genre:'Genre suchen...', year:'Jahr suchen...'};
+  browserTitle.textContent = titleMap[mode] || 'Interpreten';
+  search.placeholder = phMap[mode] || 'Suchen...';
+  updateBrowserTabsForView();
   loadBrowser();
 }
 
 async function loadBrowser(){
   if(browserMode==='album') return loadAlbumBrowser();
   if(browserMode==='new') return loadNewBrowser();
+  if(browserMode==='genre') return loadGenreBrowser();
+  if(browserMode==='year') return loadYearBrowser();
   return loadArtists();
 }
 
@@ -331,6 +360,30 @@ function bindAlbumRows(){
       );
     };
   });
+}
+function bindFilterRows(){
+  document.querySelectorAll('#browserList .row[data-genre], #browserList .row[data-year]').forEach(el=>{
+    el.onclick=()=>{
+      if(el.dataset.genre) return selectTagFilter('genre', decodeURIComponent(el.dataset.genre));
+      if(el.dataset.year) return selectTagFilter('year', decodeURIComponent(el.dataset.year));
+    };
+  });
+}
+async function selectTagFilter(kind, value){
+  selectedArtist=null;
+  selectedTagGenre = kind==='genre' ? value : null;
+  selectedTagYear = kind==='year' ? value : null;
+  selectedAlbum=null;
+  selectedTagFolder=null;
+  browserMode='album';
+  search.value='';
+  modeArtist.classList.remove('active');
+  modeAlbum.classList.add('active');
+  if(typeof modeGenre !== 'undefined' && modeGenre) modeGenre.classList.remove('active');
+  if(typeof modeYear !== 'undefined' && modeYear) modeYear.classList.remove('active');
+  search.placeholder='Alben suchen...';
+  await loadBrowser();
+  await loadTagsPage();
 }
 
 function bindAlbumCards(){
@@ -374,9 +427,16 @@ async function loadAlbumBrowser(){
   // zeigen wir dessen Alben. Sobald gesucht wird, sucht der Album-Tab wieder global.
   // Dadurch funktioniert die Albumsuche auch nach einem vorherigen Interpreten-Klick.
   if(currentView==='tags'){
-    const url = API+'/tag_albums?q='+q + (selectedArtist && !rawQ ? '&artist='+encodeURIComponent(selectedArtist) : '');
+    let url = API+'/tag_albums?q='+q;
+    if(selectedArtist && !rawQ) url += '&artist='+encodeURIComponent(selectedArtist);
+    if(selectedTagGenre && !rawQ) url += '&genre='+encodeURIComponent(selectedTagGenre);
+    if(selectedTagYear && !rawQ) url += '&year='+encodeURIComponent(selectedTagYear);
     a=await j(url);
-    browserTitle.textContent = selectedArtist && !rawQ ? 'Albumordner von '+selectedArtist : (rawQ ? 'Albumordner suchen' : 'Albumordner');
+    let filterTitle = 'Albumordner';
+    if(selectedArtist && !rawQ) filterTitle='Albumordner von '+selectedArtist;
+    if(selectedTagGenre && !rawQ) filterTitle='Albumordner mit Genre '+selectedTagGenre;
+    if(selectedTagYear && !rawQ) filterTitle='Albumordner aus '+selectedTagYear;
+    browserTitle.textContent = rawQ ? 'Albumordner suchen' : filterTitle;
     browserList.innerHTML=a.map(x=>{
       const active = x.folder===selectedTagFolder;
       const artistData = x.artist && Number(x.artist_count||0)===1 ? ` data-artist="${encodeURIComponent(x.artist)}"` : '';
@@ -395,6 +455,23 @@ async function loadAlbumBrowser(){
     return `<div class="row ${active?'sel':''}" data-album="${encodeURIComponent(x.album)}"${artistData}><b>${escHtml(x.album)}</b><br><span class="small">${escHtml(x.artist)} · ${x.tracks} Titel · ${x.analyzed}/${x.tracks} analysiert</span></div>`;
   }).join('') || '<div class="empty">Keine Alben gefunden.</div>';
   bindAlbumRows();
+}
+
+async function loadGenreBrowser(){
+  const rawQ=(search.value||'').trim().toLowerCase();
+  const genres=await j(API+'/genres');
+  const vals=(genres||[]).filter(g=>!rawQ || String(g).toLowerCase().includes(rawQ));
+  browserTitle.textContent='Genres';
+  browserList.innerHTML=vals.map(g=>`<div class="row" data-genre="${encodeURIComponent(g)}"><b>${escHtml(g)}</b></div>`).join('') || '<div class="empty">Keine Genres gefunden.</div>';
+  bindFilterRows();
+}
+async function loadYearBrowser(){
+  const rawQ=(search.value||'').trim().toLowerCase();
+  const years=await j(API+'/years');
+  const vals=(years||[]).filter(y=>!rawQ || String(y).toLowerCase().includes(rawQ));
+  browserTitle.textContent='Jahre';
+  browserList.innerHTML=vals.map(y=>`<div class="row" data-year="${encodeURIComponent(y)}"><b>${escHtml(y)}</b></div>`).join('') || '<div class="empty">Keine Jahre gefunden.</div>';
+  bindFilterRows();
 }
 
 async function loadNewBrowser(){
@@ -429,6 +506,7 @@ async function selectTagFolder(folder, displayAlbum, artist=null){
 
 async function selectArtist(a, keepAlbum=false){
   selectedArtist=a;
+  if(currentView==='tags'){selectedTagGenre=null;selectedTagYear=null;}
   if(!keepAlbum){
     selectedAlbum=null;
     selectedTagFolder=null;
@@ -439,7 +517,8 @@ async function selectArtist(a, keepAlbum=false){
     browserMode='album';
     modeArtist.classList.remove('active');
     modeAlbum.classList.add('active');
-    if(typeof modeNew !== 'undefined' && modeNew) modeNew.classList.remove('active');
+    if(typeof modeGenre !== 'undefined' && modeGenre) modeGenre.classList.remove('active');
+    if(typeof modeYear !== 'undefined' && modeYear) modeYear.classList.remove('active');
     search.value='';
     search.placeholder='Alben suchen...';
   }
@@ -702,7 +781,15 @@ function setAppView(view){
   document.querySelectorAll('.appView').forEach(el=>el.classList.toggle('active', el.id===view+'View'));
   [['tabAudio','audio'],['tabTags','tags'],['tabSettings','settings']].forEach(([id,v])=>{const b=document.getElementById(id); if(b)b.classList.toggle('active', view===v)});
   document.body.classList.toggle('settingsMode', view==='settings');
-  if(view==='tags') loadTagsPage();
+  updateBrowserTabsForView();
+  if(view==='tags'){
+    if(browserMode==='new') browserMode='artist';
+    setBrowserMode(browserMode);
+    loadTagsPage();
+  }
+  if(view==='audio'){
+    if(browserMode==='genre' || browserMode==='year') setBrowserMode('artist');
+  }
   if(view==='settings'){ syncSettingsPageFromMain(); checkMusicRootPage(); }
 }
 function openSettings(){setAppView('settings')}

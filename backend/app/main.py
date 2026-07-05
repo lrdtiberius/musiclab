@@ -1419,19 +1419,22 @@ def folder_display_name(folder: str) -> str:
 
 
 @app.get("/api/tag_albums")
-def get_tag_albums(q: str = "", artist: Optional[str] = None):
+def get_tag_albums(q: str = "", artist: Optional[str] = None, genre: Optional[str] = None, year: Optional[str] = None):
     """Folder-based album list for the tag editor.
 
     This deliberately groups by the physical album folder instead of existing
     album tags. It prevents broken/foreign tags from merging unrelated files
-    into one pseudo album while the user is trying to repair metadata.
+    into one pseudo album while the user is trying to repair metadata. Optional
+    filters (artist/genre/year) are applied to the contained tracks.
     """
     q_norm = (q or "").strip().lower()
     artist_norm = (artist or "").strip().lower()
+    genre_norm = (genre or "").strip().lower()
+    year_norm = (year or "").strip().lower()
     with db() as con:
         rows = [dict(r) for r in con.execute(
             """
-            SELECT t.path,t.artist,t.album,t.title,t.duration,a.track_id AS analyzed
+            SELECT t.path,t.artist,t.album,t.title,t.genre,t.year,t.duration,a.track_id AS analyzed
             FROM tracks t LEFT JOIN analysis a ON a.track_id=t.id AND a.status='ok'
             ORDER BY t.path COLLATE NOCASE
             """
@@ -1439,16 +1442,24 @@ def get_tag_albums(q: str = "", artist: Optional[str] = None):
     groups = {}
     for r in rows:
         folder = parent_folder_key(r.get("path") or "")
-        hay = " ".join([folder, r.get("artist") or "", r.get("album") or "", r.get("title") or ""]).lower()
+        hay = " ".join([folder, r.get("artist") or "", r.get("album") or "", r.get("title") or "", r.get("genre") or "", r.get("year") or ""]).lower()
         if q_norm and q_norm not in hay:
             continue
         if artist_norm and (r.get("artist") or "").strip().lower() != artist_norm:
             continue
-        g = groups.setdefault(folder, {"folder": folder, "album": folder_display_name(folder), "artists": set(), "tag_albums": set(), "tracks": 0, "analyzed": 0, "duration": 0.0})
+        if genre_norm and (r.get("genre") or "").strip().lower() != genre_norm:
+            continue
+        if year_norm and not str(r.get("year") or "").strip().lower().startswith(year_norm):
+            continue
+        g = groups.setdefault(folder, {"folder": folder, "album": folder_display_name(folder), "artists": set(), "tag_albums": set(), "genres": set(), "years": set(), "tracks": 0, "analyzed": 0, "duration": 0.0})
         if r.get("artist"):
             g["artists"].add(r.get("artist"))
         if r.get("album"):
             g["tag_albums"].add(r.get("album"))
+        if r.get("genre"):
+            g["genres"].add(r.get("genre"))
+        if r.get("year"):
+            g["years"].add(str(r.get("year")))
         g["tracks"] += 1
         g["analyzed"] += 1 if r.get("analyzed") is not None else 0
         g["duration"] += float(r.get("duration") or 0)
@@ -1456,9 +1467,13 @@ def get_tag_albums(q: str = "", artist: Optional[str] = None):
     for g in groups.values():
         artists = sorted(g.pop("artists"), key=lambda x: x.lower())
         tag_albums = sorted(g.pop("tag_albums"), key=lambda x: x.lower())
+        genres = sorted(g.pop("genres"), key=lambda x: x.lower())
+        years = sorted(g.pop("years"), key=lambda x: x.lower())
         g["artist"] = artists[0] if len(artists) == 1 else ("Verschiedene Interpreten" if artists else "")
         g["artist_count"] = len(artists)
         g["tag_album"] = tag_albums[0] if len(tag_albums) == 1 else ("Mehrere Album-Tags" if tag_albums else "")
+        g["genre"] = genres[0] if len(genres) == 1 else ("Verschiedene Genres" if genres else "")
+        g["year"] = years[0] if len(years) == 1 else ("Verschiedene Jahre" if years else "")
         out.append(g)
     out.sort(key=lambda x: (x.get("album") or "").lower())
     return out[:1000]
@@ -1503,6 +1518,13 @@ def get_genres():
     with db() as con:
         rows = con.execute("SELECT DISTINCT genre FROM tracks WHERE genre IS NOT NULL AND TRIM(genre)<>'' ORDER BY genre COLLATE NOCASE").fetchall()
         return [r["genre"] for r in rows]
+
+
+@app.get("/api/years")
+def get_years():
+    with db() as con:
+        rows = con.execute("SELECT DISTINCT year FROM tracks WHERE year IS NOT NULL AND TRIM(year)<>'' ORDER BY year COLLATE NOCASE DESC").fetchall()
+        return [r["year"] for r in rows]
 
 
 @app.post("/api/tags/update")
