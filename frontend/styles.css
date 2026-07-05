@@ -372,3 +372,7 @@ body.mediaMode .footerCredit{grid-column:1;grid-row:2}
 .tagCoverRow{display:flex;align-items:center;gap:12px;margin:4px 0 12px 0}
 .tagCoverBox{width:72px!important;height:72px!important}
 .mediaCol input#mediaArtistSearch{margin-bottom:10px;width:100%}
+
+.mediaSearchBox{position:relative;margin-bottom:10px}
+.mediaSearchBox input{width:100%;padding-right:34px}
+.mediaClear{position:absolute;right:6px;top:50%;transform:translateY(-50%);width:24px;height:24px;padding:0;border-radius:50%;display:flex;align-items:center;justify-content:center;background:#303847;color:var(--txt)}

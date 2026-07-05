@@ -1,5 +1,5 @@
 const API='http://'+location.hostname+':8091/api';
-const APP_VERSION='1.5.5';
+const APP_VERSION='1.5.6';
 let selectedArtist=null, selectedAlbum=null, selectedTagFolder=null;
 let selectedTagGenre=null, selectedTagYear=null;
 let browserMode='artist';
@@ -1060,6 +1060,13 @@ async function loadMediaPage(){
     if(albumsBox) albumsBox.innerHTML='';
     if(tracksBox) tracksBox.innerHTML='';
   }
+}
+
+
+function clearMediaArtistSearch(){
+  const inp=document.getElementById('mediaArtistSearch');
+  if(inp) inp.value='';
+  renderMediaArtists();
 }
 
 function renderMediaArtists(){

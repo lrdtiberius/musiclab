@@ -27,7 +27,7 @@ LOG_MAX_BYTES = int(os.getenv("LOG_MAX_BYTES", str(10 * 1024 * 1024)))
 EXTS = {".mp3", ".m4a", ".aac", ".flac", ".ogg"}
 SCHEMA_VERSION = 19
 
-app = FastAPI(title="MusicLab API", version="1.5.5")
+app = FastAPI(title="MusicLab API", version="1.5.6")
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
 
 stop_event = threading.Event()
@@ -1939,41 +1939,67 @@ async def api_tags_cover(request: Request):
 
 @app.get("/api/media/cover")
 def api_media_cover(folder: str, artist: Optional[str] = None):
+    """Return album cover for a physical album folder.
+
+    Order:
+    1. cover/folder/front image files in the album folder
+    2. embedded APIC cover from MP3 ID3 tags
+    3. embedded covers from MP4/M4A/FLAC via mutagen
+
+    Missing covers deliberately return 404 so the frontend placeholder remains visible.
+    """
     folder = str(folder or "").strip().strip("/")
-    # First try folder-level images (cover.jpg/folder.jpg/etc.).
+    headers = {"Cache-Control": "no-store, max-age=0"}
+
     resp = _folder_image_response(folder)
     if resp is not None:
+        try:
+            resp.headers["Cache-Control"] = headers["Cache-Control"]
+        except Exception:
+            pass
         return resp
-    # For covers, folder match is usually enough and more robust than filtering by artist.
+
     rows = [r for r in _media_rows() if parent_folder_key(r.get("path") or "") == folder]
     if artist and not rows:
         rows = [r for r in _media_rows() if _folder_matches(r, folder, artist)]
+
     root = get_music_root().resolve()
     for r in rows:
         try:
             p = (root / (r.get("path") or "")).resolve()
-            if not p.is_relative_to(root) or not p.exists():
+            if not p.is_relative_to(root) or not p.exists() or not p.is_file():
                 continue
+
+            # MP3: read ID3 directly. This is more reliable for APIC frames than
+            # relying on MutagenFile's generic object in every edge case.
+            if p.suffix.lower() == ".mp3":
+                try:
+                    tags = ID3(str(p))
+                    for frame in tags.getall("APIC"):
+                        data = getattr(frame, "data", None)
+                        if data:
+                            mime = getattr(frame, "mime", None) or "image/jpeg"
+                            return StreamingResponse(io.BytesIO(data), media_type=mime, headers=headers)
+                except Exception:
+                    pass
+
             mf = MutagenFile(str(p))
             if not mf:
                 continue
-            # MP3 ID3 APIC frames
             tags = getattr(mf, "tags", None)
             if tags:
                 for key, val in tags.items():
                     if str(key).startswith("APIC") and getattr(val, "data", None):
                         mime = getattr(val, "mime", None) or "image/jpeg"
-                        return StreamingResponse(io.BytesIO(val.data), media_type=mime)
-                # MP4/M4A covr
+                        return StreamingResponse(io.BytesIO(val.data), media_type=mime, headers=headers)
                 covr = tags.get("covr") if hasattr(tags, "get") else None
                 if covr:
                     data = bytes(covr[0])
-                    return StreamingResponse(io.BytesIO(data), media_type="image/jpeg")
-            # FLAC pictures
+                    return StreamingResponse(io.BytesIO(data), media_type="image/jpeg", headers=headers)
             pics = getattr(mf, "pictures", None)
             if pics:
                 pic = pics[0]
-                return StreamingResponse(io.BytesIO(pic.data), media_type=pic.mime or "image/jpeg")
+                return StreamingResponse(io.BytesIO(pic.data), media_type=pic.mime or "image/jpeg", headers=headers)
         except Exception:
             continue
     raise HTTPException(status_code=404, detail="Kein Cover gefunden")
