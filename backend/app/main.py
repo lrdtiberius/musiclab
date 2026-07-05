@@ -1812,7 +1812,7 @@ def api_media_artist_albums(artist: str, sort: str = "artist"):
         folder = parent_folder_key(r.get("path") or "")
         album = r.get("album") or folder_display_name(folder) or "Unbekanntes Album"
         key = folder
-        g = groups.setdefault(key, {"artist": artist or r.get("artist") or "Unbekannter Interpret", "album": album, "folder": folder, "tracks": 0, "analyzed": 0, "duration": 0.0})
+        g = groups.setdefault(key, {"artist": artist or r.get("artist") or "Unbekannter Interpret", "album": album, "folder": folder, "tracks": 0, "analyzed": 0, "duration": 0.0, "first_path": r.get("path") or ""})
         g["tracks"] += 1
         g["analyzed"] += 1 if r.get("analysis_status") == "ok" else 0
         g["duration"] += float(r.get("duration") or 0)
@@ -1984,101 +1984,88 @@ async def api_tags_cover(request: Request):
     return {"ok": True, "updated": updated, "total": len(files), "errors": errors}
 
 
+@app.get("/api/media/cover_by_path")
+def api_media_cover_by_path(path: str):
+    """Return embedded cover for a concrete audio file path.
+
+    This avoids any ambiguity caused by duplicate album names, artist filters,
+    or folders with special characters. The frontend uses the first track of an
+    album as the cover source. No folder image files are created or required.
+    """
+    rel = str(path or "").strip().lstrip("/")
+    root = get_music_root().resolve()
+    headers = {"Cache-Control": "no-store, no-cache, must-revalidate, max-age=0", "Pragma": "no-cache"}
+    if not rel:
+        raise HTTPException(status_code=404, detail="cover not found")
+    try:
+        p = (root / rel).resolve()
+        if not p.is_relative_to(root) or not p.exists() or not p.is_file():
+            raise HTTPException(status_code=404, detail="cover not found")
+        hit = _embedded_cover_from_file(p)
+        if hit:
+            mime, data = hit
+            return StreamingResponse(io.BytesIO(data), media_type=mime or "image/jpeg", headers=headers)
+    except HTTPException:
+        raise
+    except Exception:
+        pass
+    raise HTTPException(status_code=404, detail="cover not found")
+
+
 @app.get("/api/media/cover")
 def api_media_cover(folder: str, artist: Optional[str] = None):
-    """Return embedded album cover.
+    """Return the embedded album cover from the selected album folder.
 
-    v1.5.10: use the proven v1.5.1 cover path again, but keep the safer
-    fallback scan. MusicLab does not create cover.jpg/folder.jpg files; covers
-    are read from the audio files themselves.
+    v1.5.12: the cover lookup no longer depends on the broad MutagenFile
+    path alone. It first resolves the real audio files for the album folder and
+    then uses the shared _embedded_cover_from_file() helper, which reads MP3
+    ID3/APIC directly. This fixes libraries where Mp3tag shows the cover but
+    MusicLab only showed the fallback note.
     """
     folder = str(folder or "").strip().strip("/")
     root = get_music_root().resolve()
-    headers = {"Cache-Control": "no-store, max-age=0"}
+    headers = {"Cache-Control": "no-store, no-cache, must-revalidate, max-age=0", "Pragma": "no-cache"}
 
-    # Same source of truth that worked in v1.5.1.
-    try:
-        rows = [r for r in _media_rows() if _folder_matches(r, folder, artist)]
-    except Exception:
-        rows = []
-
-    # Sampler/edge fallback: ignore artist if the selected folder exists but the
-    # current artist filter is too narrow.
-    if not rows:
-        try:
-            rows = [r for r in _media_rows() if parent_folder_key(r.get("path") or "") == folder]
-        except Exception:
-            rows = []
+    if not folder:
+        raise HTTPException(status_code=404, detail="cover not found")
 
     paths = []
-    for r in rows:
-        try:
-            p = (root / (r.get("path") or "")).resolve()
-            if p.is_relative_to(root) and p.exists() and p.is_file() and p.suffix.lower() in EXTS:
-                paths.append(p)
-        except Exception:
-            continue
 
-    # Fallback if DB is stale: scan the folder directly.
-    if not paths:
-        try:
-            base = (root / folder).resolve()
-            if base.is_relative_to(root) and base.exists() and base.is_dir():
-                for p in sorted(base.rglob("*"), key=lambda x: x.as_posix().lower()):
-                    if p.name.startswith("._"):
-                        continue
-                    if p.is_file() and p.suffix.lower() in EXTS:
-                        paths.append(p.resolve())
-        except Exception:
-            pass
+    # 1) Prefer the exact physical folder. This also works when the database is
+    # stale or an artist filter is too narrow.
+    try:
+        base = (root / folder).resolve()
+        if base.is_relative_to(root) and base.exists() and base.is_dir():
+            for p in sorted(base.rglob("*"), key=lambda x: x.as_posix().lower()):
+                if p.name.startswith("._"):
+                    continue
+                if p.is_file() and p.suffix.lower() in EXTS:
+                    paths.append(p.resolve())
+    except Exception:
+        pass
+
+    # 2) DB fallback for folders that were selected from a logical media row.
+    try:
+        rows = [r for r in _media_rows() if _folder_matches(r, folder, artist)]
+        if not rows:
+            rows = [r for r in _media_rows() if parent_folder_key(r.get("path") or "") == folder]
+        for r in rows:
+            try:
+                p = (root / (r.get("path") or "")).resolve()
+                if p.is_relative_to(root) and p.exists() and p.is_file() and p.suffix.lower() in EXTS and p not in paths:
+                    paths.append(p)
+            except Exception:
+                continue
+    except Exception:
+        pass
 
     for p in paths:
-        try:
-            mf = MutagenFile(str(p))
-            if not mf:
-                continue
-            tags = getattr(mf, "tags", None)
-            if tags:
-                # MP3 ID3 APIC frames. This is intentionally the old, broad
-                # check because it handled the user's files correctly.
-                try:
-                    for key, val in tags.items():
-                        if str(key).startswith("APIC") and getattr(val, "data", None):
-                            mime = getattr(val, "mime", None) or "image/jpeg"
-                            return StreamingResponse(io.BytesIO(val.data), media_type=mime, headers=headers)
-                except Exception:
-                    pass
+        hit = _embedded_cover_from_file(p)
+        if hit:
+            mime, data = hit
+            return StreamingResponse(io.BytesIO(data), media_type=mime or "image/jpeg", headers=headers)
 
-                # Explicit ID3 fallback for some mutagen variants.
-                try:
-                    if p.suffix.lower() == ".mp3":
-                        id3 = ID3(str(p))
-                        frames = id3.getall("APIC")
-                        frames = sorted(frames, key=lambda f: 0 if getattr(f, "type", None) == 3 else 1)
-                        for frame in frames:
-                            data = getattr(frame, "data", None)
-                            if data:
-                                return StreamingResponse(io.BytesIO(data), media_type=getattr(frame, "mime", None) or "image/jpeg", headers=headers)
-                except Exception:
-                    pass
-
-                # MP4/M4A covr.
-                try:
-                    covr = tags.get("covr") if hasattr(tags, "get") else None
-                    if covr:
-                        return StreamingResponse(io.BytesIO(bytes(covr[0])), media_type="image/jpeg", headers=headers)
-                except Exception:
-                    pass
-
-            # FLAC pictures.
-            pics = getattr(mf, "pictures", None)
-            if pics:
-                pic = pics[0]
-                return StreamingResponse(io.BytesIO(pic.data), media_type=pic.mime or "image/jpeg", headers=headers)
-        except Exception:
-            continue
-
-    raise HTTPException(status_code=404, detail="Kein eingebettetes Cover gefunden")
+    raise HTTPException(status_code=404, detail="cover not found")
 
 
 @app.get("/api/media_albums")
@@ -2102,7 +2089,7 @@ def api_media_albums(q: str = ""):
         if q_norm and q_norm not in hay:
             continue
         key = (artist.lower(), album.lower(), folder)
-        g = groups.setdefault(key, {"artist": artist, "album": album, "folder": folder, "tracks": 0, "analyzed": 0, "duration": 0.0})
+        g = groups.setdefault(key, {"artist": artist, "album": album, "folder": folder, "tracks": 0, "analyzed": 0, "duration": 0.0, "first_path": r.get("path") or ""})
         g["tracks"] += 1
         g["analyzed"] += 1 if r.get("analyzed") is not None else 0
         g["duration"] += float(r.get("duration") or 0)

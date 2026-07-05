@@ -1,5 +1,5 @@
 const API='http://'+location.hostname+':8091/api';
-const APP_VERSION='1.5.10';
+const APP_VERSION='1.5.12';
 let selectedArtist=null, selectedAlbum=null, selectedTagFolder=null;
 let selectedTagGenre=null, selectedTagYear=null;
 let browserMode='artist';
@@ -11,6 +11,7 @@ let selectedBatch=new Map();
 let selectedTracks=new Map();
 let selectedMediaArtist=null, selectedMediaFolder=null, selectedMediaAlbum=null;
 let mediaArtistsCache=[];
+let mediaAlbumsCache=[];
 
 function fmt(n,d=1){return n===null||n===undefined?'':Number(n).toFixed(d)}
 function dur(s){s=Number(s||0);let h=Math.floor(s/3600),m=Math.floor((s%3600)/60);return h?`${h}h ${m}m`:`${m}m`}
@@ -24,7 +25,8 @@ function coverBox(src, large=false){
   // behält ihre feste Größe. Dadurch zerreißt die Albumkarte nicht mehr.
   return `<div class="${cls} noCover"><div class="coverFallback">♪</div><img src="${src}" loading="lazy" onload="this.parentElement.classList.add('hasCover');this.parentElement.classList.remove('noCover')" onerror="this.style.display='none';this.parentElement.classList.add('noCover')" alt=""></div>`;
 }
-function coverUrl(folder, artist=''){return API+'/media/cover?folder='+encodeURIComponent(folder||'')+(artist?'&artist='+encodeURIComponent(artist):'')+'&v='+encodeURIComponent(APP_VERSION);}
+function coverUrl(folder, artist=''){return API+'/media/cover?folder='+encodeURIComponent(folder||'')+(artist?'&artist='+encodeURIComponent(artist):'')+'&_='+Date.now();}
+function coverUrlPath(path){return API+'/media/cover_by_path?path='+encodeURIComponent(path||'')+'&_='+Date.now();}
 function escHtml(v){return String(v ?? '').replace(/[&<>"]/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]))}
 function resetTagFilters(){
   selectedArtist=null;
@@ -1043,21 +1045,22 @@ async function saveTagUpdates(updates, okMsg, opts={}){
 }
 
 
+
 async function loadMediaPage(){
-  const sort=document.getElementById('mediaSort')?.value||'artist';
   const artistsBox=document.getElementById('mediaArtists');
   const albumsBox=document.getElementById('mediaAlbums');
   const tracksBox=document.getElementById('mediaTracks');
   try{
-    mediaArtistsCache=await j(API+'/media/artists?sort='+encodeURIComponent(sort));
+    mediaArtistsCache=await j(API+'/media/artists?sort=artist');
+    mediaAlbumsCache=await j(API+'/media_albums');
     if(selectedMediaArtist && !mediaArtistsCache.some(x=>x.artist===selectedMediaArtist)){
       selectedMediaArtist=null; selectedMediaFolder=null; selectedMediaAlbum=null;
     }
     if(!selectedMediaArtist && mediaArtistsCache.length){
       selectedMediaArtist=mediaArtistsCache[0].artist;
     }
-    renderMediaArtists();
-    await loadMediaAlbums(sort);
+    renderMediaBrowser();
+    await loadMediaAlbums('artist');
   }catch(e){
     if(artistsBox) artistsBox.innerHTML='<div class="empty">Medien konnten nicht geladen werden: '+escHtml(e.message)+'</div>';
     if(albumsBox) albumsBox.innerHTML='';
@@ -1065,20 +1068,53 @@ async function loadMediaPage(){
   }
 }
 
+function mediaBrowseMode(){ return document.getElementById('mediaBrowseMode')?.value || 'artist'; }
+
+function switchMediaBrowseMode(){
+  const inp=document.getElementById('mediaArtistSearch');
+  if(inp){ inp.value=''; inp.placeholder = mediaBrowseMode()==='album' ? 'Alben suchen...' : 'Interpreten suchen...'; }
+  renderMediaBrowser();
+}
 
 function clearMediaArtistSearch(){
   const inp=document.getElementById('mediaArtistSearch');
   if(inp) inp.value='';
-  renderMediaArtists();
+  renderMediaBrowser();
+}
+
+function renderMediaBrowser(){
+  if(mediaBrowseMode()==='album') renderMediaAlbumBrowser();
+  else renderMediaArtists();
 }
 
 function renderMediaArtists(){
   const artistsBox=document.getElementById('mediaArtists');
   if(!artistsBox)return;
-  const q=(document.getElementById('mediaArtistSearch')?.value||'').trim().toLowerCase();
+  const inp=document.getElementById('mediaArtistSearch');
+  if(inp && inp.placeholder !== 'Interpreten suchen...') inp.placeholder='Interpreten suchen...';
+  const q=(inp?.value||'').trim().toLowerCase();
   const list=mediaArtistsCache.filter(x=>!q || String(x.artist||'').toLowerCase().includes(q));
   artistsBox.innerHTML=list.map(x=>`<div class="row ${x.artist===selectedMediaArtist?'sel':''}" data-artist="${escAttr(x.artist)}"><b>${escHtml(x.artist)}</b><br><span class="small">${x.albums} Alben · ${x.tracks} Titel</span></div>`).join('') || '<div class="empty">Keine Interpreten gefunden.</div>';
   artistsBox.querySelectorAll('[data-artist]').forEach(el=>{el.onclick=()=>selectMediaArtist(el.dataset.artist);});
+}
+
+function renderMediaAlbumBrowser(){
+  const box=document.getElementById('mediaArtists');
+  if(!box)return;
+  const inp=document.getElementById('mediaArtistSearch');
+  if(inp && inp.placeholder !== 'Alben suchen...') inp.placeholder='Alben suchen...';
+  const q=(inp?.value||'').trim().toLowerCase();
+  const list=mediaAlbumsCache.filter(x=>!q || [x.album,x.artist,x.folder].join(' ').toLowerCase().includes(q));
+  box.innerHTML=list.map(x=>`<div class="row ${x.folder===selectedMediaFolder?'sel':''}" data-folder="${encodeURIComponent(x.folder||'')}" data-artist="${escAttr(x.artist||'')}" data-album="${encodeURIComponent(x.album||'')}"><b>${escHtml(x.album||'Unbekanntes Album')}</b><br><span class="small">${escHtml(x.artist||'')} · ${x.tracks} Titel</span></div>`).join('') || '<div class="empty">Keine Alben gefunden.</div>';
+  box.querySelectorAll('[data-folder]').forEach(el=>{el.onclick=()=>selectMediaAlbumFromBrowser(decodeURIComponent(el.dataset.folder||''), el.dataset.artist||'', decodeURIComponent(el.dataset.album||''));});
+}
+
+async function selectMediaAlbumFromBrowser(folder, artist, album){
+  selectedMediaArtist=artist;
+  selectedMediaFolder=folder;
+  selectedMediaAlbum=album;
+  renderMediaBrowser();
+  await loadMediaAlbums('artist');
 }
 
 async function selectMediaArtist(artist){
@@ -1098,12 +1134,13 @@ async function loadMediaAlbums(sort){
     return;
   }
   const albums=await j(API+'/media/artist_albums?artist='+encodeURIComponent(selectedMediaArtist)+'&sort='+encodeURIComponent(sort||'artist'));
+  if(selectedMediaFolder && !albums.some(a=>a.folder===selectedMediaFolder)) selectedMediaFolder=null;
   if(!selectedMediaFolder && albums.length){
     selectedMediaFolder=albums[0].folder;
     selectedMediaAlbum=albums[0].album;
   }
   albumsBox.innerHTML=albums.map(x=>{
-    const cover=coverUrl(x.folder||'', selectedMediaArtist||'');
+    const cover=x.first_path ? coverUrlPath(x.first_path) : coverUrl(x.folder||'', selectedMediaArtist||'');
     const sel=x.folder===selectedMediaFolder;
     return `<div class="mediaAlbumRow ${sel?'sel':''}" data-folder="${encodeURIComponent(x.folder||'')}" data-album="${encodeURIComponent(x.album||'')}">${coverBox(cover)}<div class="mediaAlbumText"><b>${escHtml(x.album)}</b><br><span class="small">${x.tracks} Titel · ${x.analyzed}/${x.tracks} analysiert · ${dur(x.duration)}</span><br><span class="small pathLine">${escHtml(x.folder||'')}</span></div></div>`;
   }).join('') || '<div class="empty">Keine Alben gefunden.</div>';
@@ -1119,7 +1156,8 @@ async function loadMediaAlbums(sort){
 async function selectMediaAlbum(folder, album){
   selectedMediaFolder=folder;
   selectedMediaAlbum=album;
-  await loadMediaAlbums(document.getElementById('mediaSort')?.value||'artist');
+  renderMediaBrowser();
+  await loadMediaAlbums('artist');
 }
 
 async function loadMediaTracks(){
@@ -1128,7 +1166,7 @@ async function loadMediaTracks(){
   const dl=document.getElementById('mediaDownload');
   if(!selectedMediaFolder){return;}
   const tracks=await j(API+'/media/album_tracks?folder='+encodeURIComponent(selectedMediaFolder)+'&artist='+encodeURIComponent(selectedMediaArtist||''));
-  const cover=coverUrl(selectedMediaFolder, selectedMediaArtist||'');
+  const cover=tracks[0]?.path ? coverUrlPath(tracks[0].path) : coverUrl(selectedMediaFolder, selectedMediaArtist||'');
   const album=selectedMediaAlbum || (tracks[0]?.album) || 'Album';
   const duration=tracks.reduce((a,x)=>a+Number(x.duration||0),0);
   if(head){
