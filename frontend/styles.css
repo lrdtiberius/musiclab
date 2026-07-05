@@ -426,7 +426,7 @@ body.mediaMode .footerCredit{grid-column:1;grid-row:2}
 .mediaSearchBox .mediaClear:hover{background:#3a4353!important}
 
 
-/* v1.5.16: Medien-Suche X exakt mittig und Mehrfach-Disc-Ansichten */
+/* v1.5.17: Medien-Suche X exakt mittig und Mehrfach-Disc-Ansichten */
 .mediaSearchBox .mediaClear{
   position:absolute!important;
   right:7px!important;
@@ -463,7 +463,7 @@ body.mediaMode .footerCredit{grid-column:1;grid-row:2}
 .discTotalsGrid input{width:90px;padding:7px 9px}
 .discHeader td{background:#121722;color:var(--accent);font-weight:800;border-top:1px solid #3a4353;border-bottom:1px solid #303847;padding-top:10px!important}
 
-/* v1.5.16: Medien-Suche X final exakt wie auf den anderen Seiten zentrieren */
+/* v1.5.17: Medien-Suche X final exakt wie auf den anderen Seiten zentrieren */
 .mediaSearchBox .mediaClear{
   position:absolute!important;
   right:8px!important;
@@ -503,3 +503,44 @@ body.mediaMode .footerCredit{grid-column:1;grid-row:2}
   margin:0!important;
   padding:0!important;
 }
+
+
+/* v1.5.17: Medien-Suche X final: echte zentrierte Icon-Linien statt Schriftzeichen */
+.mediaSearchBox{position:relative!important}
+.mediaSearchBox input{height:36px!important;padding-right:38px!important}
+.mediaSearchBox .mediaClear{
+  position:absolute!important;
+  right:7px!important;
+  top:18px!important;
+  transform:translateY(-50%)!important;
+  width:24px!important;
+  height:24px!important;
+  min-width:24px!important;
+  padding:0!important;
+  margin:0!important;
+  border:0!important;
+  border-radius:999px!important;
+  background:#303847!important;
+  color:transparent!important;
+  font-size:0!important;
+  line-height:0!important;
+  display:block!important;
+  z-index:10!important;
+  appearance:none!important;
+  -webkit-appearance:none!important;
+}
+.mediaSearchBox .mediaClear::before,
+.mediaSearchBox .mediaClear::after{
+  content:''!important;
+  position:absolute!important;
+  left:50%!important;
+  top:50%!important;
+  width:10px!important;
+  height:2px!important;
+  border-radius:2px!important;
+  background:var(--txt)!important;
+  transform-origin:center!important;
+}
+.mediaSearchBox .mediaClear::before{transform:translate(-50%,-50%) rotate(45deg)!important}
+.mediaSearchBox .mediaClear::after{transform:translate(-50%,-50%) rotate(-45deg)!important}
+.mediaSearchBox .mediaClear:hover{background:#3a4353!important}

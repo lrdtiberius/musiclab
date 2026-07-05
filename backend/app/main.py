@@ -2045,7 +2045,7 @@ def api_media_cover_by_path(path: str):
 def api_media_cover(folder: str, artist: Optional[str] = None):
     """Return embedded album cover.
 
-    v1.5.16: intentionally restored to the proven v1.5.1 lookup path:
+    v1.5.17: intentionally restored to the proven v1.5.1 lookup path:
     query DB rows for the selected album folder/artist and inspect each real
     track file for embedded artwork. A physical-folder fallback remains, but
     no cover.jpg/folder.jpg files are created or required.
@@ -2133,8 +2133,11 @@ def api_media_albums(q: str = ""):
         hay = " ".join([artist, album, folder, path]).lower()
         if q_norm and q_norm not in hay:
             continue
-        key = (artist.lower(), album.lower(), folder)
+        key = folder
         g = groups.setdefault(key, {"artist": artist, "album": album, "folder": folder, "tracks": 0, "analyzed": 0, "duration": 0.0, "first_path": r.get("path") or ""})
+        # Wenn mehrere Disc-Unterordner abweichende Album-Tags haben, bleibt
+        # der Albumordner der stabile Schlüssel. Der erste brauchbare Albumname
+        # wird angezeigt, die Tracks werden aber korrekt zusammengefasst.
         g["tracks"] += 1
         g["analyzed"] += 1 if r.get("analyzed") is not None else 0
         g["duration"] += float(r.get("duration") or 0)

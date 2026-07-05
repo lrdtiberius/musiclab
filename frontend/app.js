@@ -1,5 +1,5 @@
 const API='http://'+location.hostname+':8091/api';
-const APP_VERSION='1.5.16';
+const APP_VERSION='1.5.17';
 let selectedArtist=null, selectedAlbum=null, selectedTagFolder=null;
 let selectedTagGenre=null, selectedTagYear=null;
 let browserMode='artist';
@@ -26,8 +26,8 @@ function coverBox(src, large=false){
   // wird auf den Platzhalter umgeschaltet.
   return `<div class="${cls} loading"><div class="coverFallback">♪</div><img src="${src}" loading="lazy" onload="this.parentElement.classList.add('hasCover');this.parentElement.classList.remove('loading','noCover')" onerror="this.style.display='none';this.parentElement.classList.add('noCover');this.parentElement.classList.remove('loading','hasCover')" alt=""></div>`;
 }
-function coverUrl(folder, artist=''){return API+'/media/cover?folder='+encodeURIComponent(folder||'')+(artist?'&artist='+encodeURIComponent(artist):'')+'&_='+Date.now();}
-function coverUrlPath(path){return API+'/media/cover_by_path?path='+encodeURIComponent(path||'')+'&_='+Date.now();}
+function coverUrl(folder, artist=''){return API+'/media/cover?folder='+encodeURIComponent(folder||'')+(artist?'&artist='+encodeURIComponent(artist):'')+'&v='+encodeURIComponent(APP_VERSION);}
+function coverUrlPath(path){return API+'/media/cover_by_path?path='+encodeURIComponent(path||'')+'&v='+encodeURIComponent(APP_VERSION);}
 function escHtml(v){return String(v ?? '').replace(/[&<>"]/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]))}
 function resetTagFilters(){
   selectedArtist=null;
@@ -1165,7 +1165,8 @@ async function selectMediaArtist(artist){
   selectedMediaArtist=artist;
   selectedMediaFolder=null;
   selectedMediaAlbum=null;
-  await loadMediaPage();
+  renderMediaBrowser();
+  await loadMediaAlbums('artist');
 }
 
 async function loadMediaAlbums(sort){
@@ -1184,7 +1185,7 @@ async function loadMediaAlbums(sort){
     selectedMediaAlbum=albums[0].album;
   }
   albumsBox.innerHTML=albums.map(x=>{
-    const cover=coverUrl(x.folder||'', selectedMediaArtist||'');
+    const cover=x.first_path ? coverUrlPath(x.first_path) : coverUrl(x.folder||'', selectedMediaArtist||'');
     const sel=x.folder===selectedMediaFolder;
     return `<div class="mediaAlbumRow ${sel?'sel':''}" data-folder="${encodeURIComponent(x.folder||'')}" data-album="${encodeURIComponent(x.album||'')}">${coverBox(cover)}<div class="mediaAlbumText"><b>${escHtml(x.album)}</b><br><span class="small">${x.tracks} Titel · ${x.analyzed}/${x.tracks} analysiert · ${dur(x.duration)}</span><br><span class="small pathLine">${escHtml(x.folder||'')}</span></div></div>`;
   }).join('') || '<div class="empty">Keine Alben gefunden.</div>';
@@ -1210,7 +1211,7 @@ async function loadMediaTracks(){
   const dl=document.getElementById('mediaDownload');
   if(!selectedMediaFolder){return;}
   const tracks=await j(API+'/media/album_tracks?folder='+encodeURIComponent(selectedMediaFolder)+'&artist='+encodeURIComponent(selectedMediaArtist||''));
-  const cover=coverUrl(selectedMediaFolder, selectedMediaArtist||'');
+  const cover=tracks[0]?.path ? coverUrlPath(tracks[0].path) : coverUrl(selectedMediaFolder, selectedMediaArtist||'');
   const album=selectedMediaAlbum || (tracks[0]?.album) || 'Album';
   const duration=tracks.reduce((a,x)=>a+Number(x.duration||0),0);
   if(head){
