@@ -20,9 +20,9 @@ LOG_DIR = Path(os.getenv("LOG_DIR", str(DB_PATH.parent / "logs")))
 LOG_PATH = LOG_DIR / "musiclab.log"
 LOG_MAX_BYTES = int(os.getenv("LOG_MAX_BYTES", str(10 * 1024 * 1024)))
 EXTS = {".mp3", ".m4a", ".aac", ".flac", ".ogg"}
-SCHEMA_VERSION = 13
+SCHEMA_VERSION = 14
 
-app = FastAPI(title="MusicLab API", version="1.3.0")
+app = FastAPI(title="MusicLab API", version="1.3.1")
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
 
 stop_event = threading.Event()
@@ -1121,7 +1121,7 @@ def startup():
 
 @app.get("/api/health")
 def health():
-    return {"ok": True, "version": "1.3.0", "music_root": str(get_music_root()), "db": str(DB_PATH)}
+    return {"ok": True, "version": "1.3.1", "music_root": str(get_music_root()), "db": str(DB_PATH)}
 
 
 @app.post("/api/scan")
@@ -1400,13 +1400,88 @@ def get_tracks(album: str, artist: Optional[str] = None):
     with db() as con:
         return [dict(r) for r in con.execute(
             f"""
-            SELECT t.id,t.title,t.track_number,t.track_total,t.disc_number,t.disc_total,t.duration,t.codec,t.bitrate,t.sample_rate,t.channels,t.path,t.filename,
+            SELECT t.id,t.artist,t.album,t.title,t.track_raw,t.track_number,t.track_total,t.disc_raw,t.disc_number,t.disc_total,t.duration,t.codec,t.bitrate,t.sample_rate,t.channels,t.path,t.filename,
             a.input_i,a.input_tp,a.input_lra,a.status AS analysis_status
             FROM tracks t LEFT JOIN analysis a ON a.track_id=t.id
             {where}
             ORDER BY t.artist COLLATE NOCASE, COALESCE(t.disc_number,1), COALESCE(t.track_number,9999), t.title COLLATE NOCASE, t.path COLLATE NOCASE
             """, args,
         ).fetchall()]
+
+
+@app.post("/api/tags/update")
+def update_tags(payload: dict):
+    """Update common audio tags for selected files and keep the DB in sync.
+
+    Expected payload: {"updates":[{"path":"Artist/Album/01.mp3", "title":"...", "artist":"...", "album":"...", "tracknumber":"1/12", "year":"2024", "genre":"Rock"}]}
+    """
+    updates = payload.get("updates") if isinstance(payload, dict) else None
+    if not isinstance(updates, list):
+        raise HTTPException(status_code=400, detail="updates fehlt")
+    root = get_music_root().resolve()
+    updated = 0
+    errors = []
+    with db() as con:
+        for item in updates:
+            if not isinstance(item, dict):
+                continue
+            rel = str(item.get("path") or "").strip().lstrip("/")
+            if not rel:
+                errors.append("Leerer Pfad")
+                continue
+            try:
+                p = (root / rel).resolve()
+                if not p.is_relative_to(root):
+                    raise ValueError("Pfad außerhalb der Musikbibliothek")
+                if not p.exists():
+                    raise FileNotFoundError(rel)
+                audio = MutagenFile(p, easy=True)
+                if audio is None:
+                    raise ValueError("Datei kann nicht gelesen werden")
+                changed = {}
+                mapping = {
+                    "title": "title",
+                    "artist": "artist",
+                    "album": "album",
+                    "tracknumber": "tracknumber",
+                    "year": "date",
+                    "genre": "genre",
+                }
+                for src, tag in mapping.items():
+                    if src in item:
+                        val = str(item.get(src) or "").strip()
+                        if val:
+                            audio[tag] = [val]
+                            changed[src] = val
+                audio.save()
+                db_updates = []
+                args = []
+                if "title" in changed:
+                    db_updates.append("title=?"); args.append(changed["title"])
+                if "artist" in changed:
+                    db_updates.append("artist=?"); args.append(changed["artist"])
+                if "album" in changed:
+                    db_updates.append("album=?"); args.append(changed["album"])
+                if "tracknumber" in changed:
+                    tn, tt = parse_number_pair(changed["tracknumber"])
+                    db_updates += ["track_raw=?", "track_number=?", "track_total=?"]
+                    args += [changed["tracknumber"], tn, tt]
+                try:
+                    st = p.stat()
+                    db_updates += ["size=?", "mtime=?"]
+                    args += [st.st_size, st.st_mtime]
+                except Exception:
+                    pass
+                if db_updates:
+                    args.append(rel)
+                    con.execute("UPDATE tracks SET " + ",".join(db_updates) + " WHERE path=?", args)
+                updated += 1
+            except Exception as e:
+                errors.append(f"{rel}: {e}")
+        con.commit()
+    if updated:
+        add_log(f"Tags gespeichert: {updated}/{len(updates)} Dateien" + (f", Fehler {len(errors)}" if errors else ""), bool(errors))
+    return {"updated": updated, "total": len(updates), "errors": errors[:50]}
 
 
 def album_summary(con, artist: Optional[str], album: str):

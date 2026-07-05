@@ -1,5 +1,5 @@
 const API='http://'+location.hostname+':8091/api';
-const APP_VERSION='1.3.0';
+const APP_VERSION='1.3.1';
 let selectedArtist=null, selectedAlbum=null;
 let browserMode='artist';
 let lastRunning=false;
@@ -157,6 +157,7 @@ async function loadSettings(){
   if(typeof musicRoot!=='undefined' && s.music_root) musicRoot.value=s.music_root;
   if(typeof watchMode!=='undefined' && s.watch_mode) watchMode.value=s.watch_mode;
   updateTargetInfo();
+  if(typeof syncSettingsPageFromMain==='function') syncSettingsPageFromMain();
 }
 
 function updateTargetInfo(){
@@ -167,9 +168,6 @@ function updateTargetInfo(){
   const wm=(typeof watchMode!=='undefined' && watchMode.value && watchMode.value!=='off') ? ` · Watch: ${watchMode.options[watchMode.selectedIndex].text}` : '';
   if(typeof settingsLine!=='undefined') settingsLine.textContent=`Backup: ${bmShort} · Parallel: ${parallelAnalysis.value}× · Musik: ${mr}${wm}`;
 }
-function openSettings(){settingsModal.classList.add('show');checkMusicRoot()}
-function closeSettings(){settingsModal.classList.remove('show')}
-async function saveSettingsAndClose(){await saveSettings();await checkMusicRoot();closeSettings()}
 
 async function saveSettings(){
   await j(API+'/settings',{
@@ -449,6 +447,7 @@ async function selectAlbum(a){
   btnRef.disabled=false;
   btnAnalyze.disabled=false;
   updateNormalizeGuard();
+  if(currentView==='tags') loadTagsPage();
 }
 
 async function scan(){
@@ -627,6 +626,84 @@ async function loadLog(){
 }
 
 
+
+let currentView='audio';
+function setAppView(view){
+  currentView=view;
+  document.querySelectorAll('.appView').forEach(el=>el.classList.toggle('active', el.id===view+'View'));
+  [['tabAudio','audio'],['tabTags','tags'],['tabSettings','settings']].forEach(([id,v])=>{const b=document.getElementById(id); if(b)b.classList.toggle('active', view===v)});
+  document.body.classList.toggle('settingsMode', view==='settings');
+  if(view==='tags') loadTagsPage();
+  if(view==='settings'){ syncSettingsPageFromMain(); checkMusicRootPage(); }
+}
+function openSettings(){setAppView('settings')}
+function closeSettings(){setAppView('audio')}
+function syncSettingsPageFromMain(){
+  const pairs=[['targetLufs','targetLufsPage'],['truePeak','truePeakPage'],['lra','lraPage'],['backupMode','backupModePage'],['parallelAnalysis','parallelAnalysisPage'],['musicRoot','musicRootPage'],['watchMode','watchModePage']];
+  for(const [a,b] of pairs){const x=document.getElementById(a), y=document.getElementById(b); if(x&&y)y.value=x.value;}
+}
+function syncSettingsMainFromPage(){
+  const pairs=[['targetLufs','targetLufsPage'],['truePeak','truePeakPage'],['lra','lraPage'],['backupMode','backupModePage'],['parallelAnalysis','parallelAnalysisPage'],['musicRoot','musicRootPage'],['watchMode','watchModePage']];
+  for(const [a,b] of pairs){const x=document.getElementById(a), y=document.getElementById(b); if(x&&y)x.value=y.value;}
+}
+async function saveSettingsAndStay(){
+  syncSettingsMainFromPage();
+  await saveSettings();
+  await checkMusicRootPage();
+  await loadSettings();
+  alert('Einstellungen gespeichert.');
+}
+async function checkMusicRootPage(){
+  const src=document.getElementById('musicRootPage');
+  const dst=document.getElementById('musicRootStatusPage');
+  if(!src||!dst)return;
+  try{
+    const res=await j(API+'/settings/check_music_root?path='+encodeURIComponent((src.value||'/music').trim()));
+    if(res.ok){dst.textContent='✓ Pfad erreichbar'+(res.sample_audio_files>0?' · Audiodateien gefunden':'');dst.className='small okText'}
+    else{dst.textContent='⚠ Pfad nicht nutzbar: '+(res.exists?'kein lesbarer Ordner':'nicht gefunden');dst.className='small warnText'}
+  }catch(e){dst.textContent='⚠ Prüfung fehlgeschlagen: '+e.message;dst.className='small warnText'}
+}
+async function loadTagsPage(){
+  const body=document.getElementById('tagTracks'); const hint=document.getElementById('tagHint');
+  if(!body||!hint)return;
+  if(!selectedAlbum){hint.textContent='Noch kein Album ausgewählt.'; body.innerHTML=''; return;}
+  let url=API+'/tracks?album='+encodeURIComponent(selectedAlbum); if(selectedArtist)url+='&artist='+encodeURIComponent(selectedArtist);
+  try{
+    const rows=await j(url);
+    hint.textContent=`${selectedArtist?selectedArtist+' · ':''}${selectedAlbum} · ${rows.length} Titel`;
+    if(rows.length){
+      const first=rows[0];
+      const aa=document.getElementById('tagAlbumArtist'), al=document.getElementById('tagAlbumName');
+      if(aa)aa.value=first.artist||selectedArtist||''; if(al)al.value=first.album||selectedAlbum||'';
+    }
+    body.innerHTML=rows.map((x,i)=>`<tr data-path="${escHtml(relPath(x.path))}"><td>${i+1}</td><td><input class="tagTitle" value="${escAttr(x.title||'')}"></td><td><input class="tagArtist" value="${escAttr(x.artist||'')}"></td><td><input class="tagTrack" value="${escAttr(x.track_raw || x.track_number || '')}"></td><td class="small" title="${escHtml(relPath(x.path))}">${escHtml(relPath(x.path))}</td></tr>`).join('');
+  }catch(e){hint.textContent='Tags konnten nicht geladen werden: '+e.message; body.innerHTML='';}
+}
+function escAttr(s){return String(s ?? '').replaceAll('&','&amp;').replaceAll('"','&quot;').replaceAll('<','&lt;').replaceAll('>','&gt;')}
+async function saveAlbumTags(){
+  const rows=[...document.querySelectorAll('#tagTracks tr[data-path]')];
+  if(!rows.length){alert('Kein Album ausgewählt.');return;}
+  const artist=document.getElementById('tagAlbumArtist')?.value||'';
+  const album=document.getElementById('tagAlbumName')?.value||'';
+  const year=document.getElementById('tagYear')?.value||'';
+  const genre=document.getElementById('tagGenre')?.value||'';
+  const updates=rows.map(r=>({path:r.dataset.path, artist, album, year, genre}));
+  await saveTagUpdates(updates, 'Album-Tags gespeichert. Danach ist ein Scan sinnvoll.');
+}
+async function saveTrackTags(){
+  const rows=[...document.querySelectorAll('#tagTracks tr[data-path]')];
+  if(!rows.length){alert('Keine Titel geladen.');return;}
+  const updates=rows.map(r=>({path:r.dataset.path,title:r.querySelector('.tagTitle')?.value||'',artist:r.querySelector('.tagArtist')?.value||'',tracknumber:r.querySelector('.tagTrack')?.value||''}));
+  await saveTagUpdates(updates, 'Titel-Tags gespeichert.');
+}
+async function saveTagUpdates(updates, okMsg){
+  try{
+    const res=await j(API+'/tags/update',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({updates})});
+    alert(`${okMsg}\nGespeichert: ${res.updated}/${res.total}`+(res.errors?.length?'\nFehler:\n'+res.errors.join('\n'):''));
+    await loadStats(); await loadBrowser(); await loadAlbums(); if(selectedAlbum) await selectAlbum(selectedAlbum);
+  }catch(e){alert('Tags konnten nicht gespeichert werden:\n'+e.message)}
+}
+
 async function loadHistory(){
   try{
     const h=await j(API+'/history?limit=40');
@@ -691,7 +768,7 @@ async function poll(){
 }
 
 setInterval(poll,2000);
-loadSettings();
+loadSettings().then(syncSettingsPageFromMain);
 loadStats();
 loadReference();
 loadBrowser();

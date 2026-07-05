@@ -7,10 +7,11 @@
 <link rel="stylesheet" href="styles.css" />
 </head>
 <body>
-<header><h1>🎵 MusicLab <span class="muted">v1.3.0</span></h1><button onclick="scan()">Bibliothek neu scannen</button><button class="secondary" onclick="analyzeAll()">Alles analysieren</button><button class="danger" id="btnStop" onclick="stopJob()" disabled>Stop</button><button class="secondary" onclick="openSettings()">⚙ Einstellungen</button><span id="status" class="muted" style="display:none"></span></header>
+<header><h1>🎵 MusicLab <span class="muted">v1.3.1</span></h1><button onclick="scan()">Bibliothek neu scannen</button><button class="secondary" onclick="analyzeAll()">Alles analysieren</button><button class="danger" id="btnStop" onclick="stopJob()" disabled>Stop</button><nav class="viewTabs"><button id="tabAudio" class="active" onclick="setAppView('audio')">Audio</button><button id="tabTags" onclick="setAppView('tags')">Tags</button><button id="tabSettings" onclick="setAppView('settings')">Einstellungen</button></nav><span id="status" class="muted" style="display:none"></span></header>
 <div class="layout">
 <aside class="panel"><div class="modeSwitch three"><button id="modeArtist" class="active" onclick="setBrowserMode('artist')">Interpreten</button><button id="modeAlbum" onclick="setBrowserMode('album')">Alben</button><button id="modeNew" onclick="setBrowserMode('new')">Neu</button></div><input id="search" placeholder="Interpreten suchen..." oninput="loadBrowser()" style="width:100%;margin-bottom:12px"><h3 id="browserTitle">Interpreten</h3><div id="browserList" class="list"></div></aside>
 <main>
+<div id="audioView" class="appView active">
 <div class="panel statsLine"><span class="item"><b id="sArtists">0</b> Interpreten</span><span class="sep">•</span><span class="item"><b id="sAlbums">0</b> Alben</span><span class="sep">•</span><span class="item"><b id="sTracks">0</b> Titel</span><span class="sep">•</span><span class="item"><b id="sAnalyzed">0</b> analysiert</span><span class="sep">•</span><span class="item"><b id="sDuration">0m</b> Dauer</span><span id="settingsLine" class="settingsLine">Backup · Parallel</span></div>
 <div class="panel refbox" style="margin-bottom:16px"><div class="refmeta"><b class="refTitle">Referenzalbum</b><div id="referenceBox" class="small refempty">Noch kein Referenzalbum festgelegt.</div></div><button class="secondary" onclick="useReferenceTarget()" id="btnUseRef" disabled>Ziel-LUFS übernehmen</button></div>
 <div class="panel" style="margin-bottom:16px"><div class="bar"><div id="progress" class="fill"></div></div><div id="progressText" class="small" style="margin-top:8px">Bereit</div></div>
@@ -18,6 +19,30 @@
 <section class="panel" style="margin-top:16px"><div class="toolbar"><h2 style="margin-right:auto">Titel</h2><button class="secondary" onclick="normalizeSelectedTracks()" id="btnTrackNorm" disabled>Titel normalisieren</button><span id="targetInfo" class="settingsSummary">Ziel nicht geladen</span></div><div id="albumSummary" class="small"></div><div id="normalizePreview" class="small" style="margin:8px 0;color:var(--muted)"></div><div class="trackScroll"><table><thead><tr><th style="width:34px"><input type="checkbox" id="trackSelectAll" onchange="toggleAllTracks(this.checked)"></th><th>#</th><th>Titel</th><th class="right">LUFS</th><th class="right">TP</th><th class="right">LRA</th><th class="right">Bitrate</th><th>Codec</th></tr></thead><tbody id="tracks"></tbody></table></div></section>
 <div class="bottomGrid"><section class="panel" style="margin-top:16px"><div class="toolbar"><h2 style="margin-right:auto">Log</h2><button class="secondary" onclick="exportLog(false)">Log exportieren</button><button class="secondary" onclick="exportLog(true)">Fehler exportieren</button><button class="secondary" onclick="clearLog()">Log löschen</button></div><pre id="logBox" class="small" style="white-space:pre-wrap;overflow:auto;background:#0f1218;border:1px solid #303847;border-radius:10px;padding:10px">Noch kein Log.</pre></section>
 <section class="panel" style="margin-top:16px"><div class="toolbar"><h2 style="margin-right:auto">Historie / Wiederherstellen</h2><button class="secondary" onclick="loadHistory()">Aktualisieren</button></div><div id="historyList" class="historyList small">Noch keine Historie.</div></section>
+</div>
+</div>
+<div id="tagsView" class="appView tagsPage">
+  <section class="panel tagsHeader"><h2>Tags bearbeiten</h2><div class="small">Album oder Titel links auswählen. Änderungen werden direkt in die Dateien geschrieben.</div></section>
+  <section class="panel tagEditor">
+    <div class="toolbar"><h2 style="margin-right:auto">Album-Tags</h2><button onclick="loadTagsPage()" class="secondary">Aktualisieren</button><button onclick="saveAlbumTags()">Album-Tags speichern</button></div>
+    <div class="formgrid compact"><label>Interpret</label><input id="tagAlbumArtist" placeholder="Interpret/Albumartist"><label>Album</label><input id="tagAlbumName" placeholder="Albumname"><label>Jahr</label><input id="tagYear" placeholder="z. B. 2012"><label>Genre</label><input id="tagGenre" placeholder="Genre"></div>
+  </section>
+  <section class="panel tagTracksPanel">
+    <div class="toolbar"><h2 style="margin-right:auto">Titel-Tags</h2><button onclick="saveTrackTags()">Titel-Tags speichern</button></div>
+    <div id="tagHint" class="small">Noch kein Album ausgewählt.</div>
+    <div class="tagTrackScroll"><table><thead><tr><th>#</th><th>Titel</th><th>Interpret</th><th>Track</th><th>Pfad</th></tr></thead><tbody id="tagTracks"></tbody></table></div>
+  </section>
+</div>
+<div id="settingsView" class="appView settingsPage">
+  <section class="panel settingsPagePanel">
+    <div class="toolbar"><h2 style="margin-right:auto">Einstellungen</h2><button onclick="saveSettingsAndStay()">Speichern</button></div>
+    <div class="settingsSections">
+      <div class="settingsBlock"><h3>Audio</h3><div class="formgrid"><label>Ziel-LUFS</label><input id="targetLufsPage"><label>True Peak</label><input id="truePeakPage"><label>LRA</label><input id="lraPage"><label>Parallel-Analyse</label><select id="parallelAnalysisPage"><option value="1">1</option><option value="2">2</option><option value="3">3</option><option value="4">4</option><option value="6">6</option></select></div></div>
+      <div class="settingsBlock"><h3>Backup</h3><div class="formgrid"><label>Backup</label><select id="backupModePage"><option value="on">/data/backups</option><option value="sidecar">.bak daneben</option><option value="off">aus</option></select></div></div>
+      <div class="settingsBlock"><h3>Musikbibliothek</h3><div class="formgrid"><label>Musikpfad im Container</label><div><input id="musicRootPage" placeholder="/music" style="width:100%"><div id="musicRootStatusPage" class="small" style="margin-top:6px">Pfad wird beim Öffnen geprüft.</div><button type="button" class="secondary" style="margin-top:8px" onclick="checkMusicRootPage()">Pfad prüfen</button></div><label>Überwachung</label><select id="watchModePage"><option value="off">aus</option><option value="notify">nur melden</option><option value="scan">automatisch scannen</option><option value="scan_analyze">scannen + analysieren</option></select></div></div>
+      <div class="settingsBlock"><h3>Daten & Log</h3><div class="toolbar"><button class="secondary" onclick="exportLog(false)">Log exportieren</button><button class="secondary" onclick="exportLog(true)">Fehler exportieren</button><button class="secondary" onclick="clearLog()">Log löschen</button></div><p class="small">Datenbank und Backups liegen im gemounteten <code>/data</code>-Ordner.</p></div>
+    </div>
+  </section>
 </div>
 <div class="footerCredit">Idea by Lrd.Tiberius</div>
 </main>
