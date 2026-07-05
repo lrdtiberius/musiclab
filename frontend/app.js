@@ -1,5 +1,5 @@
 const API='http://'+location.hostname+':8091/api';
-const APP_VERSION='1.3.1';
+const APP_VERSION='1.3.2';
 let selectedArtist=null, selectedAlbum=null;
 let browserMode='artist';
 let lastRunning=false;
@@ -339,7 +339,21 @@ async function loadArtists(){
 
 async function loadAlbumBrowser(){
   let q=encodeURIComponent(search.value||'');
-  let a=await j(API+'/library_albums?q='+q);
+  let a;
+  // In der Tags-Ansicht soll ein gewählter Interpret direkt zu dessen Alben führen.
+  // In der Audio-Ansicht bleibt der Album-Tab global.
+  if(currentView==='tags' && selectedArtist){
+    a=await j(API+'/albums?artist='+encodeURIComponent(selectedArtist));
+    browserTitle.textContent='Alben von '+selectedArtist;
+    browserList.innerHTML=a.map(x=>{
+      const active = x.album===selectedAlbum;
+      return `<div class="row ${active?'sel':''}" data-album="${encodeURIComponent(x.album)}" data-artist="${encodeURIComponent(selectedArtist)}"><b>${escHtml(x.album)}</b><br><span class="small">${x.tracks} Titel · ${x.analyzed}/${x.tracks} analysiert</span></div>`;
+    }).join('') || '<div class="empty">Keine Alben gefunden.</div>';
+    bindAlbumRows();
+    return;
+  }
+  a=await j(API+'/library_albums?q='+q);
+  browserTitle.textContent='Alben';
   browserList.innerHTML=a.map(x=>{
     const oneArtist = Number(x.artist_count||0)===1;
     const artistData = oneArtist ? ` data-artist="${encodeURIComponent(x.artist)}"` : '';
@@ -376,6 +390,16 @@ async function selectArtist(a, keepAlbum=false){
     selectedAlbum=null;
   }
 
+  // Tags-Ansicht: ein Klick auf einen Interpreten zeigt sofort dessen Alben in der linken Liste.
+  if(currentView==='tags' && !keepAlbum){
+    browserMode='album';
+    modeArtist.classList.remove('active');
+    modeAlbum.classList.add('active');
+    if(typeof modeNew !== 'undefined' && modeNew) modeNew.classList.remove('active');
+    search.value='';
+    search.placeholder='Alben suchen...';
+  }
+
   await loadBrowser();
   await loadAlbums();
 
@@ -389,6 +413,7 @@ async function selectArtist(a, keepAlbum=false){
     btnRef.disabled=true;
     btnAnalyze.disabled=true;
     btnNorm.disabled=true;
+    if(currentView==='tags') loadTagsPage();
   }
 }
 
@@ -666,20 +691,35 @@ async function checkMusicRootPage(){
 async function loadTagsPage(){
   const body=document.getElementById('tagTracks'); const hint=document.getElementById('tagHint');
   if(!body||!hint)return;
-  if(!selectedAlbum){hint.textContent='Noch kein Album ausgewählt.'; body.innerHTML=''; return;}
+  if(!selectedAlbum){
+    hint.textContent = selectedArtist ? 'Bitte links ein Album von '+selectedArtist+' auswählen.' : 'Noch kein Album ausgewählt.';
+    body.innerHTML='';
+    const tt=document.getElementById('tagTrackTotal'); if(tt)tt.value='';
+    return;
+  }
   let url=API+'/tracks?album='+encodeURIComponent(selectedAlbum); if(selectedArtist)url+='&artist='+encodeURIComponent(selectedArtist);
   try{
     const rows=await j(url);
     hint.textContent=`${selectedArtist?selectedArtist+' · ':''}${selectedAlbum} · ${rows.length} Titel`;
     if(rows.length){
       const first=rows[0];
-      const aa=document.getElementById('tagAlbumArtist'), al=document.getElementById('tagAlbumName');
-      if(aa)aa.value=first.artist||selectedArtist||''; if(al)al.value=first.album||selectedAlbum||'';
+      const aa=document.getElementById('tagAlbumArtist'), al=document.getElementById('tagAlbumName'), tt=document.getElementById('tagTrackTotal');
+      if(aa)aa.value=first.artist||selectedArtist||'';
+      if(al)al.value=first.album||selectedAlbum||'';
+      if(tt)tt.value=first.track_total && Number(first.track_total)>0 ? first.track_total : rows.length;
     }
-    body.innerHTML=rows.map((x,i)=>`<tr data-path="${escHtml(relPath(x.path))}"><td>${i+1}</td><td><input class="tagTitle" value="${escAttr(x.title||'')}"></td><td><input class="tagArtist" value="${escAttr(x.artist||'')}"></td><td><input class="tagTrack" value="${escAttr(x.track_raw || x.track_number || '')}"></td><td class="small" title="${escHtml(relPath(x.path))}">${escHtml(relPath(x.path))}</td></tr>`).join('');
+    const totalValue = document.getElementById('tagTrackTotal')?.value || (rows.length?String(rows.length):'');
+    body.innerHTML=rows.map((x,i)=>{
+      const trackNumber = x.track_number || parseInt(String(x.track_raw||'').split('/')[0],10) || (i+1);
+      return `<tr data-path="${escAttr(relPath(x.path))}"><td>${i+1}</td><td><input class="tagTitle" value="${escAttr(x.title||'')}"></td><td><input class="tagArtist" value="${escAttr(x.artist||'')}"></td><td><input class="tagTrack" value="${escAttr(trackNumber)}"></td><td class="tagTotalShow">${escHtml(totalValue)}</td><td class="small" title="${escAttr(relPath(x.path))}">${escHtml(relPath(x.path))}</td></tr>`;
+    }).join('');
   }catch(e){hint.textContent='Tags konnten nicht geladen werden: '+e.message; body.innerHTML='';}
 }
 function escAttr(s){return String(s ?? '').replaceAll('&','&amp;').replaceAll('"','&quot;').replaceAll('<','&lt;').replaceAll('>','&gt;')}
+function syncTrackTotalPreview(){
+  const total=(document.getElementById('tagTrackTotal')?.value||'').trim();
+  document.querySelectorAll('.tagTotalShow').forEach(el=>el.textContent=total||'-');
+}
 async function saveAlbumTags(){
   const rows=[...document.querySelectorAll('#tagTracks tr[data-path]')];
   if(!rows.length){alert('Kein Album ausgewählt.');return;}
@@ -693,7 +733,13 @@ async function saveAlbumTags(){
 async function saveTrackTags(){
   const rows=[...document.querySelectorAll('#tagTracks tr[data-path]')];
   if(!rows.length){alert('Keine Titel geladen.');return;}
-  const updates=rows.map(r=>({path:r.dataset.path,title:r.querySelector('.tagTitle')?.value||'',artist:r.querySelector('.tagArtist')?.value||'',tracknumber:r.querySelector('.tagTrack')?.value||''}));
+  const total=(document.getElementById('tagTrackTotal')?.value||'').trim();
+  const updates=rows.map(r=>{
+    const raw=(r.querySelector('.tagTrack')?.value||'').trim();
+    const num=raw.split('/')[0].trim();
+    const tracknumber = num ? (total ? `${num}/${total}` : num) : '';
+    return {path:r.dataset.path,title:r.querySelector('.tagTitle')?.value||'',artist:r.querySelector('.tagArtist')?.value||'',tracknumber};
+  });
   await saveTagUpdates(updates, 'Titel-Tags gespeichert.');
 }
 async function saveTagUpdates(updates, okMsg){

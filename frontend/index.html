@@ -7,7 +7,7 @@
 <link rel="stylesheet" href="styles.css" />
 </head>
 <body>
-<header><h1>🎵 MusicLab <span class="muted">v1.3.1</span></h1><button onclick="scan()">Bibliothek neu scannen</button><button class="secondary" onclick="analyzeAll()">Alles analysieren</button><button class="danger" id="btnStop" onclick="stopJob()" disabled>Stop</button><nav class="viewTabs"><button id="tabAudio" class="active" onclick="setAppView('audio')">Audio</button><button id="tabTags" onclick="setAppView('tags')">Tags</button><button id="tabSettings" onclick="setAppView('settings')">Einstellungen</button></nav><span id="status" class="muted" style="display:none"></span></header>
+<header><h1>🎵 MusicLab <span class="muted">v1.3.2</span></h1><button onclick="scan()">Bibliothek neu scannen</button><button class="secondary" onclick="analyzeAll()">Alles analysieren</button><button class="danger" id="btnStop" onclick="stopJob()" disabled>Stop</button><nav class="viewTabs"><button id="tabAudio" class="active" onclick="setAppView('audio')">Audio</button><button id="tabTags" onclick="setAppView('tags')">Tags</button><button id="tabSettings" onclick="setAppView('settings')">Einstellungen</button></nav><span id="status" class="muted" style="display:none"></span></header>
 <div class="layout">
 <aside class="panel"><div class="modeSwitch three"><button id="modeArtist" class="active" onclick="setBrowserMode('artist')">Interpreten</button><button id="modeAlbum" onclick="setBrowserMode('album')">Alben</button><button id="modeNew" onclick="setBrowserMode('new')">Neu</button></div><input id="search" placeholder="Interpreten suchen..." oninput="loadBrowser()" style="width:100%;margin-bottom:12px"><h3 id="browserTitle">Interpreten</h3><div id="browserList" class="list"></div></aside>
 <main>
@@ -25,12 +25,12 @@
   <section class="panel tagsHeader"><h2>Tags bearbeiten</h2><div class="small">Album oder Titel links auswählen. Änderungen werden direkt in die Dateien geschrieben.</div></section>
   <section class="panel tagEditor">
     <div class="toolbar"><h2 style="margin-right:auto">Album-Tags</h2><button onclick="loadTagsPage()" class="secondary">Aktualisieren</button><button onclick="saveAlbumTags()">Album-Tags speichern</button></div>
-    <div class="formgrid compact"><label>Interpret</label><input id="tagAlbumArtist" placeholder="Interpret/Albumartist"><label>Album</label><input id="tagAlbumName" placeholder="Albumname"><label>Jahr</label><input id="tagYear" placeholder="z. B. 2012"><label>Genre</label><input id="tagGenre" placeholder="Genre"></div>
+    <div class="formgrid compact"><label>Interpret</label><input id="tagAlbumArtist" placeholder="Interpret/Albumartist"><label>Album</label><input id="tagAlbumName" placeholder="Albumname"><label>Jahr</label><input id="tagYear" placeholder="z. B. 2012"><label>Genre</label><input id="tagGenre" placeholder="Genre"><label>Tracks pro Album</label><input id="tagTrackTotal" placeholder="z. B. 10" oninput="syncTrackTotalPreview()"><label></label><div class="small">Bei den einzelnen Titeln reicht dann 1, 2, 3 … MusicLab speichert daraus automatisch 1/10, 2/10 usw.</div></div>
   </section>
   <section class="panel tagTracksPanel">
     <div class="toolbar"><h2 style="margin-right:auto">Titel-Tags</h2><button onclick="saveTrackTags()">Titel-Tags speichern</button></div>
     <div id="tagHint" class="small">Noch kein Album ausgewählt.</div>
-    <div class="tagTrackScroll"><table><thead><tr><th>#</th><th>Titel</th><th>Interpret</th><th>Track</th><th>Pfad</th></tr></thead><tbody id="tagTracks"></tbody></table></div>
+    <div class="tagTrackScroll"><table><thead><tr><th>#</th><th>Titel</th><th>Interpret</th><th>Track</th><th>Tracks pro Album</th><th>Pfad</th></tr></thead><tbody id="tagTracks"></tbody></table></div>
   </section>
 </div>
 <div id="settingsView" class="appView settingsPage">
