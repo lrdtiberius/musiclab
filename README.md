@@ -1,8 +1,8 @@
-# MusicLab v1.5.12
+# MusicLab v1.5.13
 
 Musikbibliothek analysieren, normalisieren, Tags bearbeiten und Medien durchsuchen.
 
-## Neu in v1.5.12
+## Neu in v1.5.13
 
 - Coveranzeige liest jetzt ausschließlich eingebettete Cover aus den Audiodateien.
 - `cover.jpg`/`folder.jpg` werden nicht mehr benötigt und von MusicLab nicht mehr erzeugt.

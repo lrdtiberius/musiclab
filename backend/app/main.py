@@ -27,7 +27,7 @@ LOG_MAX_BYTES = int(os.getenv("LOG_MAX_BYTES", str(10 * 1024 * 1024)))
 EXTS = {".mp3", ".m4a", ".aac", ".flac", ".ogg"}
 SCHEMA_VERSION = 21
 
-app = FastAPI(title="MusicLab API", version="1.5.10")
+app = FastAPI(title="MusicLab API", version="1.5.13")
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
 
 stop_event = threading.Event()
@@ -1207,7 +1207,7 @@ def startup():
 
 @app.get("/api/health")
 def health():
-    return {"ok": True, "version": "1.5.7", "music_root": str(get_music_root()), "db": str(DB_PATH)}
+    return {"ok": True, "version": "1.5.13", "music_root": str(get_music_root()), "db": str(DB_PATH)}
 
 
 @app.post("/api/scan")
@@ -2016,7 +2016,7 @@ def api_media_cover_by_path(path: str):
 def api_media_cover(folder: str, artist: Optional[str] = None):
     """Return the embedded album cover from the selected album folder.
 
-    v1.5.12: the cover lookup no longer depends on the broad MutagenFile
+    v1.5.13: the cover lookup no longer depends on the broad MutagenFile
     path alone. It first resolves the real audio files for the album folder and
     then uses the shared _embedded_cover_from_file() helper, which reads MP3
     ID3/APIC directly. This fixes libraries where Mp3tag shows the cover but

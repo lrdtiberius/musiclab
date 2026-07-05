@@ -1,5 +1,5 @@
 const API='http://'+location.hostname+':8091/api';
-const APP_VERSION='1.5.12';
+const APP_VERSION='1.5.13';
 let selectedArtist=null, selectedAlbum=null, selectedTagFolder=null;
 let selectedTagGenre=null, selectedTagYear=null;
 let browserMode='artist';
@@ -20,10 +20,10 @@ function relPath(p){return String(p||'').replace(/^\/music\//,'')}
 function parentFolderFromPath(p){const s=relPath(p); const i=s.lastIndexOf('/'); return i>0?s.slice(0,i):''}
 function coverBox(src, large=false){
   const cls=large?'mediaCoverBox large':'mediaCoverBox';
-  // Der Platzhalter bleibt immer vorhanden. Wenn kein eingebettetes Cover
-  // geladen werden kann, wird nur das <img> ausgeblendet, aber die Kachel
-  // behält ihre feste Größe. Dadurch zerreißt die Albumkarte nicht mehr.
-  return `<div class="${cls} noCover"><div class="coverFallback">♪</div><img src="${src}" loading="lazy" onload="this.parentElement.classList.add('hasCover');this.parentElement.classList.remove('noCover')" onerror="this.style.display='none';this.parentElement.classList.add('noCover')" alt=""></div>`;
+  // Wichtig: Das Bild darf beim Start NICHT per noCover ausgeblendet werden,
+  // sonst lädt der Browser die Cover-URL gar nicht erst. Erst bei onerror
+  // wird auf den Platzhalter umgeschaltet.
+  return `<div class="${cls} loading"><div class="coverFallback">♪</div><img src="${src}" loading="lazy" onload="this.parentElement.classList.add('hasCover');this.parentElement.classList.remove('loading','noCover')" onerror="this.style.display='none';this.parentElement.classList.add('noCover');this.parentElement.classList.remove('loading','hasCover')" alt=""></div>`;
 }
 function coverUrl(folder, artist=''){return API+'/media/cover?folder='+encodeURIComponent(folder||'')+(artist?'&artist='+encodeURIComponent(artist):'')+'&_='+Date.now();}
 function coverUrlPath(path){return API+'/media/cover_by_path?path='+encodeURIComponent(path||'')+'&_='+Date.now();}
@@ -1072,7 +1072,7 @@ function mediaBrowseMode(){ return document.getElementById('mediaBrowseMode')?.v
 
 function switchMediaBrowseMode(){
   const inp=document.getElementById('mediaArtistSearch');
-  if(inp){ inp.value=''; inp.placeholder = mediaBrowseMode()==='album' ? 'Alben suchen...' : 'Interpreten suchen...'; }
+  if(inp){ inp.value=''; inp.placeholder = 'Suchen...'; }
   renderMediaBrowser();
 }
 
@@ -1091,7 +1091,7 @@ function renderMediaArtists(){
   const artistsBox=document.getElementById('mediaArtists');
   if(!artistsBox)return;
   const inp=document.getElementById('mediaArtistSearch');
-  if(inp && inp.placeholder !== 'Interpreten suchen...') inp.placeholder='Interpreten suchen...';
+  if(inp) inp.placeholder='Suchen...';
   const q=(inp?.value||'').trim().toLowerCase();
   const list=mediaArtistsCache.filter(x=>!q || String(x.artist||'').toLowerCase().includes(q));
   artistsBox.innerHTML=list.map(x=>`<div class="row ${x.artist===selectedMediaArtist?'sel':''}" data-artist="${escAttr(x.artist)}"><b>${escHtml(x.artist)}</b><br><span class="small">${x.albums} Alben · ${x.tracks} Titel</span></div>`).join('') || '<div class="empty">Keine Interpreten gefunden.</div>';
@@ -1102,7 +1102,7 @@ function renderMediaAlbumBrowser(){
   const box=document.getElementById('mediaArtists');
   if(!box)return;
   const inp=document.getElementById('mediaArtistSearch');
-  if(inp && inp.placeholder !== 'Alben suchen...') inp.placeholder='Alben suchen...';
+  if(inp) inp.placeholder='Suchen...';
   const q=(inp?.value||'').trim().toLowerCase();
   const list=mediaAlbumsCache.filter(x=>!q || [x.album,x.artist,x.folder].join(' ').toLowerCase().includes(q));
   box.innerHTML=list.map(x=>`<div class="row ${x.folder===selectedMediaFolder?'sel':''}" data-folder="${encodeURIComponent(x.folder||'')}" data-artist="${escAttr(x.artist||'')}" data-album="${encodeURIComponent(x.album||'')}"><b>${escHtml(x.album||'Unbekanntes Album')}</b><br><span class="small">${escHtml(x.artist||'')} · ${x.tracks} Titel</span></div>`).join('') || '<div class="empty">Keine Alben gefunden.</div>';
