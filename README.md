@@ -1,4 +1,4 @@
-MusicLab v1.6.3
+MusicLab v1.6.5
 
 Fixes:
 - Einstellungen-Popup bleibt beim Start geschlossen.
