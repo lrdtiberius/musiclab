@@ -25,9 +25,9 @@ LOG_DIR = Path(os.getenv("LOG_DIR", str(DB_PATH.parent / "logs")))
 LOG_PATH = LOG_DIR / "musiclab.log"
 LOG_MAX_BYTES = int(os.getenv("LOG_MAX_BYTES", str(10 * 1024 * 1024)))
 EXTS = {".mp3", ".m4a", ".aac", ".flac", ".ogg"}
-SCHEMA_VERSION = 22
+SCHEMA_VERSION = 23
 
-app = FastAPI(title="MusicLab API", version="1.6.2")
+app = FastAPI(title="MusicLab API", version="1.6.8")
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
 
 stop_event = threading.Event()
@@ -1348,6 +1348,21 @@ def api_library_sort_preview():
     return p
 
 
+
+
+@app.get("/api/library/sort_preview_export")
+def api_library_sort_preview_export():
+    p = build_sort_plan(limit_preview=10**9)
+    rows = p.get("_plan", [])
+    out = io.StringIO()
+    out.write("from;to;artist;album\n")
+    for r in rows:
+        def cell(v):
+            return '"' + str(v or '').replace('"', '""') + '"'
+        out.write(';'.join([cell(r.get("from")), cell(r.get("to")), cell(r.get("artist")), cell(r.get("album"))]) + "\n")
+    filename = f"musiclab_sort_preview_{time.strftime('%Y-%m-%d_%H-%M-%S')}.csv"
+    return Response(out.getvalue(), media_type="text/csv; charset=utf-8", headers={"Content-Disposition": f"attachment; filename={filename}"})
+
 @app.post("/api/library/sort")
 def api_library_sort():
     if state.get("running"):
@@ -1366,7 +1381,7 @@ def startup():
 
 @app.get("/api/health")
 def health():
-    return {"ok": True, "version": "1.6.7", "music_root": str(get_music_root()), "db": str(DB_PATH)}
+    return {"ok": True, "version": "1.6.8", "music_root": str(get_music_root()), "db": str(DB_PATH)}
 
 
 @app.post("/api/scan")

@@ -1,5 +1,5 @@
 const API='http://'+location.hostname+':8091/api';
-const APP_VERSION='1.6.7';
+const APP_VERSION='1.6.8';
 let selectedArtist=null, selectedAlbum=null, selectedTagFolder=null;
 let selectedTagGenre=null, selectedTagYear=null;
 let browserMode='artist';
@@ -874,14 +874,15 @@ function syncSettingsMainFromPage(){
   const pairs=[['targetLufs','targetLufsPage'],['truePeak','truePeakPage'],['lra','lraPage'],['backupMode','backupModePage'],['parallelAnalysis','parallelAnalysisPage'],['musicRoot','musicRootPage'],['watchMode','watchModePage'],['sortAfterTags','sortAfterTagsPage']];
   for(const [a,b] of pairs){const x=document.getElementById(a), y=document.getElementById(b); if(x&&y)x.value=y.value;}
 }
+function downloadSortPreviewExport(){
+  window.open(API+'/library/sort_preview_export','_blank');
+}
 async function sortLibraryByTags(){
   try{
     const preview=await j(API+'/library/sort_preview');
     if(!preview.move_count){ alert('Die Bibliothek ist bereits nach den aktuellen Tags sortiert.'); return; }
-    const groups=(preview.groups||[]).slice(0,10).map(x=>`• ${x.artist||'Unbekannter Interpret'} – ${x.album||'Unbekanntes Album'}\n  ${x.count} Dateien`).join('\n');
-    const examples=(preview.preview||[]).slice(0,3).map(x=>'• '+x.from+'\n  → '+x.to).join('\n');
-    const more=preview.hidden?`\n… und ${preview.hidden} weitere Dateiänderungen`:'';
-    const msg=`Bibliothek neu sortieren?\n\n${preview.move_count} Dateien würden verschoben\n${preview.conflicts||0} Konflikte\n${preview.skipped||0} übersprungen\n\nGrößte Gruppen:\n${groups||'-'}\n\nBeispiele:\n${examples||'-'}${more}\n\nJetzt sortieren?`;
+    const groups=(preview.groups||[]).slice(0,8).map(x=>`• ${x.artist||'Unbekannter Interpret'} – ${x.album||'Unbekanntes Album'}\n  ${x.count} Dateien`).join('\n');
+    const msg=`Bibliothek neu sortieren?\n\n${preview.move_count} Dateien würden verschoben\n${preview.conflicts||0} Konflikte\n${preview.skipped||0} übersprungen\n\nGrößte Gruppen:\n${groups||'-'}\n\nEine vollständige Detail-Liste kannst du danach/jetzt über „Sortier-Vorschau exportieren“ herunterladen.\n\nJetzt sortieren?`;
     if(!confirm(msg)) return;
     const res=await j(API+'/library/sort',{method:'POST'});
     if(res && res.error){ alert(res.error); return; }
@@ -991,15 +992,18 @@ async function applyTagChanges(){
     const raw=(r.querySelector('.tagTrack')?.value||'').trim();
     const num=raw.split('/')[0].trim();
     const discRaw=(r.querySelector('.tagDisc')?.value||'').trim();
-    const discNum=discRaw.split('/')[0].trim() || '1';
-    const perDiscTotal = discTotalFor(discNum, total);
-    const tracknumber = num ? (perDiscTotal ? `${num}/${perDiscTotal}` : num) : '';
     const discTotalNum = parseInt(discTotal,10);
+    const discNum=discTotalNum>1 ? (discRaw.split('/')[0].trim() || '1') : '';
+    const perDiscTotal = discNum ? discTotalFor(discNum, total) : total;
+    const tracknumber = num ? (perDiscTotal ? `${num}/${perDiscTotal}` : num) : '';
     const discnumber = (discTotalNum && discTotalNum>1 && discNum) ? `${discNum}/${discTotalNum}` : '';
+    const rowArtist=(r.querySelector('.tagArtist')?.value||'').trim();
+    const origArtist=(r.dataset.origArtist||'').trim();
+    const finalArtist = (rowArtist && rowArtist !== origArtist) ? rowArtist : artist;
     return {
       path:r.dataset.path,
       title:r.querySelector('.tagTitle')?.value||'',
-      artist:r.querySelector('.tagArtist')?.value||artist,
+      artist:finalArtist,
       album, year, genre,
       tracknumber, discnumber
     };
@@ -1087,9 +1091,11 @@ async function loadTagsPage(){
     const discTotalValue = document.getElementById('tagDiscTotal')?.value || '';
     body.innerHTML=rows.map((x,i)=>{
       const trackNumber = x.track_number || parseInt(String(x.track_raw||'').split('/')[0],10) || (i+1);
-      const discNumber = x.disc_number || parseInt(String(x.disc_raw||'').split('/')[0],10) || 1;
-      const totalValue = (tagDiscTotals[discNumber] || singleTotalValue || rows.length || '');
-      return `<tr data-path="${escAttr(relPath(x.path))}"><td>${i+1}</td><td><input class="tagTitle" value="${escAttr(x.title||'')}"></td><td><input class="tagArtist" value="${escAttr(x.artist||'')}"></td><td><input class="tagTrack" value="${escAttr(trackNumber)}"></td><td class="tagTotalShow" data-disc="${escAttr(discNumber)}">${escHtml(totalValue)}</td><td><input class="tagDisc" value="${escAttr(discNumber)}" placeholder="1" oninput="syncTrackTotalPreview()"></td><td class="tagDiscTotalShow">${escHtml(discTotalValue||'-')}</td><td class="small" title="${escAttr(relPath(x.path))}">${escHtml(relPath(x.path))}</td></tr>`;
+      const rawDiscNumber = x.disc_number || parseInt(String(x.disc_raw||'').split('/')[0],10) || 1;
+      const isMultiDisc = !!discTotalValue && Number(discTotalValue)>1;
+      const discNumber = isMultiDisc ? rawDiscNumber : '';
+      const totalValue = (isMultiDisc ? (tagDiscTotals[rawDiscNumber] || '') : (singleTotalValue || rows.length || ''));
+      return `<tr data-path="${escAttr(relPath(x.path))}" data-orig-title="${escAttr(x.title||'')}" data-orig-artist="${escAttr(x.artist||'')}" data-orig-track="${escAttr(trackNumber)}" data-orig-disc="${escAttr(discNumber)}"><td>${i+1}</td><td><input class="tagTitle" value="${escAttr(x.title||'')}"></td><td><input class="tagArtist" value="${escAttr(x.artist||'')}"></td><td><input class="tagTrack" value="${escAttr(trackNumber)}"></td><td class="tagTotalShow" data-disc="${escAttr(rawDiscNumber)}">${escHtml(totalValue)}</td><td><input class="tagDisc" value="${escAttr(discNumber)}" placeholder="" oninput="syncTrackTotalPreview()"></td><td class="tagDiscTotalShow">${escHtml(isMultiDisc ? discTotalValue : '-')}</td><td class="small" title="${escAttr(relPath(x.path))}">${escHtml(relPath(x.path))}</td></tr>`;
     }).join('');
     bindTagDirtyHandlers();
     setupCoverDrop();
@@ -1166,10 +1172,10 @@ async function saveAlbumTags(){
     const raw=(r.querySelector('.tagTrack')?.value||'').trim();
     const num=raw.split('/')[0].trim();
     const discRaw=(r.querySelector('.tagDisc')?.value||'').trim();
-    const discNum=discRaw.split('/')[0].trim() || '1';
-    const perDiscTotal = discTotalFor(discNum, total);
-    const tracknumber = num ? (perDiscTotal ? `${num}/${perDiscTotal}` : num) : '';
     const discTotalNum = parseInt(discTotal,10);
+    const discNum=discTotalNum>1 ? (discRaw.split('/')[0].trim() || '1') : '';
+    const perDiscTotal = discNum ? discTotalFor(discNum, total) : total;
+    const tracknumber = num ? (perDiscTotal ? `${num}/${perDiscTotal}` : num) : '';
     const discnumber = (discTotalNum && discTotalNum>1 && discNum) ? `${discNum}/${discTotalNum}` : '';
     return {path:r.dataset.path, artist, album, year, genre, tracknumber, discnumber};
   });
@@ -1184,10 +1190,10 @@ async function saveTrackTags(){
     const raw=(r.querySelector('.tagTrack')?.value||'').trim();
     const num=raw.split('/')[0].trim();
     const discRaw=(r.querySelector('.tagDisc')?.value||'').trim();
-    const discNum=discRaw.split('/')[0].trim() || '1';
-    const perDiscTotal = discTotalFor(discNum, total);
-    const tracknumber = num ? (perDiscTotal ? `${num}/${perDiscTotal}` : num) : '';
     const discTotalNum = parseInt(discTotal,10);
+    const discNum=discTotalNum>1 ? (discRaw.split('/')[0].trim() || '1') : '';
+    const perDiscTotal = discNum ? discTotalFor(discNum, total) : total;
+    const tracknumber = num ? (perDiscTotal ? `${num}/${perDiscTotal}` : num) : '';
     const discnumber = (discTotalNum && discTotalNum>1 && discNum) ? `${discNum}/${discTotalNum}` : '';
     return {path:r.dataset.path,title:r.querySelector('.tagTitle')?.value||'',artist:r.querySelector('.tagArtist')?.value||'',tracknumber,discnumber};
   });
