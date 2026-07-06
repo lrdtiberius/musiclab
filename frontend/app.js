@@ -1,5 +1,5 @@
 const API='http://'+location.hostname+':8091/api';
-const APP_VERSION='1.6.8';
+const APP_VERSION='1.6.9';
 let selectedArtist=null, selectedAlbum=null, selectedTagFolder=null;
 let selectedTagGenre=null, selectedTagYear=null;
 let browserMode='artist';
@@ -1052,7 +1052,7 @@ async function loadTagsPage(){
     if(rows.length){
       const first=rows[0];
       const cp=document.getElementById('tagCoverPreview'); const ci=document.getElementById('tagCoverInfo');
-      if(cp){ cp.outerHTML = coverBox(coverUrl(selectedTagFolder || parentFolderFromPath(first.path||''), selectedArtist||''), true).replace('mediaCoverBox large','mediaCoverBox large tagCoverBox'); }
+      if(cp){ cp.outerHTML = coverBox(coverUrlPath(first.path||''), true).replace('mediaCoverBox large','mediaCoverBox large tagCoverBox'); }
       if(ci) ci.textContent = 'Cover wird in die MP3s des gewählten Albumordners eingebettet.';
       const aa=document.getElementById('tagAlbumArtist'), al=document.getElementById('tagAlbumName'), tt=document.getElementById('tagTrackTotal'), dt=document.getElementById('tagDiscTotal'), yr=document.getElementById('tagYear'), ge=document.getElementById('tagGenre');
       const artists=[...new Set(rows.map(r=>r.artist||'').filter(Boolean))];
@@ -1302,7 +1302,8 @@ async function selectMediaAlbumFromBrowser(folder, artist, album){
   selectedMediaFolder=folder;
   selectedMediaAlbum=album;
   renderMediaBrowser();
-  await loadMediaAlbums('artist');
+  if(mediaBrowseMode()==='album') await loadMediaTracks();
+  else await loadMediaAlbums('artist');
 }
 
 async function selectMediaArtist(artist){
@@ -1354,12 +1355,13 @@ async function loadMediaTracks(){
   const head=document.getElementById('mediaAlbumHead');
   const dl=document.getElementById('mediaDownload');
   if(!selectedMediaFolder){return;}
-  const tracks=await j(API+'/media/album_tracks?folder='+encodeURIComponent(selectedMediaFolder)+'&artist='+encodeURIComponent(selectedMediaArtist||''));
+  const tracks=await j(API+'/media/album_tracks?folder='+encodeURIComponent(selectedMediaFolder)+'&artist='+encodeURIComponent(selectedMediaFolder.startsWith('__album__:')?'':(selectedMediaArtist||'')));
   const cover=tracks[0]?.path ? coverUrlPath(tracks[0].path) : coverUrl(selectedMediaFolder, selectedMediaArtist||'');
   const album=selectedMediaAlbum || (tracks[0]?.album) || 'Album';
   const duration=tracks.reduce((a,x)=>a+Number(x.duration||0),0);
   if(head){
-    head.innerHTML=`${coverBox(cover,true)}<div class="mediaAlbumText"><b>${escHtml(selectedMediaArtist||'')}</b><br>${escHtml(album)}<br><span>${tracks.length} Titel · ${dur(duration)} · ${escHtml(selectedMediaFolder)}</span></div>`;
+    const mediaArtistLabel = selectedMediaFolder.startsWith('__album__:') ? (tracks.some(t=>(t.artist||'')!==(tracks[0]?.artist||'')) ? 'Verschiedene Interpreten' : (tracks[0]?.artist||'')) : (selectedMediaArtist||'');
+    head.innerHTML=`${coverBox(cover,true)}<div class="mediaAlbumText"><b>${escHtml(mediaArtistLabel)}</b><br>${escHtml(album)}<br><span>${tracks.length} Titel · ${dur(duration)} · ${escHtml(selectedMediaFolder.startsWith('__album__:') ? album : selectedMediaFolder)}</span></div>`;
   }
   if(dl){
     dl.classList.remove('disabled');
