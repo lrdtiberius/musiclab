@@ -881,9 +881,43 @@ async function sortLibraryByTags(){
     const more=preview.hidden?`\n… und ${preview.hidden} weitere Dateien`:'';
     const msg=`MusicLab würde ${preview.move_count} Dateien verschieben.\nKonflikte: ${preview.conflicts||0}\nÜbersprungen: ${preview.skipped||0}\n\n${examples}${more}\n\nJetzt sortieren?`;
     if(!confirm(msg)) return;
-    await j(API+'/library/sort',{method:'POST'});
+    const res=await j(API+'/library/sort',{method:'POST'});
+    if(res && res.error){ alert(res.error); return; }
+    const spText=document.getElementById('sortProgressText');
+    if(spText) spText.textContent='Sortierung wird gestartet…';
     poll();
   }catch(e){alert('Bibliothek konnte nicht sortiert werden:\n'+e.message);}
+}
+
+let folderPickerCurrent='/music';
+async function openFolderPicker(){
+  const current=(document.getElementById('musicRootPage')?.value||document.getElementById('musicRoot')?.value||'/music').trim()||'/music';
+  folderPickerCurrent=current;
+  document.getElementById('folderPickerModal')?.classList.remove('hidden');
+  await loadFolderPicker(current);
+}
+function closeFolderPicker(){ document.getElementById('folderPickerModal')?.classList.add('hidden'); }
+async function loadFolderPicker(path){
+  try{
+    const data=await j(API+'/fs/browse?path='+encodeURIComponent(path||'/'));
+    folderPickerCurrent=data.path||path||'/';
+    const p=document.getElementById('folderPickerPath'); if(p)p.textContent=folderPickerCurrent;
+    const list=document.getElementById('folderPickerList'); if(!list)return;
+    list.innerHTML=(data.dirs||[]).map(d=>`<button class="folderItem" onclick="loadFolderPicker('${esc(d.path)}')">📁 ${esc(d.name)}</button>`).join('') || '<div class="empty">Keine Unterordner gefunden.</div>';
+  }catch(e){
+    const list=document.getElementById('folderPickerList'); if(list)list.innerHTML='<div class="empty">Ordner konnte nicht geladen werden: '+esc(e.message)+'</div>';
+  }
+}
+async function browseParentFolder(){
+  const parts=folderPickerCurrent.split('/').filter(Boolean);
+  const parent='/' + parts.slice(0,-1).join('/');
+  await loadFolderPicker(parent==='/'?'/':parent);
+}
+function usePickedFolder(){
+  const a=document.getElementById('musicRootPage'); const b=document.getElementById('musicRoot');
+  if(a)a.value=folderPickerCurrent; if(b)b.value=folderPickerCurrent;
+  closeFolderPicker();
+  checkMusicRootPage?.();
 }
 
 async function saveSettingsAndStay(){

@@ -25,9 +25,9 @@ LOG_DIR = Path(os.getenv("LOG_DIR", str(DB_PATH.parent / "logs")))
 LOG_PATH = LOG_DIR / "musiclab.log"
 LOG_MAX_BYTES = int(os.getenv("LOG_MAX_BYTES", str(10 * 1024 * 1024)))
 EXTS = {".mp3", ".m4a", ".aac", ".flac", ".ogg"}
-SCHEMA_VERSION = 21
+SCHEMA_VERSION = 22
 
-app = FastAPI(title="MusicLab API", version="1.6.1")
+app = FastAPI(title="MusicLab API", version="1.6.2")
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
 
 stop_event = threading.Event()
@@ -1284,6 +1284,31 @@ def sort_library_worker():
         finish_job("Bibliothek sortieren fehlgeschlagen", True)
 
 
+@app.get("/api/fs/browse")
+def api_fs_browse(path: str = "/music"):
+    # Simple container-side folder picker. The browser cannot access NAS paths directly;
+    # it can only choose paths mounted into the container.
+    try:
+        p = Path(path or "/music")
+        if not p.is_absolute():
+            p = Path("/") / p
+        p = p.resolve()
+        if not p.exists() or not p.is_dir():
+            raise HTTPException(status_code=404, detail="Ordner nicht gefunden")
+        dirs = []
+        try:
+            for child in p.iterdir():
+                if child.is_dir() and not child.name.startswith("."):
+                    dirs.append({"name": child.name, "path": child.as_posix()})
+        except PermissionError:
+            pass
+        dirs.sort(key=lambda x: x["name"].lower())
+        return {"path": p.as_posix(), "parent": p.parent.as_posix(), "dirs": dirs[:500]}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
 @app.get("/api/library/sort_preview")
 def api_library_sort_preview():
     p = build_sort_plan(limit_preview=50)
@@ -1293,22 +1318,20 @@ def api_library_sort_preview():
 
 @app.post("/api/library/sort")
 def api_library_sort():
-    if not state["running"]:
-        reset_stop()
-        # Set the visible job state immediately. The worker will rebuild the full
-        # plan in the background, but the UI should not look idle after the user
-        # confirmed the preview.
-        state.update({
-            "running": True,
-            "mode": "Bibliothek sortieren",
-            "total": 0,
-            "done": 0,
-            "errors": 0,
-            "current": "",
-            "message": "Sortierung wird vorbereitet"
-        })
-        threading.Thread(target=sort_library_worker, daemon=True).start()
-    return state
+    if state.get("running"):
+        return {"ok": False, "error": "Es läuft bereits ein Vorgang. Bitte erst stoppen oder warten."}
+    reset_stop()
+    state.update({
+        "running": True,
+        "mode": "Bibliothek sortieren",
+        "total": 0,
+        "done": 0,
+        "errors": 0,
+        "current": "",
+        "message": "Sortierung wird vorbereitet"
+    })
+    threading.Thread(target=sort_library_worker, daemon=True).start()
+    return {"ok": True, "started": True}
 
 @app.on_event("startup")
 def startup():
