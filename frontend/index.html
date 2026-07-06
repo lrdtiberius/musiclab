@@ -7,7 +7,7 @@
 <link rel="stylesheet" href="styles.css" />
 </head>
 <body class="dashboardMode">
-<header><h1>🎵 MusicLab <span class="muted">v1.7.0</span></h1><button onclick="scan()">Bibliothek scannen</button><button class="secondary" onclick="analyzeAll()">Lautstärke analysieren</button><button class="danger" id="btnStop" onclick="stopJob()" disabled>Stop</button><div class="headerStatus"><div class="bar miniBar"><div id="progress" class="fill"></div></div><div id="progressText" class="small">Bereit</div></div><nav class="viewTabs"><button id="tabDashboard" class="active" onclick="setAppView('dashboard')">Dashboard</button><button id="tabAudio" onclick="setAppView('audio')">Audio</button><button id="tabTags" onclick="setAppView('tags')">Tags</button><button id="tabMedia" onclick="setAppView('media')">Medien</button><button id="tabProtocol" onclick="setAppView('protocol')">Protokoll</button><button id="tabSettings" onclick="setAppView('settings')">Einstellungen</button></nav><span id="status" class="muted" style="display:none"></span></header>
+<header><h1>🎵 MusicLab <span class="muted">v1.7.1</span></h1><button onclick="scan()">Bibliothek scannen</button><button class="secondary" onclick="analyzeAll()">Lautstärke analysieren</button><button class="danger" id="btnStop" onclick="stopJob()" disabled>Stop</button><div class="headerStatus"><div class="bar miniBar"><div id="progress" class="fill"></div></div><div id="progressText" class="small">Bereit</div></div><nav class="viewTabs"><button id="tabDashboard" class="active" onclick="setAppView('dashboard')">Dashboard</button><button id="tabAudio" onclick="setAppView('audio')">Audio</button><button id="tabTags" onclick="setAppView('tags')">Tags</button><button id="tabMedia" onclick="setAppView('media')">Medien</button><button id="tabProtocol" onclick="setAppView('protocol')">Protokoll</button><button id="tabSettings" onclick="setAppView('settings')">Einstellungen</button></nav><span id="status" class="muted" style="display:none"></span></header>
 <div class="layout">
 <aside class="panel"><div id="audioModeSwitch" class="modeSwitch three"><button id="modeArtist" class="active" onclick="setBrowserMode('artist')">Interpreten</button><button id="modeAlbum" onclick="setBrowserMode('album')">Alben</button><button id="modeGenre" onclick="setBrowserMode('new')">Neu</button><button id="modeYear" onclick="setBrowserMode('year')" style="display:none">Jahr</button></div><div id="tagSearchControls" class="tagSearchControls" style="display:none"><label class="small">Suchen nach</label><select id="tagSearchType" onchange="setTagSearchType(this.value)"><option value="artist">Interpret</option><option value="album">Album</option><option value="genre">Genre</option><option value="year">Jahr</option></select></div><div class="searchBox"><input id="search" type="search" placeholder="Suchen..." oninput="handleSearchInput()"><button id="clearSearchBtn" class="clearSearch" onclick="clearSearch()" title="Suche leeren">×</button></div><h3 id="browserTitle">Interpreten</h3><div id="browserList" class="list"></div></aside>
 <main>
@@ -18,7 +18,6 @@
       <h2>Dashboard</h2>
       <div class="small">Schnellübersicht deiner MusicLab-Bibliothek.</div>
     </div>
-    <a class="coffeeButton" href="https://paypal.me/SebastianM207" target="_blank" rel="noopener">☕ Buy me a coffee</a>
   </section>
   <section class="dashboardGrid">
     <div class="panel dashCard"><b id="dTracks">0</b><span>Titel</span></div>
@@ -39,6 +38,7 @@
     </div>
     <div class="panel dashboardBox supportBox">
       <h3>Unterstützung</h3>
+      <p class="small">Idea und Umsetzung by Lrd.Tiberius.</p>
       <p class="small">Wenn dir MusicLab gefällt und du die Weiterentwicklung unterstützen möchtest:</p>
       <a class="coffeeButton full" href="https://paypal.me/SebastianM207" target="_blank" rel="noopener">☕ Buy me a coffee</a>
     </div>
@@ -51,7 +51,6 @@
 <section class="panel" style="margin-top:16px"><div class="toolbar"><h2 style="margin-right:auto">Titel</h2><button class="secondary" onclick="normalizeSelectedTracks()" id="btnTrackNorm" disabled>Titel normalisieren</button><span id="targetInfo" class="settingsSummary">Ziel nicht geladen</span></div><div id="albumSummary" class="small"></div><div id="normalizePreview" class="small" style="margin:8px 0;color:var(--muted)"></div><div class="trackScroll"><table><thead><tr><th style="width:34px"><input type="checkbox" id="trackSelectAll" onchange="toggleAllTracks(this.checked)"></th><th>#</th><th>Titel</th><th class="right">LUFS</th><th class="right">TP</th><th class="right">LRA</th><th class="right">Bitrate</th><th>Codec</th></tr></thead><tbody id="tracks"></tbody></table></div></section>
 </div>
 
-</div>
 <div id="tagsView" class="appView tagsPage">
   <section class="panel tagsHeader"><div><h2>Tags bearbeiten</h2><div class="small">Album oder Titel links auswählen. Änderungen werden direkt in die Dateien geschrieben.</div></div><button id="btnApplyTagChanges" onclick="applyTagChanges()" disabled>Änderungen übernehmen</button></section>
   <section class="panel tagEditor">
