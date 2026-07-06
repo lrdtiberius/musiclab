@@ -1,3 +1,1 @@
-MusicLab v1.6.9 stable
-
-Fix: Bibliothek anhand der Tags sortieren startet wieder; Dashboard-Schnellaktionen entfernt.
+MusicLab v1.7.0 - Protokoll-Tab mit Log und Historie.

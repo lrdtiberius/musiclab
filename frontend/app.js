@@ -828,16 +828,26 @@ async function loadLog(){
 }
 
 
+function setProtocolFilter(kind){
+  document.querySelectorAll('.filterPills button').forEach(b=>b.classList.toggle('active', (kind==='all' && b.textContent==='Alle') || b.textContent.toLowerCase().startsWith(kind)));
+  const box=document.getElementById('logBox');
+  if(!box)return;
+  // Filter werden bewusst leichtgewichtig gehalten: Export bleibt vollständig, Anzeige wird beim nächsten Refresh aktualisiert.
+  box.dataset.filter=kind;
+  loadLog();
+}
+
 
 document.addEventListener('DOMContentLoaded',()=>{document.getElementById('settingsModal')?.classList.add('hidden')});
 let currentView='dashboard';
 function setAppView(view){
   currentView=view;
   document.querySelectorAll('.appView').forEach(el=>el.classList.toggle('active', el.id===view+'View'));
-  [['tabDashboard','dashboard'],['tabAudio','audio'],['tabTags','tags'],['tabMedia','media'],['tabSettings','settings']].forEach(([id,v])=>{const b=document.getElementById(id); if(b)b.classList.toggle('active', view===v)});
+  [['tabDashboard','dashboard'],['tabAudio','audio'],['tabTags','tags'],['tabMedia','media'],['tabProtocol','protocol'],['tabSettings','settings']].forEach(([id,v])=>{const b=document.getElementById(id); if(b)b.classList.toggle('active', view===v)});
   document.body.classList.toggle('settingsMode', view==='settings');
   document.body.classList.toggle('mediaMode', view==='media');
   document.body.classList.toggle('dashboardMode', view==='dashboard');
+  document.body.classList.toggle('protocolMode', view==='protocol');
   if(view==='dashboard'){
     updateBrowserTabsForView();
     loadDashboard();
@@ -859,6 +869,10 @@ function setAppView(view){
   }else if(view==='media'){
     updateBrowserTabsForView();
     loadMediaPage();
+  }else if(view==='protocol'){
+    updateBrowserTabsForView();
+    loadLog();
+    loadHistory();
   }else{
     updateBrowserTabsForView();
   }
