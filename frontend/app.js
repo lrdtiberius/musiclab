@@ -1,5 +1,5 @@
 const API='http://'+location.hostname+':8091/api';
-const APP_VERSION='1.6.5';
+const APP_VERSION='1.6.6';
 let selectedArtist=null, selectedAlbum=null, selectedTagFolder=null;
 let selectedTagGenre=null, selectedTagYear=null;
 let browserMode='artist';
@@ -887,7 +887,7 @@ async function sortLibraryByTags(){
     const spText=document.getElementById('sortProgressText');
     if(spText) spText.textContent='Sortierung wird gestartet…';
     poll();
-  }catch(e){alert('Bibliothek konnte nicht sortiert werden:\n'+e.message);}
+  }catch(e){alert('Bibliothek konnte nicht sortiert werden:\n'+(e && e.message ? e.message : e));}
 }
 
 let folderPickerCurrent='/music';

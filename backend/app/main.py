@@ -437,6 +437,11 @@ def analysis_parallelism() -> int:
     return max(1, min(v, 6))
 
 
+def reset_stop() -> None:
+    """Clear a previously requested stop before starting a new job."""
+    stop_event.clear()
+    state["stop_requested"] = False
+
 def stop_requested() -> bool:
     return stop_event.is_set()
 
@@ -1320,16 +1325,7 @@ def api_library_sort_preview():
 def api_library_sort():
     if state.get("running"):
         return {"ok": False, "error": "Es läuft bereits ein Vorgang. Bitte erst stoppen oder warten."}
-    reset_stop()
-    state.update({
-        "running": True,
-        "mode": "Bibliothek sortieren",
-        "total": 0,
-        "done": 0,
-        "errors": 0,
-        "current": "",
-        "message": "Sortierung wird vorbereitet"
-    })
+    begin_job("Bibliothek sortieren", 0, "Sortierung wird vorbereitet")
     threading.Thread(target=sort_library_worker, daemon=True).start()
     return {"ok": True, "started": True}
 
@@ -1343,7 +1339,7 @@ def startup():
 
 @app.get("/api/health")
 def health():
-    return {"ok": True, "version": "1.6.1", "music_root": str(get_music_root()), "db": str(DB_PATH)}
+    return {"ok": True, "version": "1.6.6", "music_root": str(get_music_root()), "db": str(DB_PATH)}
 
 
 @app.post("/api/scan")

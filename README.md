@@ -1,6 +1,3 @@
-MusicLab v1.6.5
+MusicLab v1.6.6 stable
 
-Fixes:
-- Einstellungen-Popup bleibt beim Start geschlossen.
-- Alte Modal-Einstellungen blockieren die Oberfläche nicht mehr.
-- Version aktualisiert.
+Fix: Bibliothek anhand der Tags sortieren startet wieder; Dashboard-Schnellaktionen entfernt.
