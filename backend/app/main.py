@@ -27,7 +27,7 @@ LOG_MAX_BYTES = int(os.getenv("LOG_MAX_BYTES", str(10 * 1024 * 1024)))
 EXTS = {".mp3", ".m4a", ".aac", ".flac", ".ogg"}
 SCHEMA_VERSION = 23
 
-app = FastAPI(title="MusicLab API", version="1.6.8")
+app = FastAPI(title="MusicLab API", version="1.6.9")
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
 
 stop_event = threading.Event()
@@ -1381,7 +1381,7 @@ def startup():
 
 @app.get("/api/health")
 def health():
-    return {"ok": True, "version": "1.6.8", "music_root": str(get_music_root()), "db": str(DB_PATH)}
+    return {"ok": True, "version": "1.6.9", "music_root": str(get_music_root()), "db": str(DB_PATH)}
 
 
 @app.post("/api/scan")
@@ -2031,8 +2031,12 @@ def api_media_artist_albums(artist: str, sort: str = "artist"):
 @app.get("/api/media/album_tracks")
 def api_media_album_tracks(folder: str, artist: Optional[str] = None):
     folder = str(folder or "").strip().strip("/")
-    out = [r for r in _media_rows() if _folder_matches(r, folder, artist)]
-    out.sort(key=lambda r: (int(r.get("disc_number") or 1), int(r.get("track_number") or 9999), (r.get("title") or "").lower(), (r.get("path") or "").lower()))
+    if folder.startswith("__album__:"):
+        album_name = folder[len("__album__:"):].strip()
+        out = [r for r in _media_rows() if (r.get("album") or "Unbekanntes Album").strip().lower() == album_name.lower()]
+    else:
+        out = [r for r in _media_rows() if _folder_matches(r, folder, artist)]
+    out.sort(key=lambda r: (int(r.get("disc_number") or 1), int(r.get("track_number") or 9999), (r.get("artist") or "").lower(), (r.get("title") or "").lower(), (r.get("path") or "").lower()))
     return out
 
 
@@ -2290,34 +2294,45 @@ def api_media_cover(folder: str, artist: Optional[str] = None):
 
 @app.get("/api/media_albums")
 def api_media_albums(q: str = ""):
+    """Global album browser for the media page.
+
+    In album mode, samplers/compilations must be shown once even when tracks
+    live under different artist folders. Therefore this groups by the album tag
+    instead of by physical folder. The first track path is kept for cover lookup.
+    """
     q_norm = (q or "").strip().lower()
     with db() as con:
         rows = [dict(r) for r in con.execute(
             """
             SELECT t.artist,t.album,t.path,t.duration,t.id,a.track_id AS analyzed
             FROM tracks t LEFT JOIN analysis a ON a.track_id=t.id AND a.status='ok'
-            ORDER BY t.artist COLLATE NOCASE, t.album COLLATE NOCASE, t.path COLLATE NOCASE
+            ORDER BY t.album COLLATE NOCASE, COALESCE(t.disc_number,1), COALESCE(t.track_number,9999), t.path COLLATE NOCASE
             """
         ).fetchall()]
     groups = {}
     for r in rows:
         artist = r.get("artist") or "Unbekannter Interpret"
-        album = r.get("album") or "Unbekanntes Album"
+        album = (r.get("album") or "Unbekanntes Album").strip() or "Unbekanntes Album"
         path = r.get("path") or ""
         folder = media_album_folder_key(path)
         hay = " ".join([artist, album, folder, path]).lower()
         if q_norm and q_norm not in hay:
             continue
-        key = folder
-        g = groups.setdefault(key, {"artist": artist, "album": album, "folder": folder, "tracks": 0, "analyzed": 0, "duration": 0.0, "first_path": r.get("path") or ""})
-        # Wenn mehrere Disc-Unterordner abweichende Album-Tags haben, bleibt
-        # der Albumordner der stabile Schlüssel. Der erste brauchbare Albumname
-        # wird angezeigt, die Tracks werden aber korrekt zusammengefasst.
+        key = album.lower()
+        g = groups.setdefault(key, {"artist": artist, "artists": set(), "album": album, "folder": "__album__:" + album, "tracks": 0, "analyzed": 0, "duration": 0.0, "first_path": path, "folders": set()})
+        g["artists"].add(artist)
+        g["folders"].add(folder)
         g["tracks"] += 1
         g["analyzed"] += 1 if r.get("analyzed") is not None else 0
         g["duration"] += float(r.get("duration") or 0)
-    out = list(groups.values())
-    out.sort(key=lambda x: ((x.get("artist") or "").lower(), (x.get("album") or "").lower(), (x.get("folder") or "").lower()))
+    out = []
+    for g in groups.values():
+        artists = sorted(g.pop("artists"), key=lambda x: x.lower())
+        folders = sorted(g.pop("folders"), key=lambda x: x.lower())
+        g["artist"] = artists[0] if len(artists) == 1 else "Verschiedene Interpreten"
+        g["folder_hint"] = folders[0] if len(folders) == 1 else f"{len(folders)} Ordner"
+        out.append(g)
+    out.sort(key=lambda x: ((x.get("album") or "").lower(), (x.get("artist") or "").lower()))
     return out[:2000]
 
 
@@ -2327,10 +2342,24 @@ def api_download_album(folder: str):
     if not folder:
         raise HTTPException(status_code=400, detail="folder fehlt")
     root = get_music_root().resolve()
+    tmpdir = Path(tempfile.mkdtemp(prefix="musiclab_zip_"))
+    if folder.startswith("__album__:"):
+        album_name = folder[len("__album__:"):].strip()
+        rows = [r for r in _media_rows() if (r.get("album") or "Unbekanntes Album").strip().lower() == album_name.lower()]
+        if not rows:
+            raise HTTPException(status_code=404, detail="Album nicht gefunden")
+        name = safe_name(album_name or "album") + ".zip"
+        zpath = tmpdir / name
+        with zipfile.ZipFile(zpath, "w", zipfile.ZIP_DEFLATED) as zf:
+            for r in rows:
+                rel = r.get("path") or ""
+                src = (root / rel).resolve()
+                if src.is_relative_to(root) and src.exists() and src.is_file():
+                    zf.write(src, rel)
+        return FileResponse(zpath, media_type="application/zip", filename=name)
     src = (root / folder).resolve()
     if not src.is_relative_to(root) or not src.exists() or not src.is_dir():
         raise HTTPException(status_code=404, detail="Albumordner nicht gefunden")
-    tmpdir = Path(tempfile.mkdtemp(prefix="musiclab_zip_"))
     name = safe_name(src.name or "album") + ".zip"
     zpath = tmpdir / name
     with zipfile.ZipFile(zpath, "w", zipfile.ZIP_DEFLATED) as zf:
