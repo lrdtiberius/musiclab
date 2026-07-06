@@ -1,5 +1,5 @@
 const API='http://'+location.hostname+':8091/api';
-const APP_VERSION='1.6.6';
+const APP_VERSION='1.6.7';
 let selectedArtist=null, selectedAlbum=null, selectedTagFolder=null;
 let selectedTagGenre=null, selectedTagYear=null;
 let browserMode='artist';
@@ -764,7 +764,7 @@ async function normalizeSelectedAlbums(){
     const pv=await j(API+'/normalize_preview_batch',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({albums})});
     const lines=(pv.items||[]).slice(0,12).map(x=>{
       const delta=x.gain_delta===null || x.gain_delta===undefined ? '-' : (x.gain_delta>0 ? '+'+x.gain_delta : String(x.gain_delta));
-      const status=x.can_normalize ? `${x.current_lufs} → ${x.target_lufs} LUFS (${delta} dB)` : `gesperrt: ${x.reason||'nicht möglich'}`;
+      const status=x.skip_reference ? `übersprungen: ${x.reason||'Referenzalbum'}` : (x.can_normalize ? `${x.current_lufs} → ${x.target_lufs} LUFS (${delta} dB)` : `gesperrt: ${x.reason||'nicht möglich'}`);
       return `- ${x.label}: ${status}`;
     });
     if((pv.items||[]).length>12) lines.push(`... und ${(pv.items||[]).length-12} weitere`);
@@ -878,9 +878,10 @@ async function sortLibraryByTags(){
   try{
     const preview=await j(API+'/library/sort_preview');
     if(!preview.move_count){ alert('Die Bibliothek ist bereits nach den aktuellen Tags sortiert.'); return; }
-    const examples=(preview.preview||[]).slice(0,8).map(x=>'• '+x.from+'\n  → '+x.to).join('\n');
-    const more=preview.hidden?`\n… und ${preview.hidden} weitere Dateien`:'';
-    const msg=`MusicLab würde ${preview.move_count} Dateien verschieben.\nKonflikte: ${preview.conflicts||0}\nÜbersprungen: ${preview.skipped||0}\n\n${examples}${more}\n\nJetzt sortieren?`;
+    const groups=(preview.groups||[]).slice(0,10).map(x=>`• ${x.artist||'Unbekannter Interpret'} – ${x.album||'Unbekanntes Album'}\n  ${x.count} Dateien`).join('\n');
+    const examples=(preview.preview||[]).slice(0,3).map(x=>'• '+x.from+'\n  → '+x.to).join('\n');
+    const more=preview.hidden?`\n… und ${preview.hidden} weitere Dateiänderungen`:'';
+    const msg=`Bibliothek neu sortieren?\n\n${preview.move_count} Dateien würden verschoben\n${preview.conflicts||0} Konflikte\n${preview.skipped||0} übersprungen\n\nGrößte Gruppen:\n${groups||'-'}\n\nBeispiele:\n${examples||'-'}${more}\n\nJetzt sortieren?`;
     if(!confirm(msg)) return;
     const res=await j(API+'/library/sort',{method:'POST'});
     if(res && res.error){ alert(res.error); return; }
@@ -993,7 +994,8 @@ async function applyTagChanges(){
     const discNum=discRaw.split('/')[0].trim() || '1';
     const perDiscTotal = discTotalFor(discNum, total);
     const tracknumber = num ? (perDiscTotal ? `${num}/${perDiscTotal}` : num) : '';
-    const discnumber = discNum ? (discTotal ? `${discNum}/${discTotal}` : discNum) : '';
+    const discTotalNum = parseInt(discTotal,10);
+    const discnumber = (discTotalNum && discTotalNum>1 && discNum) ? `${discNum}/${discTotalNum}` : '';
     return {
       path:r.dataset.path,
       title:r.querySelector('.tagTitle')?.value||'',
@@ -1075,7 +1077,7 @@ async function loadTagsPage(){
         tagDiscTotals[d]=tagged.length ? Math.max(...tagged) : rowsForDisc.length;
       }
       renderDiscTotalsEditor(discNums);
-      if(yr)yr.value=first.year||'';
+      if(yr){ const y=String(first.year||'').trim(); yr.value=(y==='0000'||y==='0')?'':y; }
       if(ge)ge.value=first.genre||'';
     } else {
       renderDiscTotalsEditor([]);
@@ -1167,7 +1169,8 @@ async function saveAlbumTags(){
     const discNum=discRaw.split('/')[0].trim() || '1';
     const perDiscTotal = discTotalFor(discNum, total);
     const tracknumber = num ? (perDiscTotal ? `${num}/${perDiscTotal}` : num) : '';
-    const discnumber = discNum ? (discTotal ? `${discNum}/${discTotal}` : discNum) : '';
+    const discTotalNum = parseInt(discTotal,10);
+    const discnumber = (discTotalNum && discTotalNum>1 && discNum) ? `${discNum}/${discTotalNum}` : '';
     return {path:r.dataset.path, artist, album, year, genre, tracknumber, discnumber};
   });
   await saveTagUpdates(updates, 'Album-Tags gespeichert.', {album});
@@ -1184,7 +1187,8 @@ async function saveTrackTags(){
     const discNum=discRaw.split('/')[0].trim() || '1';
     const perDiscTotal = discTotalFor(discNum, total);
     const tracknumber = num ? (perDiscTotal ? `${num}/${perDiscTotal}` : num) : '';
-    const discnumber = discNum ? (discTotal ? `${discNum}/${discTotal}` : discNum) : '';
+    const discTotalNum = parseInt(discTotal,10);
+    const discnumber = (discTotalNum && discTotalNum>1 && discNum) ? `${discNum}/${discTotalNum}` : '';
     return {path:r.dataset.path,title:r.querySelector('.tagTitle')?.value||'',artist:r.querySelector('.tagArtist')?.value||'',tracknumber,discnumber};
   });
   await saveTagUpdates(updates, 'Titel-Tags gespeichert.');

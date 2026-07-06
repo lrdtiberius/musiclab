@@ -347,8 +347,14 @@ def scan_file(path: Path, root: Optional[Path] = None) -> Optional[dict]:
     disc_raw = tag_first(tags, ["discnumber", "disc"])
     genre = tag_first(tags, ["genre"])
     year = tag_first(tags, ["date", "year"])
+    if isinstance(year, str) and year.strip() in {"0", "00", "000", "0000"}:
+        year = ""
     track_number, track_total = parse_number_pair(track_raw)
     disc_number, disc_total = parse_number_pair(disc_raw)
+    # Ein einzelnes Album soll keine Disc-Gesamtzahl 1/1 tragen.
+    # Nur echte Mehrfach-CDs bekommen ein Disc-Total.
+    if disc_total is not None and disc_total <= 1:
+        disc_total = None
     return {
         "path": rel,
         "filename": path.name,
@@ -916,7 +922,12 @@ def normalize_worker(artist: Optional[str] = None, album: Optional[str] = None, 
     rows = selected_rows(artist, album)
 
     with db() as con:
+        ref = get_reference_tuple(con)
         summary = album_summary(con, artist, album) if album else {}
+    if album and is_reference_album({"artist": artist, "album": album}, ref):
+        state.update({"running": False, "mode": "idle", "done": 0, "total": 0, "current": "", "message": "Normalisierung abgebrochen: Referenzalbum wird nicht verändert", "errors": 1})
+        add_log(f"Normalisierung blockiert: Referenzalbum {artist or 'Verschiedene Interpreten'} - {album} wird nicht verändert", True)
+        return
     if album and summary.get("tracks") and summary.get("analyzed") != summary.get("tracks"):
         state.update({"running": False, "mode": "idle", "done": 0, "total": 0, "current": "", "message": "Normalisierung abgebrochen: Album zuerst vollständig analysieren", "errors": 1})
         add_log(f"Normalisierung abgebrochen: {artist or 'global'} - {album} ist nicht vollständig analysiert", True)
@@ -1072,6 +1083,7 @@ def batch_preview_items(items: list) -> list:
         target = -16.0
     out = []
     with db() as con:
+        ref = get_reference_tuple(con)
         for raw in items:
             item = normalize_album_item(raw)
             summary = album_summary(con, item.get("artist"), item.get("album"))
@@ -1079,9 +1091,12 @@ def batch_preview_items(items: list) -> list:
             analyzed = summary.get("analyzed") or 0
             current = summary.get("avg_lufs")
             delta = round(target - float(current), 2) if current is not None else None
-            can = bool(tracks and analyzed == tracks and current is not None)
+            ref_skip = is_reference_album(item, ref)
+            can = bool(tracks and analyzed == tracks and current is not None and not ref_skip)
             reason = None
-            if not tracks:
+            if ref_skip:
+                reason = "Referenzalbum wird übersprungen"
+            elif not tracks:
                 reason = "Album nicht gefunden"
             elif analyzed != tracks:
                 reason = "Album zuerst vollständig analysieren"
@@ -1097,6 +1112,7 @@ def batch_preview_items(items: list) -> list:
                 "target_lufs": target,
                 "gain_delta": delta,
                 "can_normalize": can,
+                "skip_reference": ref_skip,
                 "reason": reason,
             })
     return out
@@ -1159,13 +1175,19 @@ def normalize_batch_worker(items: list, backup_mode: Optional[str] = None):
     if backup_mode is not None:
         settings["backup_mode"] = backup_mode
     previews = batch_preview_items(items)
-    blocked = [p for p in previews if not p.get("can_normalize")]
+    skipped_ref = [p for p in previews if p.get("skip_reference")]
+    blocked = [p for p in previews if (not p.get("can_normalize") and not p.get("skip_reference"))]
     if blocked:
         names = "; ".join(f"{p['label']}: {p.get('reason') or 'nicht möglich'}" for p in blocked[:5])
         state.update({"running": False, "mode": "idle", "done": 0, "total": 0, "current": "", "message": "Batch-Normalisierung abgebrochen", "errors": len(blocked), "recent_errors": []})
         add_log(f"Batch-Normalisierung abgebrochen: {names}", True)
         return
-    albums = [normalize_album_item(p) for p in previews]
+    albums = [normalize_album_item(p) for p in previews if p.get("can_normalize")]
+    if skipped_ref:
+        add_log("Referenzalbum übersprungen: " + "; ".join(p.get("label") or p.get("album") for p in skipped_ref))
+    if not albums:
+        state.update({"running": False, "mode": "idle", "done": 0, "total": 0, "current": "", "message": "Keine Alben zu normalisieren", "errors": 0, "recent_errors": []})
+        return
     all_rows = []
     for item in albums:
         rows = rows_for_album_item(item)
@@ -1216,6 +1238,7 @@ def build_sort_plan(limit_preview: int = 100):
             ORDER BY artist COLLATE NOCASE, album COLLATE NOCASE, title COLLATE NOCASE, path COLLATE NOCASE
             """
         ).fetchall()]
+    groups = {}
     for r in rows:
         try:
             rel = str(r.get("path") or "").lstrip("/")
@@ -1234,14 +1257,18 @@ def build_sort_plan(limit_preview: int = 100):
             if target.exists():
                 conflicts += 1
                 target = unique_target_path(root, target_rel, current)
-            item = {"id": r.get("id"), "from": rel, "to": target.relative_to(root).as_posix()}
+            item = {"id": r.get("id"), "from": rel, "to": target.relative_to(root).as_posix(), "artist": artist, "album": album}
+            key = (artist, album)
+            g = groups.setdefault(key, {"artist": artist, "album": album, "count": 0})
+            g["count"] += 1
             if len(plan) < limit_preview:
                 plan.append(item)
             else:
-                plan.append({"id": r.get("id"), "from": rel, "to": item["to"], "hidden": True})
+                plan.append({"id": r.get("id"), "from": rel, "to": item["to"], "hidden": True, "artist": artist, "album": album})
         except Exception:
             skipped += 1
-    return {"total": len(rows), "move_count": len(plan), "preview": [p for p in plan if not p.get("hidden")], "hidden": max(0, len(plan) - limit_preview), "conflicts": conflicts, "skipped": skipped, "_plan": plan}
+    group_list = sorted(groups.values(), key=lambda x: (-x["count"], (x.get("artist") or "").lower(), (x.get("album") or "").lower()))[:20]
+    return {"total": len(rows), "move_count": len(plan), "groups": group_list, "preview": [p for p in plan if not p.get("hidden")], "hidden": max(0, len(plan) - limit_preview), "conflicts": conflicts, "skipped": skipped, "_plan": plan}
 
 
 def sort_library_worker():
@@ -1339,7 +1366,7 @@ def startup():
 
 @app.get("/api/health")
 def health():
-    return {"ok": True, "version": "1.6.6", "music_root": str(get_music_root()), "db": str(DB_PATH)}
+    return {"ok": True, "version": "1.6.7", "music_root": str(get_music_root()), "db": str(DB_PATH)}
 
 
 @app.post("/api/scan")
@@ -1421,7 +1448,8 @@ def normalize_preview_batch(data: dict):
         "items": preview,
         "count_albums": len(preview),
         "count_tracks": sum(int(p.get("tracks") or 0) for p in preview),
-        "can_normalize": all(p.get("can_normalize") for p in preview),
+        "can_normalize": any(p.get("can_normalize") for p in preview) and all((p.get("can_normalize") or p.get("skip_reference")) for p in preview),
+        "skipped_reference": [p for p in preview if p.get("skip_reference")],
         "target_lufs": settings.get("target_lufs"),
         "true_peak": settings.get("true_peak"),
         "lra": settings.get("lra"),
@@ -2320,6 +2348,32 @@ def album_summary(con, artist: Optional[str], album: str):
 def get_setting_value(con, key: str):
     r = con.execute("SELECT value FROM settings WHERE key=?", (key,)).fetchone()
     return r["value"] if r else None
+
+
+def get_reference_tuple(con=None):
+    """Return the selected reference album as (artist_or_None, album) or None."""
+    close_after = False
+    if con is None:
+        con = db().__enter__()
+        close_after = True
+    try:
+        album = (get_setting_value(con, "reference_album") or "").strip()
+        if not album:
+            return None
+        artist = (get_setting_value(con, "reference_artist") or "").strip() or None
+        return artist, album
+    finally:
+        if close_after:
+            con.close()
+
+
+def is_reference_album(item: dict, ref: Optional[tuple]) -> bool:
+    if not ref:
+        return False
+    ref_artist, ref_album = ref
+    album = (item.get("album") or "").strip()
+    artist = (item.get("artist") or "").strip() or None
+    return album == ref_album and ((ref_artist is None and artist is None) or (ref_artist == artist))
 
 
 @app.get("/api/reference")
