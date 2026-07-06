@@ -1,5 +1,5 @@
 const API='http://'+location.hostname+':8091/api';
-const APP_VERSION='1.5.19';
+const APP_VERSION='1.6.3';
 let selectedArtist=null, selectedAlbum=null, selectedTagFolder=null;
 let selectedTagGenre=null, selectedTagYear=null;
 let browserMode='artist';
@@ -829,6 +829,7 @@ async function loadLog(){
 
 
 
+document.addEventListener('DOMContentLoaded',()=>{document.getElementById('settingsModal')?.classList.add('hidden')});
 let currentView='dashboard';
 function setAppView(view){
   currentView=view;
@@ -864,7 +865,7 @@ function setAppView(view){
   if(view==='settings'){ syncSettingsPageFromMain(); checkMusicRootPage(); }
 }
 function openSettings(){setAppView('settings')}
-function closeSettings(){setAppView('audio')}
+function closeSettings(){document.getElementById('settingsModal')?.classList.add('hidden');setAppView(currentView==='settings'?'dashboard':currentView)}
 function syncSettingsPageFromMain(){
   const pairs=[['targetLufs','targetLufsPage'],['truePeak','truePeakPage'],['lra','lraPage'],['backupMode','backupModePage'],['parallelAnalysis','parallelAnalysisPage'],['musicRoot','musicRootPage'],['watchMode','watchModePage'],['sortAfterTags','sortAfterTagsPage']];
   for(const [a,b] of pairs){const x=document.getElementById(a), y=document.getElementById(b); if(x&&y)y.value=x.value;}

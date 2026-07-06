@@ -1,9 +1,6 @@
-# MusicLab v1.6.2
+MusicLab v1.6.3
 
-Neu: Dashboard mit Buy-me-a-coffee-Link und Fortschrittsanzeige für Bibliothekssortierung.
-
-
-## v1.6.2
-- Dashboard-Schnellaktionen entfernt.
-- Bibliothek-sortieren Startpfad robuster gemacht.
-- Musikpfad-Auswahl als containerseitiger Ordnerdialog ergänzt.
+Fixes:
+- Einstellungen-Popup bleibt beim Start geschlossen.
+- Alte Modal-Einstellungen blockieren die Oberfläche nicht mehr.
+- Version aktualisiert.
