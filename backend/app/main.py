@@ -27,7 +27,7 @@ LOG_MAX_BYTES = int(os.getenv("LOG_MAX_BYTES", str(10 * 1024 * 1024)))
 EXTS = {".mp3", ".m4a", ".aac", ".flac", ".ogg"}
 SCHEMA_VERSION = 21
 
-app = FastAPI(title="MusicLab API", version="1.5.16")
+app = FastAPI(title="MusicLab API", version="1.5.19")
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
 
 stop_event = threading.Event()
@@ -1197,6 +1197,106 @@ def normalize_batch_worker(items: list, backup_mode: Optional[str] = None):
         add_log(f"Batch-Normalisierung fertig: {state['done']}/{state['total']} Titel, Fehler {state['errors']}")
         finish_job("Batch-Normalisierung fertig")
 
+
+def build_sort_plan(limit_preview: int = 100):
+    root = get_music_root().resolve()
+    plan = []
+    skipped = 0
+    conflicts = 0
+    with db() as con:
+        rows = [dict(r) for r in con.execute(
+            """
+            SELECT id,path,filename,title,artist,album,size,mtime
+            FROM tracks
+            ORDER BY artist COLLATE NOCASE, album COLLATE NOCASE, title COLLATE NOCASE, path COLLATE NOCASE
+            """
+        ).fetchall()]
+    for r in rows:
+        try:
+            rel = str(r.get("path") or "").lstrip("/")
+            current = (root / rel).resolve()
+            if not current.exists() or not current.is_file():
+                skipped += 1
+                continue
+            artist = r.get("artist") or "Unbekannter Interpret"
+            album = r.get("album") or "Unbekanntes Album"
+            title = r.get("title") or current.stem
+            ext = current.suffix or Path(r.get("filename") or current.name).suffix or ".mp3"
+            target_rel = Path(safe_name(artist, "Unbekannter Interpret")) / safe_name(album, "Unbekanntes Album") / f"{safe_name(title, current.stem)}{ext}"
+            target = (root / target_rel).resolve()
+            if target == current:
+                continue
+            if target.exists():
+                conflicts += 1
+                target = unique_target_path(root, target_rel, current)
+            item = {"id": r.get("id"), "from": rel, "to": target.relative_to(root).as_posix()}
+            if len(plan) < limit_preview:
+                plan.append(item)
+            else:
+                plan.append({"id": r.get("id"), "from": rel, "to": item["to"], "hidden": True})
+        except Exception:
+            skipped += 1
+    return {"total": len(rows), "move_count": len(plan), "preview": [p for p in plan if not p.get("hidden")], "hidden": max(0, len(plan) - limit_preview), "conflicts": conflicts, "skipped": skipped, "_plan": plan}
+
+
+def sort_library_worker():
+    reset_stop()
+    try:
+        full = build_sort_plan(limit_preview=10**9)
+        plan = full.get("_plan", [])
+        state.update({"running": True, "mode": "Bibliothek sortieren", "total": len(plan), "done": 0, "errors": 0, "current": "", "message": "Bibliothek wird anhand der Tags sortiert"})
+        add_log(f"Bibliothek sortieren gestartet: {len(plan)} Dateien")
+        root = get_music_root().resolve()
+        moved = 0
+        with db() as con:
+            for it in plan:
+                if stop_requested():
+                    break
+                try:
+                    src = (root / it["from"]).resolve()
+                    dst = (root / it["to"]).resolve()
+                    state["current"] = it["from"]
+                    if not src.exists():
+                        state["errors"] += 1
+                        add_log(f"Sortierfehler: {it['from']} - Datei fehlt", True)
+                    else:
+                        dst.parent.mkdir(parents=True, exist_ok=True)
+                        final = unique_target_path(root, dst.relative_to(root), src)
+                        shutil.move(str(src), str(final))
+                        prune_empty_dirs(src.parent, root)
+                        rel = final.relative_to(root).as_posix()
+                        st = final.stat()
+                        con.execute("UPDATE tracks SET path=?, filename=?, size=?, mtime=? WHERE path=?", (rel, final.name, st.st_size, st.st_mtime, it["from"]))
+                        moved += 1
+                except Exception as e:
+                    state["errors"] += 1
+                    add_log(f"Sortierfehler: {it.get('from')} - {e}", True)
+                state["done"] += 1
+                con.commit()
+        if stop_requested():
+            add_log(f"Bibliothek sortieren abgebrochen: {state['done']}/{state['total']} Dateien, Fehler {state['errors']}", True)
+            finish_job("Bibliothek sortieren abgebrochen", True)
+        else:
+            add_log(f"Bibliothek sortieren fertig: {moved} Dateien verschoben, Fehler {state['errors']}")
+            finish_job("Bibliothek sortieren fertig")
+    except Exception as e:
+        add_log(f"Bibliothek sortieren fehlgeschlagen: {e}", True)
+        finish_job("Bibliothek sortieren fehlgeschlagen", True)
+
+
+@app.get("/api/library/sort_preview")
+def api_library_sort_preview():
+    p = build_sort_plan(limit_preview=50)
+    p.pop("_plan", None)
+    return p
+
+
+@app.post("/api/library/sort")
+def api_library_sort():
+    if not state["running"]:
+        threading.Thread(target=sort_library_worker, daemon=True).start()
+    return state
+
 @app.on_event("startup")
 def startup():
     init_db()
@@ -1207,7 +1307,7 @@ def startup():
 
 @app.get("/api/health")
 def health():
-    return {"ok": True, "version": "1.5.16", "music_root": str(get_music_root()), "db": str(DB_PATH)}
+    return {"ok": True, "version": "1.5.19", "music_root": str(get_music_root()), "db": str(DB_PATH)}
 
 
 @app.post("/api/scan")

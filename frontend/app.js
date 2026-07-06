@@ -1,5 +1,5 @@
 const API='http://'+location.hostname+':8091/api';
-const APP_VERSION='1.5.18';
+const APP_VERSION='1.5.19';
 let selectedArtist=null, selectedAlbum=null, selectedTagFolder=null;
 let selectedTagGenre=null, selectedTagYear=null;
 let browserMode='artist';
@@ -852,6 +852,19 @@ function syncSettingsMainFromPage(){
   const pairs=[['targetLufs','targetLufsPage'],['truePeak','truePeakPage'],['lra','lraPage'],['backupMode','backupModePage'],['parallelAnalysis','parallelAnalysisPage'],['musicRoot','musicRootPage'],['watchMode','watchModePage'],['sortAfterTags','sortAfterTagsPage']];
   for(const [a,b] of pairs){const x=document.getElementById(a), y=document.getElementById(b); if(x&&y)x.value=y.value;}
 }
+async function sortLibraryByTags(){
+  try{
+    const preview=await j(API+'/library/sort_preview');
+    if(!preview.move_count){ alert('Die Bibliothek ist bereits nach den aktuellen Tags sortiert.'); return; }
+    const examples=(preview.preview||[]).slice(0,8).map(x=>'• '+x.from+'\n  → '+x.to).join('\n');
+    const more=preview.hidden?`\n… und ${preview.hidden} weitere Dateien`:'';
+    const msg=`MusicLab würde ${preview.move_count} Dateien verschieben.\nKonflikte: ${preview.conflicts||0}\nÜbersprungen: ${preview.skipped||0}\n\n${examples}${more}\n\nJetzt sortieren?`;
+    if(!confirm(msg)) return;
+    await j(API+'/library/sort',{method:'POST'});
+    poll();
+  }catch(e){alert('Bibliothek konnte nicht sortiert werden:\n'+e.message);}
+}
+
 async function saveSettingsAndStay(){
   syncSettingsMainFromPage();
   await saveSettings();
@@ -986,7 +999,8 @@ async function loadTagsPage(){
       if(al)al.value=byFolder ? (selectedAlbum||first.album||'') : (albums.length===1 ? albums[0] : (selectedAlbum||''));
       const discNums=[...new Set(rows.map(r=>Number(r.disc_number||parseInt(String(r.disc_raw||'').split('/')[0],10)||1)).filter(n=>n>0))].sort((a,b)=>a-b);
       const discTotalsExisting=rows.map(r=>Number(r.disc_total||0)).filter(n=>n>0);
-      const discTotalCount=discTotalsExisting.length ? Math.max(...discTotalsExisting) : (discNums.length>1 ? discNums.length : '');
+      let discTotalCount=discTotalsExisting.length ? Math.max(...discTotalsExisting) : (discNums.length>1 ? discNums.length : '');
+      if(Number(discTotalCount)<=1) discTotalCount='';
       if(dt)dt.value=discTotalCount;
       if(tt){
         if(discNums.length>1){
