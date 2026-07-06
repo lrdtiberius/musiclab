@@ -557,7 +557,7 @@ body.mediaMode .footerCredit{grid-column:1;grid-row:2}
 .tagCoverText span{color:var(--muted);font-size:12px}
 
 
-/* v1.6.0 Dashboard */
+/* v1.6.1 Dashboard */
 body.dashboardMode main{grid-template-columns:1fr!important;grid-template-rows:minmax(0,1fr) 18px!important}
 body.dashboardMode .footerCredit{grid-column:1;grid-row:2}
 #dashboardView.appView.active{display:grid;grid-template-rows:auto auto minmax(0,1fr) auto;gap:12px;overflow:auto}

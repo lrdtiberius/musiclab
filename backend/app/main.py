@@ -27,7 +27,7 @@ LOG_MAX_BYTES = int(os.getenv("LOG_MAX_BYTES", str(10 * 1024 * 1024)))
 EXTS = {".mp3", ".m4a", ".aac", ".flac", ".ogg"}
 SCHEMA_VERSION = 21
 
-app = FastAPI(title="MusicLab API", version="1.5.19")
+app = FastAPI(title="MusicLab API", version="1.6.1")
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
 
 stop_event = threading.Event()
@@ -1294,6 +1294,19 @@ def api_library_sort_preview():
 @app.post("/api/library/sort")
 def api_library_sort():
     if not state["running"]:
+        reset_stop()
+        # Set the visible job state immediately. The worker will rebuild the full
+        # plan in the background, but the UI should not look idle after the user
+        # confirmed the preview.
+        state.update({
+            "running": True,
+            "mode": "Bibliothek sortieren",
+            "total": 0,
+            "done": 0,
+            "errors": 0,
+            "current": "",
+            "message": "Sortierung wird vorbereitet"
+        })
         threading.Thread(target=sort_library_worker, daemon=True).start()
     return state
 
@@ -1307,7 +1320,7 @@ def startup():
 
 @app.get("/api/health")
 def health():
-    return {"ok": True, "version": "1.5.19", "music_root": str(get_music_root()), "db": str(DB_PATH)}
+    return {"ok": True, "version": "1.6.1", "music_root": str(get_music_root()), "db": str(DB_PATH)}
 
 
 @app.post("/api/scan")
