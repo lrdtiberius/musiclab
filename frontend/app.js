@@ -258,9 +258,12 @@ async function loadReference(){
       referenceBox.className='small';
       referenceBox.innerHTML=`<span class="refpill">${escHtml(reference.artist_label || reference.artist || 'Verschiedene Interpreten')} – ${escHtml(reference.album)} · Ø ${reference.avg_lufs ?? '-'} LUFS · TP ${reference.max_true_peak ?? '-'} · LRA ${reference.avg_lra ?? '-'}</span>`;
       btnUseRef.disabled = reference.avg_lufs === null || reference.avg_lufs === undefined;
+      const dref=document.getElementById('dashboardReference');
+      if(dref){ dref.className='small'; dref.innerHTML=`${escHtml(reference.artist_label || reference.artist || 'Verschiedene Interpreten')} – ${escHtml(reference.album)}<br>LUFS ${reference.avg_lufs ?? '-'} · TP ${reference.max_true_peak ?? '-'} · LRA ${reference.avg_lra ?? '-'}`; }
     }else{
       referenceBox.className='small refempty';
       referenceBox.textContent='Noch kein Referenzalbum festgelegt.';
+      const dref=document.getElementById('dashboardReference'); if(dref){dref.className='small refempty'; dref.textContent='Noch kein Referenzalbum festgelegt.';}
       btnUseRef.disabled=true;
     }
   }catch(e){
@@ -325,6 +328,20 @@ async function loadStats(){
   sTracks.textContent=s.tracks;
   sAnalyzed.textContent=s.analyzed;
   sDuration.textContent=dur(s.duration);
+  const set=(id,val)=>{const el=document.getElementById(id); if(el) el.textContent=val};
+  set('dArtists', s.artists);
+  set('dAlbums', s.albums);
+  set('dTracks', s.tracks);
+  set('dDuration', dur(s.duration));
+  set('dAnalyzed', s.analyzed);
+  set('dMissingAnalysis', Math.max(0, Number(s.tracks||0)-Number(s.analyzed||0)));
+}
+
+async function loadDashboard(){
+  await loadStats();
+  await loadReference();
+  const par=document.getElementById('parallelAnalysisPage')?.value || document.getElementById('parallelAnalysis')?.value || '-';
+  const dp=document.getElementById('dParallel'); if(dp) dp.textContent=par==='-'?'-':par+'x';
 }
 
 function updateBrowserTabsForView(){
@@ -812,14 +829,18 @@ async function loadLog(){
 
 
 
-let currentView='audio';
+let currentView='dashboard';
 function setAppView(view){
   currentView=view;
   document.querySelectorAll('.appView').forEach(el=>el.classList.toggle('active', el.id===view+'View'));
-  [['tabAudio','audio'],['tabTags','tags'],['tabMedia','media'],['tabSettings','settings']].forEach(([id,v])=>{const b=document.getElementById(id); if(b)b.classList.toggle('active', view===v)});
+  [['tabDashboard','dashboard'],['tabAudio','audio'],['tabTags','tags'],['tabMedia','media'],['tabSettings','settings']].forEach(([id,v])=>{const b=document.getElementById(id); if(b)b.classList.toggle('active', view===v)});
   document.body.classList.toggle('settingsMode', view==='settings');
   document.body.classList.toggle('mediaMode', view==='media');
-  if(view==='tags'){
+  document.body.classList.toggle('dashboardMode', view==='dashboard');
+  if(view==='dashboard'){
+    updateBrowserTabsForView();
+    loadDashboard();
+  }else if(view==='tags'){
     // Tags arbeitet mit einem Suchtyp-Dropdown. Standard ist Album.
     if(!['artist','album','genre','year'].includes(browserMode)) browserMode='album';
     const tagSelect=document.getElementById('tagSearchType');
@@ -1363,6 +1384,17 @@ async function poll(){
   progress.style.width=p+'%';
   progressText.textContent=`${s.mode} · ${s.done}/${s.total} · Fehler ${s.errors} · ${s.current||s.message}`;
   status.textContent=s.message;
+  const spFill=document.getElementById('sortProgressFill');
+  const spText=document.getElementById('sortProgressText');
+  if(spFill && spText){
+    if((s.mode||'').toLowerCase().includes('sort')){
+      spFill.style.width=p+'%';
+      spText.textContent=`${s.done}/${s.total} Dateien · Fehler ${s.errors} · ${s.current||s.message}`;
+    }else if(!s.running){
+      spFill.style.width='0%';
+      spText.textContent='Bereit zum Sortieren.';
+    }
+  }
   const running=!!s.running;
   if(btnStop) btnStop.disabled=!running;
   if(running){
@@ -1385,7 +1417,7 @@ async function poll(){
 }
 
 setInterval(poll,2000);
-loadSettings().then(syncSettingsPageFromMain);
+loadSettings().then(()=>{syncSettingsPageFromMain(); loadDashboard();});
 loadStats();
 loadReference();
 loadBrowser();
