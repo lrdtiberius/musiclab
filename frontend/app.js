@@ -1,5 +1,5 @@
 const API='http://'+location.hostname+':8091/api';
-const APP_VERSION='1.5.17';
+const APP_VERSION='1.5.18';
 let selectedArtist=null, selectedAlbum=null, selectedTagFolder=null;
 let selectedTagGenre=null, selectedTagYear=null;
 let browserMode='artist';
@@ -13,6 +13,7 @@ let selectedMediaArtist=null, selectedMediaFolder=null, selectedMediaAlbum=null;
 let mediaArtistsCache=[];
 let mediaAlbumsCache=[];
 let tagDiscTotals={};
+let tagsDirty=false;
 
 function fmt(n,d=1){return n===null||n===undefined?'':Number(n).toFixed(d)}
 function dur(s){s=Number(s||0);let h=Math.floor(s/3600),m=Math.floor((s%3600)/60);return h?`${h}h ${m}m`:`${m}m`}
@@ -877,6 +878,64 @@ async function loadGenreOptions(){
   }catch(e){/* Genre-Liste optional */}
 }
 
+
+function setTagsDirty(dirty=true){
+  tagsDirty=!!dirty;
+  const btn=document.getElementById('btnApplyTagChanges');
+  if(btn){ btn.disabled=!tagsDirty; btn.classList.toggle('primaryPulse', tagsDirty); }
+  const info=document.getElementById('tagDirtyInfo');
+  if(info){ info.textContent=tagsDirty?'Ungespeicherte Änderungen':'Keine Änderungen'; info.className='small '+(tagsDirty?'warnText':'muted'); }
+}
+function bindTagDirtyHandlers(){
+  ['tagAlbumArtist','tagAlbumName','tagYear','tagGenre','tagTrackTotal','tagDiscTotal'].forEach(id=>{
+    const el=document.getElementById(id); if(el) el.oninput=()=>{ if(id==='tagTrackTotal')syncTrackTotalPreview(); if(id==='tagDiscTotal')syncDiscTotalPreview(); setTagsDirty(true); };
+  });
+  document.querySelectorAll('#tagTracks input, #tagDiscTotalsBox input').forEach(el=>{
+    const old=el.getAttribute('oninput')||'';
+    el.oninput=()=>{ if(old.includes('syncTrackTotalPreview'))syncTrackTotalPreview(); setTagsDirty(true); };
+  });
+}
+function setupCoverDrop(){
+  const drop=document.getElementById('tagCoverDrop');
+  const inp=document.getElementById('tagCoverInput');
+  if(!drop || !inp) return;
+  ['dragenter','dragover'].forEach(ev=>drop.addEventListener(ev,e=>{e.preventDefault();e.stopPropagation();drop.classList.add('dragover');}));
+  ['dragleave','drop'].forEach(ev=>drop.addEventListener(ev,e=>{e.preventDefault();e.stopPropagation();drop.classList.remove('dragover');}));
+  drop.ondrop=(e)=>{
+    const f=e.dataTransfer?.files?.[0];
+    if(!f) return;
+    if(!/^image\//.test(f.type||'')){ alert('Bitte eine Bilddatei verwenden.'); return; }
+    const dt=new DataTransfer(); dt.items.add(f); inp.files=dt.files; uploadTagCover();
+  };
+}
+async function applyTagChanges(){
+  const rows=[...document.querySelectorAll('#tagTracks tr[data-path]')];
+  if(!rows.length){alert('Kein Album ausgewählt.');return;}
+  const artist=document.getElementById('tagAlbumArtist')?.value||'';
+  const album=document.getElementById('tagAlbumName')?.value||'';
+  const year=document.getElementById('tagYear')?.value||'';
+  const genre=document.getElementById('tagGenre')?.value||'';
+  const total=(document.getElementById('tagTrackTotal')?.value||'').trim();
+  const discTotal=(document.getElementById('tagDiscTotal')?.value||'').trim();
+  const updates=rows.map(r=>{
+    const raw=(r.querySelector('.tagTrack')?.value||'').trim();
+    const num=raw.split('/')[0].trim();
+    const discRaw=(r.querySelector('.tagDisc')?.value||'').trim();
+    const discNum=discRaw.split('/')[0].trim() || '1';
+    const perDiscTotal = discTotalFor(discNum, total);
+    const tracknumber = num ? (perDiscTotal ? `${num}/${perDiscTotal}` : num) : '';
+    const discnumber = discNum ? (discTotal ? `${discNum}/${discTotal}` : discNum) : '';
+    return {
+      path:r.dataset.path,
+      title:r.querySelector('.tagTitle')?.value||'',
+      artist:r.querySelector('.tagArtist')?.value||artist,
+      album, year, genre,
+      tracknumber, discnumber
+    };
+  });
+  await saveTagUpdates(updates, 'Änderungen übernommen.', {album});
+}
+
 async function getTagTrackUrl(){
   if(selectedTagFolder!==null && selectedTagFolder!==undefined){
     let url=API+'/tracks_by_folder?folder='+encodeURIComponent(selectedTagFolder);
@@ -906,6 +965,8 @@ async function loadTagsPage(){
     hint.textContent = selectedArtist ? 'Bitte links ein Album von '+selectedArtist+' auswählen.' : 'Noch kein Album ausgewählt.';
     body.innerHTML='';
     const tt=document.getElementById('tagTrackTotal'); if(tt)tt.value=''; const dt=document.getElementById('tagDiscTotal'); if(dt)dt.value='';
+    setTagsDirty(false);
+    setupCoverDrop();
     return;
   }
   try{
@@ -958,7 +1019,10 @@ async function loadTagsPage(){
       const totalValue = (tagDiscTotals[discNumber] || singleTotalValue || rows.length || '');
       return `<tr data-path="${escAttr(relPath(x.path))}"><td>${i+1}</td><td><input class="tagTitle" value="${escAttr(x.title||'')}"></td><td><input class="tagArtist" value="${escAttr(x.artist||'')}"></td><td><input class="tagTrack" value="${escAttr(trackNumber)}"></td><td class="tagTotalShow" data-disc="${escAttr(discNumber)}">${escHtml(totalValue)}</td><td><input class="tagDisc" value="${escAttr(discNumber)}" placeholder="1" oninput="syncTrackTotalPreview()"></td><td class="tagDiscTotalShow">${escHtml(discTotalValue||'-')}</td><td class="small" title="${escAttr(relPath(x.path))}">${escHtml(relPath(x.path))}</td></tr>`;
     }).join('');
-  }catch(e){hint.textContent='Tags konnten nicht geladen werden: '+e.message; body.innerHTML='';}
+    bindTagDirtyHandlers();
+    setupCoverDrop();
+    setTagsDirty(false);
+  }catch(e){hint.textContent='Tags konnten nicht geladen werden: '+e.message; body.innerHTML=''; setTagsDirty(false);}
 }
 function escAttr(s){return String(s ?? '').replaceAll('&','&amp;').replaceAll('"','&quot;').replaceAll('<','&lt;').replaceAll('>','&gt;')}
 function renderDiscTotalsEditor(discs){
