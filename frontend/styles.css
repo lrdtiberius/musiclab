@@ -615,3 +615,46 @@ body.protocolMode .footerCredit{grid-column:1;grid-row:2}
 @media(max-width:1100px){#protocolView .protocolGrid{grid-template-columns:1fr;grid-template-rows:minmax(180px,.55fr) minmax(240px,1fr)}}
 #dashboardView .dashboardHero{justify-content:flex-start}
 #dashboardView .supportBox p{margin:0 0 8px 0}
+
+/* v1.7.2: UI-Polish Audio + Protokoll */
+body.audioMode main{
+  grid-template-columns:minmax(330px,38%) minmax(0,1fr)!important;
+  grid-template-rows:44px 60px minmax(0,1fr) 18px!important;
+}
+body.audioMode #audioView.appView.active{
+  display:grid!important;
+  grid-template-columns:minmax(330px,38%) minmax(0,1fr);
+  grid-template-rows:44px 60px minmax(0,1fr);
+  gap:10px;
+  min-height:0;
+  overflow:hidden;
+}
+body.audioMode #audioView .statsLine{grid-column:1 / -1;grid-row:1;margin:0!important}
+body.audioMode #audioView .refbox{grid-column:1 / -1;grid-row:2;margin:0!important}
+body.audioMode #audioView .albumPanel{grid-column:1;grid-row:3;margin:0!important;min-width:0;min-height:0;display:flex;flex-direction:column;overflow:hidden}
+body.audioMode #audioView > section.panel:not(.albumPanel){grid-column:2;grid-row:3;margin:0!important;min-width:0;min-height:0;display:flex;flex-direction:column;overflow:hidden}
+body.audioMode #audioView .albums{flex:1;min-height:0;overflow:auto}
+body.audioMode #audioView .trackScroll{flex:1;min-height:0;overflow:auto}
+
+#protocolView .protocolTools{
+  display:grid!important;
+  grid-template-columns:1fr;
+  gap:10px;
+  padding:12px 16px!important;
+}
+#protocolView .filterPills{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+#protocolView .filterPills::before{content:'Filter:';color:var(--muted);font-size:13px;margin-right:2px}
+#protocolView .filterPills button{color:var(--txt)!important;min-width:82px;padding:8px 12px;white-space:nowrap}
+#protocolView .filterPills button.active{color:#07111f!important;background:var(--accent)!important}
+#protocolView .toolbar.right{justify-content:flex-start;gap:8px;flex-wrap:wrap;margin:0}
+#protocolView .toolbar.right::before{content:'Export:';color:var(--muted);font-size:13px;margin-right:2px}
+#protocolView .toolbar.right button{min-width:132px;white-space:nowrap;text-align:center}
+#protocolView .protocolGrid{grid-template-columns:minmax(0,1fr) minmax(0,1fr)!important;gap:12px;min-height:0}
+#protocolView .protocolGrid .panel{min-height:0;display:flex;flex-direction:column;overflow:hidden}
+#protocolView .historyList,#protocolView .logBox{flex:1;min-height:0;overflow:auto}
+@media(max-width:1100px){
+  body.audioMode #audioView.appView.active{grid-template-columns:1fr;grid-template-rows:44px 60px minmax(180px,.45fr) minmax(0,.55fr)}
+  body.audioMode #audioView .albumPanel{grid-column:1;grid-row:3}
+  body.audioMode #audioView > section.panel:not(.albumPanel){grid-column:1;grid-row:4}
+  #protocolView .protocolGrid{grid-template-columns:1fr!important;grid-template-rows:minmax(180px,.45fr) minmax(0,.55fr)}
+}

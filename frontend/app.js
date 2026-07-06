@@ -1,5 +1,5 @@
 const API='http://'+location.hostname+':8091/api';
-const APP_VERSION='1.6.9';
+const APP_VERSION='1.7.2';
 let selectedArtist=null, selectedAlbum=null, selectedTagFolder=null;
 let selectedTagGenre=null, selectedTagYear=null;
 let browserMode='artist';
@@ -818,21 +818,57 @@ async function clearLog(){
   }
 }
 
+function logLineTimeKey(line, idx){
+  const m=String(line||'').match(/^(\d{1,2}):(\d{2}):(\d{2})/);
+  if(!m) return {t: 999999 + idx/1000000, idx};
+  return {t: Number(m[1])*3600 + Number(m[2])*60 + Number(m[3]) + idx/1000000, idx};
+}
+
+function filterLogLine(line, filter){
+  const s=String(line||'').toLowerCase();
+  if(!filter || filter==='all') return true;
+  if(filter==='error') return s.includes('fehler') || s.includes('error') || s.includes('fehlgeschlagen') || s.includes('abgebrochen');
+  if(filter==='scan') return s.includes('scan');
+  if(filter==='tags') return s.includes('tag') || s.includes('cover') || s.includes('verschoben') || s.includes('sortier');
+  if(filter==='audio') return s.includes('analyse') || s.includes('normalisierung') || s.includes('normalisiert') || s.includes('referenz');
+  if(filter==='sort') return s.includes('sortier') || s.includes('verschoben');
+  return true;
+}
+
 async function loadLog(){
   try{
     let l=await j(API+'/log');
-    let lines=[...(l.errors||[]), ...(l.lines||[]).slice(-25)];
-    logBox.textContent=lines.length ? lines.join('\n') : 'Noch kein Log.';
+    const raw=[...(l.lines||[]), ...(l.errors||[])];
+    const seen=new Set();
+    let lines=[];
+    raw.forEach((line,idx)=>{
+      const key=String(line||'');
+      if(!key || seen.has(key)) return;
+      seen.add(key);
+      lines.push({line:key, ...logLineTimeKey(key, idx)});
+    });
+    lines.sort((a,b)=>a.t-b.t || a.idx-b.idx);
+    const filter=(logBox?.dataset?.filter)||'all';
+    const shown=lines.map(x=>x.line).filter(line=>filterLogLine(line, filter)).slice(-80);
+    logBox.textContent=shown.length ? shown.join('\n') : 'Noch kein Log.';
     logBox.scrollTop=logBox.scrollHeight;
   }catch(e){}
 }
 
 
 function setProtocolFilter(kind){
-  document.querySelectorAll('.filterPills button').forEach(b=>b.classList.toggle('active', (kind==='all' && b.textContent==='Alle') || b.textContent.toLowerCase().startsWith(kind)));
+  document.querySelectorAll('.filterPills button').forEach(b=>{
+    const label=(b.textContent||'').trim().toLowerCase();
+    const active=(kind==='all' && label==='alle') ||
+      (kind==='error' && label==='fehler') ||
+      (kind==='scan' && label==='scan') ||
+      (kind==='tags' && label==='tags') ||
+      (kind==='audio' && label==='audio') ||
+      (kind==='sort' && label==='sortierung');
+    b.classList.toggle('active', active);
+  });
   const box=document.getElementById('logBox');
   if(!box)return;
-  // Filter werden bewusst leichtgewichtig gehalten: Export bleibt vollständig, Anzeige wird beim nächsten Refresh aktualisiert.
   box.dataset.filter=kind;
   loadLog();
 }
