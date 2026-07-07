@@ -51,7 +51,7 @@ def local_log_time() -> str:
         pass
     return time.strftime("%H:%M:%S")
 
-app = FastAPI(title="MusicLab API", version="1.8.15")
+app = FastAPI(title="MusicLab API", version="1.8.16")
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
 
 stop_event = threading.Event()
@@ -2198,6 +2198,126 @@ def _folder_matches(row, folder: str, artist: Optional[str] = None):
         return False
     return True
 
+
+
+
+@app.get("/api/tag_issues")
+def api_tag_issues(q: str = "", kind: str = "all"):
+    """Return physical album folders that likely need tag cleanup.
+
+    Used by the Tags page as a focused repair list. We group by folder so a click
+    opens the same editor the user already uses for album/tag repair.
+    """
+    q_norm = (q or "").strip().lower()
+    kind = (kind or "all").strip().lower()
+    with db() as con:
+        rows = [dict(r) for r in con.execute("""
+            SELECT path,artist,album,title,genre,year,track_number,track_total,disc_number,disc_total,duration
+            FROM tracks
+            ORDER BY path COLLATE NOCASE
+        """).fetchall()]
+
+    def clean(v):
+        return str(v or "").strip()
+
+    def bad_year(v):
+        v = clean(v)
+        if not v or v in {"0", "0000"}:
+            return True
+        # allow normal date tags such as 2006-05-12, but require a plausible leading year
+        m = re.match(r"^(\d{4})", v)
+        if not m:
+            return True
+        y = int(m.group(1))
+        return y < 1900 or y > datetime.now().year + 1
+
+    groups = {}
+    for r in rows:
+        folder = parent_folder_key(r.get("path") or "")
+        g = groups.setdefault(folder, {"folder": folder, "items": [], "artists": set(), "albums": set(), "genres": set(), "years": set(), "issues": set()})
+        g["items"].append(r)
+        for key, setname in [("artist","artists"),("album","albums"),("genre","genres"),("year","years")]:
+            v = clean(r.get(key))
+            if v:
+                g[setname].add(v)
+
+        if not clean(r.get("artist")):
+            g["issues"].add("Interpret fehlt")
+        if not clean(r.get("album")):
+            g["issues"].add("Album fehlt")
+        if not clean(r.get("title")):
+            g["issues"].add("Titel fehlt")
+        if not clean(r.get("genre")):
+            g["issues"].add("Genre fehlt")
+        if bad_year(r.get("year")):
+            g["issues"].add("Jahr fehlt/ungültig")
+        if not r.get("track_number"):
+            g["issues"].add("Tracknummer fehlt")
+
+    out = []
+    for folder, g in groups.items():
+        if len(g["artists"]) > 1:
+            g["issues"].add("mehrere Interpreten im Ordner")
+        if len(g["albums"]) > 1:
+            g["issues"].add("mehrere Album-Tags im Ordner")
+        if len(g["genres"]) > 1:
+            g["issues"].add("mehrere Genres im Album")
+        years_clean = {y for y in g["years"] if y and y not in {"0", "0000"}}
+        if len(years_clean) > 1:
+            g["issues"].add("mehrere Jahre im Album")
+
+        # Flag exact folder/tag spelling differences, but do not block editing.
+        parts = Path(folder).parts
+        folder_artist = parts[0] if len(parts) >= 2 else ""
+        folder_album = parts[-1] if parts else ""
+        tag_artist = sorted(g["artists"], key=lambda x: x.lower())[0] if len(g["artists"]) == 1 else ""
+        tag_album = sorted(g["albums"], key=lambda x: x.lower())[0] if len(g["albums"]) == 1 else ""
+        if folder_artist and tag_artist and folder_artist != tag_artist:
+            g["issues"].add("Ordner/Interpret-Schreibweise abweichend")
+        if folder_album and tag_album and folder_album != tag_album:
+            g["issues"].add("Ordner/Album-Schreibweise abweichend")
+
+        issues = sorted(g["issues"], key=lambda x: x.lower())
+        if not issues:
+            continue
+        if kind != "all":
+            kmap = {
+                "missing": ["fehlt", "ungültig"],
+                "mixed": ["mehrere"],
+                "folder": ["Ordner/"],
+                "track": ["Tracknummer"],
+                "year": ["Jahr"],
+                "genre": ["Genre"],
+            }
+            needles = kmap.get(kind, [kind])
+            if not any(any(n.lower() in issue.lower() for n in needles) for issue in issues):
+                continue
+        artists = sorted(g["artists"], key=lambda x: x.lower())
+        albums = sorted(g["albums"], key=lambda x: x.lower())
+        examples = []
+        for r in g["items"][:8]:
+            examples.append({
+                "path": r.get("path"),
+                "title": r.get("title") or Path(r.get("path") or "").stem,
+                "artist": r.get("artist"),
+                "album": r.get("album"),
+                "year": r.get("year"),
+                "genre": r.get("genre"),
+            })
+        hay = " ".join([folder, " ".join(artists), " ".join(albums), " ".join(issues)]).lower()
+        if q_norm and q_norm not in hay:
+            continue
+        out.append({
+            "folder": folder,
+            "artist": artists[0] if len(artists) == 1 else ("Verschiedene Interpreten" if artists else ""),
+            "album": albums[0] if len(albums) == 1 else (folder_display_name(folder) if not albums else "Mehrere Album-Tags"),
+            "tracks": len(g["items"]),
+            "issues": issues,
+            "issue_count": len(issues),
+            "examples": examples,
+        })
+    out.sort(key=lambda x: (-int(x.get("issue_count") or 0), (x.get("artist") or "").lower(), (x.get("album") or "").lower(), (x.get("folder") or "").lower()))
+    return out[:500]
 
 @app.get("/api/tag_albums")
 def get_tag_albums(q: str = "", artist: Optional[str] = None, genre: Optional[str] = None, year: Optional[str] = None):

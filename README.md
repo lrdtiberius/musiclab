@@ -1,4 +1,4 @@
-# MusicLab v1.8.15
+# MusicLab v1.8.16
 
 ## Änderungen
 
@@ -23,3 +23,11 @@ docker compose up -d --build
 Danach im Browser hart neu laden.
 
 Hinweis: Bereits vorhandene alte Logzeilen behalten ihre alte Uhrzeit. Die Korrektur gilt für neue Logeinträge nach dem Neustart.
+
+
+## v1.8.16
+
+- Tags-Seite erweitert: neuer Suchtyp „Fehlende/fehlerhafte Tags“.
+- Betroffene Albumordner werden links gesammelt angezeigt und öffnen direkt den vorhandenen Tag-Editor.
+- Erkannt werden u. a. fehlender Interpret, Album, Titel, Jahr, Genre, Tracknummer sowie uneinheitliche Tags innerhalb eines Albumordners.
+- Ordner-/Tag-Schreibweisen werden als Hinweis markiert, z. B. wenn Ordnername und Tag-Schreibweise abweichen.

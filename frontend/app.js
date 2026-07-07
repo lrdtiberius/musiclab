@@ -26,7 +26,7 @@ function coverBox(src, large=false, opts={}){
   const extra=opts.extraClass ? ' '+opts.extraClass : '';
   const cls=(large?'mediaCoverBox large':'mediaCoverBox')+extra;
   const loading=opts.eager ? 'eager' : 'lazy';
-  // v1.8.15: Cover-Boxen müssen beim Albumwechsel immer eine neue, eindeutige
+  // v1.8.16: Cover-Boxen müssen beim Albumwechsel immer eine neue, eindeutige
   // DOM-Box bekommen. Besonders wichtig bei #tagCoverPreview: Wenn die ID beim
   // ersten Cover verloren geht, kann die Vorschau bei Albumwechseln nicht mehr
   // ersetzt werden und Safari zeigt das zuletzt sichtbare Cover weiter an.
@@ -391,8 +391,8 @@ function setBrowserMode(mode){
   if(typeof modeAlbum !== 'undefined' && modeAlbum) modeAlbum.classList.toggle('active', mode==='album');
   if(typeof modeGenre !== 'undefined' && modeGenre) modeGenre.classList.toggle('active', mode==='new');
   if(typeof modeYear !== 'undefined' && modeYear) modeYear.style.display = 'none';
-  const titleMap={artist:'Interpreten', album:'Alben', new:'Neu gefunden', genre:'Genres', year:'Jahre'};
-  const phMap={artist:'Interpreten suchen...', album:'Alben suchen...', new:'Neue Alben suchen...', genre:'Genre suchen...', year:'Jahr suchen...'};
+  const titleMap={artist:'Interpreten', album:'Alben', new:'Neu gefunden', genre:'Genres', year:'Jahre', issues:'Tag-Probleme'};
+  const phMap={artist:'Interpreten suchen...', album:'Alben suchen...', new:'Neue Alben suchen...', genre:'Genre suchen...', year:'Jahr suchen...', issues:'Fehlerhafte Tags suchen...'};
   browserTitle.textContent = titleMap[mode] || 'Interpreten';
   search.placeholder = phMap[mode] || 'Suchen...';
   updateBrowserTabsForView();
@@ -404,6 +404,7 @@ async function loadBrowser(){
   if(browserMode==='new') return loadNewBrowser();
   if(browserMode==='genre') return loadGenreBrowser();
   if(browserMode==='year') return loadYearBrowser();
+  if(browserMode==='issues') return loadTagIssuesBrowser();
   return loadArtists();
 }
 
@@ -541,6 +542,21 @@ async function loadYearBrowser(){
   browserTitle.textContent='Jahre';
   browserList.innerHTML=vals.map(y=>`<div class="row" data-year="${encodeURIComponent(y)}"><b>${escHtml(y)}</b></div>`).join('') || '<div class="empty">Keine Jahre gefunden.</div>';
   bindFilterRows();
+}
+
+
+async function loadTagIssuesBrowser(){
+  const rawQ=(search.value||'').trim();
+  const issues=await j(API+'/tag_issues?q='+encodeURIComponent(rawQ));
+  browserTitle.textContent = rawQ ? 'Tag-Probleme suchen' : 'Tag-Probleme';
+  browserList.innerHTML=(issues||[]).map(x=>{
+    const active = x.folder===selectedTagFolder;
+    const issueText=(x.issues||[]).slice(0,3).join(' · ')+((x.issues||[]).length>3?' · …':'');
+    const artistData = x.artist && x.artist !== 'Verschiedene Interpreten' ? ` data-artist="${encodeURIComponent(x.artist)}"` : '';
+    const album = x.album || x.folder || 'Unbekanntes Album';
+    return `<div class="row ${active?'sel':''}" data-folder="${encodeURIComponent(x.folder||'')}" data-album="${encodeURIComponent(album)}"${artistData}><b>${escHtml(album)}</b><br><span class="small">${escHtml(x.artist||'')} · ${x.tracks} Titel · ${x.issue_count} Problem(e)</span><br><span class="small issueLine">${escHtml(issueText)}</span></div>`;
+  }).join('') || '<div class="empty">Keine fehlenden oder fehlerhaften Tags gefunden.</div>';
+  bindAlbumRows();
 }
 
 async function loadNewBrowser(){
@@ -814,7 +830,7 @@ function jsArg(v){return JSON.stringify(String(v??''));}
 function renderPathRow(x){
   const path=String(x?.path||'');
   if(!path) return '';
-  // v1.8.15: Auf der Duplikatseite keine Pfad-Buttons mehr.
+  // v1.8.16: Auf der Duplikatseite keine Pfad-Buttons mehr.
   // Direktes Öffnen/Kopieren war im Browser/NAS-Setup nicht zuverlässig genug
   // und hat die Seite unnötig überladen. Der Pfad bleibt nur als Hinweis sichtbar.
   return `<div class="checkPathRow"><div class="checkPath">${escHtml(path)}</div></div>`;
@@ -1307,7 +1323,7 @@ async function getTagTrackUrl(){
 async function loadTagsPage(){
   const body=document.getElementById('tagTracks'); const hint=document.getElementById('tagHint');
   if(!body||!hint)return;
-  // v1.8.15: Beim Albumwechsel sofort die alte Vorschau entfernen.
+  // v1.8.16: Beim Albumwechsel sofort die alte Vorschau entfernen.
   // Sonst bleibt bei langsamer/fehlender Cover-Antwort das zuletzt gesehene Cover stehen.
   tagCoverPlaceholder('Cover wird geladen…');
   if(!selectedAlbum && selectedTagFolder===null){
@@ -1430,7 +1446,7 @@ async function uploadTagCover(){
   const first=paths[0] || '';
   const firstFolder=parentFolderFromPath(first||'');
 
-  // v1.8.15: Die sichtbaren Track-Pfade werden direkt ans Backend geschickt.
+  // v1.8.16: Die sichtbaren Track-Pfade werden direkt ans Backend geschickt.
   // Der Ordner ist nur noch Fallback/Hinweis. Damit landet das Cover nicht
   // im falschen Album, wenn Albumname und Ordnername auseinanderlaufen.
   if(firstFolder) folder=firstFolder;
