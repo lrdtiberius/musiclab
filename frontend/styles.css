@@ -991,3 +991,12 @@ body.audioMode #audioView.appView.active{grid-template-columns:minmax(520px,46%)
 body.audioMode #audioView > .trackPanel{margin-top:0!important;}
 body.audioMode #audioView .albums{grid-template-columns:repeat(auto-fill,minmax(280px,1fr))!important;}
 body.audioMode #audioView .album{min-height:132px!important;}
+
+
+/* v1.8.13: Duplikatseite ohne linke Suche/Liste */
+body.checkMode aside.panel{display:none!important;}
+body.checkMode .layout{grid-template-columns:1fr!important;}
+body.checkMode main{display:block!important;height:100%!important;min-height:0!important;overflow:hidden!important;}
+body.checkMode #checkView.appView.active{display:grid!important;height:100%!important;min-height:0!important;grid-template-rows:auto auto minmax(0,1fr)!important;gap:12px!important;overflow:hidden!important;}
+body.checkMode #checkView .checkGrid{min-height:0!important;height:100%!important;}
+body.checkMode #checkView .checkList{min-height:0!important;max-height:none!important;overflow:auto!important;}
