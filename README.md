@@ -1,8 +1,13 @@
-# MusicLab v1.8.5
+# MusicLab v1.8.7
 
 Bugfix-/Komfortversion auf Basis von v1.8.0.
 
-## Neu in v1.8.5
+## Neu in v1.8.7
+
+- Cover speichern repariert: virtuelle Album-Auswahl wird auf echten Albumordner aufgelöst.
+- Cover werden nicht mehr nur in MP3 geschrieben, sondern auch in M4A/AAC, FLAC und OGG/Vorbis, soweit Mutagen das Format unterstützt.
+- Die Rückmeldung zeigt jetzt Dateien statt nur MP3-Dateien.
+
 
 - Duplikat-Treffer zeigen jetzt pro Datei Aktionen:
   - **Pfad öffnen**: öffnet den Ordner per `smb://` und kopiert den NAS-Pfad als Fallback in die Zwischenablage.
@@ -16,7 +21,7 @@ Bugfix-/Komfortversion auf Basis von v1.8.0.
   - `GET /api/duplicates/confirmed`
   - `DELETE /api/duplicates/confirmed`
 - Duplikatregel bleibt: gleicher Interpret + gleiches Album + mindestens 90 % ähnlicher Titel.
-- Audio-Tab enthält nochmals härtere Flächen-/Kachel-Regeln und Cache-Buster `?v=1.8.5`.
+- Audio-Tab enthält nochmals härtere Flächen-/Kachel-Regeln und Cache-Buster `?v=1.8.7`.
 
 ## SMB-Hinweis
 
@@ -36,3 +41,10 @@ Falls deine SMB-Freigabe anders heißt, kann sie im Backend per Environment ange
 ## Credits
 
 Idea & Umsetzung by Lrd.Tiberius.
+
+
+## v1.8.7
+
+- Pfad öffnen bei Duplikaten robuster gemacht: einstellbare SMB-Basis, SMB-Link kopieren und Finder-Befehl kopieren.
+- Einstellung `SMB-Basis für Finder`, z.B. `smb://DS923/Musik` oder `smb://192.168.178.50/Musik`.
+- Direkter Browser-Open bleibt verfügbar, aber mit Hinweis, falls Safari/Chrome es blockiert.

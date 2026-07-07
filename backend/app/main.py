@@ -21,6 +21,12 @@ from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
 from mutagen import File as MutagenFile
 from mutagen.id3 import ID3, APIC, ID3NoHeaderError
+from mutagen.mp4 import MP4, MP4Cover
+from mutagen.flac import FLAC, Picture
+try:
+    from mutagen.oggvorbis import OggVorbis
+except Exception:
+    OggVorbis = None
 
 DEFAULT_MUSIC_ROOT = Path(os.getenv("MUSIC_ROOT", "/music"))
 DB_PATH = Path(os.getenv("DB_PATH", "/data/musiclab.sqlite"))
@@ -30,7 +36,7 @@ LOG_MAX_BYTES = int(os.getenv("LOG_MAX_BYTES", str(10 * 1024 * 1024)))
 EXTS = {".mp3", ".m4a", ".aac", ".flac", ".ogg"}
 SCHEMA_VERSION = 24
 
-app = FastAPI(title="MusicLab API", version="1.8.5")
+app = FastAPI(title="MusicLab API", version="1.8.7")
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
 
 stop_event = threading.Event()
@@ -234,7 +240,7 @@ def init_db():
             )
             """
         )
-        defaults = {"target_lufs": "-16", "true_peak": "-1.5", "lra": "11", "backup_mode": "on", "parallel_analysis": "2", "music_root": str(DEFAULT_MUSIC_ROOT), "watch_mode": "off", "sort_after_tags": "off"}
+        defaults = {"target_lufs": "-16", "true_peak": "-1.5", "lra": "11", "backup_mode": "on", "parallel_analysis": "2", "music_root": str(DEFAULT_MUSIC_ROOT), "watch_mode": "off", "sort_after_tags": "off", "smb_base_url": "smb://DS923/Musik"}
         for k, v in defaults.items():
             con.execute("INSERT OR IGNORE INTO settings(key,value) VALUES(?,?)", (k, v))
         con.execute("INSERT OR REPLACE INTO meta(key,value) VALUES('schema_version', ?)", (str(SCHEMA_VERSION),))
@@ -249,7 +255,7 @@ def get_settings():
 
 def save_settings(data: dict):
     with db() as con:
-        for k in ["target_lufs", "true_peak", "lra", "backup_mode", "parallel_analysis", "music_root", "watch_mode", "sort_after_tags"]:
+        for k in ["target_lufs", "true_peak", "lra", "backup_mode", "parallel_analysis", "music_root", "watch_mode", "sort_after_tags", "smb_base_url"]:
             if k in data:
                 con.execute("INSERT OR REPLACE INTO settings(key,value) VALUES(?,?)", (k, str(data[k])))
         con.commit()
@@ -287,7 +293,12 @@ def get_confirmed_duplicate_keys() -> set:
 
 
 def safe_music_path_info(rel_or_abs: str, request: Request) -> dict:
-    """Return NAS/Finder friendly path information for a track or folder below MUSIC_ROOT."""
+    """Return NAS/Finder friendly path information for a track or folder below MUSIC_ROOT.
+
+    v1.8.6: Browser können lokale/NAS-Ordner oft nicht direkt öffnen. Deshalb liefern
+    wir mehrere saubere Varianten zurück: anklickbare SMB-URL, kopierbaren SMB-Link,
+    Finder-Befehl und NAS-/Container-Pfad.
+    """
     root = get_music_root().resolve()
     raw = str(rel_or_abs or "").strip().replace("\\", "/")
     if not raw:
@@ -296,6 +307,8 @@ def safe_music_path_info(rel_or_abs: str, request: Request) -> dict:
     root_str = root.as_posix().rstrip("/")
     if raw.startswith(root_str + "/"):
         rel = raw[len(root_str) + 1:]
+    elif raw == root_str:
+        rel = ""
     elif raw.startswith("/music/"):
         rel = raw[len("/music/"):]
     elif raw == "/music":
@@ -318,48 +331,58 @@ def safe_music_path_info(rel_or_abs: str, request: Request) -> dict:
     except Exception:
         rel_folder = str(Path(rel).parent.as_posix()) if rel else ""
 
+    settings = get_settings()
+    # Einstellbarer Basislink. Beispiele:
+    #   smb://DS923/Musik
+    #   smb://192.168.178.50/Musik
+    #   smb://DS923/DS420/Musik
+    smb_base = str(settings.get("smb_base_url") or os.getenv("SMB_BASE_URL") or "smb://DS923/Musik").strip().rstrip("/")
+    if not smb_base.lower().startswith("smb://"):
+        smb_base = "smb://" + smb_base.lstrip("/")
+
+    def enc_rel(p: str) -> str:
+        return "/".join(quote(part) for part in str(p or "").split("/") if part not in ("", "."))
+
+    def join_smb(base: str, rel_path: str) -> str:
+        suffix = enc_rel(rel_path)
+        return base + (("/" + suffix) if suffix else "")
+
+    folder_smb_url = join_smb(smb_base, rel_folder)
+    file_smb_url = join_smb(smb_base, rel_target)
+
+    # Fallbacks für alte Variablen, falls jemand sie in docker-compose gesetzt hat.
     host = request.url.hostname or os.getenv("NAS_HOST", "localhost")
-    smb_share = os.getenv("SMB_SHARE", "DS420").strip("/") or "DS420"
-    smb_prefix = os.getenv("SMB_PREFIX", "Musik").strip("/")
+    smb_share = os.getenv("SMB_SHARE", "").strip("/")
+    smb_prefix = os.getenv("SMB_PREFIX", "").strip("/")
+    legacy_folder_smb_url = ""
+    legacy_file_smb_url = ""
+    if smb_share:
+        legacy_base = f"smb://{host}/{quote(smb_share)}"
+        if smb_prefix:
+            legacy_base += "/" + enc_rel(smb_prefix)
+        legacy_folder_smb_url = join_smb(legacy_base, rel_folder)
+        legacy_file_smb_url = join_smb(legacy_base, rel_target)
 
-    def enc_path(parts):
-        return "/".join(quote(part) for part in parts if part not in ("", "."))
-
-    folder_parts = [smb_prefix] + ([p for p in rel_folder.split("/") if p] if rel_folder else [])
-    target_parts = [smb_prefix] + ([p for p in rel_target.split("/") if p] if rel_target else [])
-    folder_smb_url = f"smb://{host}/{quote(smb_share)}"
-    file_smb_url = f"smb://{host}/{quote(smb_share)}"
-    folder_suffix = enc_path(folder_parts)
-    target_suffix = enc_path(target_parts)
-    if folder_suffix:
-        folder_smb_url += "/" + folder_suffix
-    if target_suffix:
-        file_smb_url += "/" + target_suffix
-
-    # Alternative, falls der Musikordner direkt als eigene SMB-Freigabe eingebunden ist.
-    alt_share = os.getenv("SMB_ALT_SHARE", "Musik").strip("/") or "Musik"
-    alt_folder = f"smb://{host}/{quote(alt_share)}"
-    alt_file = f"smb://{host}/{quote(alt_share)}"
-    rel_folder_suffix = enc_path([p for p in rel_folder.split("/") if p])
-    rel_target_suffix = enc_path([p for p in rel_target.split("/") if p])
-    if rel_folder_suffix:
-        alt_folder += "/" + rel_folder_suffix
-    if rel_target_suffix:
-        alt_file += "/" + rel_target_suffix
-
-    nas_base = os.getenv("NAS_MUSIC_PATH", "/volume1/DS420/Musik").rstrip("/")
+    nas_base = os.getenv("NAS_MUSIC_PATH", smb_base).rstrip("/")
+    finder_open_folder_command = f'open "{folder_smb_url}"'
+    finder_open_file_command = f'open "{file_smb_url}"'
     return {
         "path": rel_target,
         "folder": rel_folder,
         "container_path": target.as_posix(),
         "container_folder": folder.as_posix(),
-        "nas_path": f"{nas_base}/{rel_target}" if rel_target else nas_base,
-        "nas_folder": f"{nas_base}/{rel_folder}" if rel_folder else nas_base,
+        "nas_path": f"{nas_base}/{rel_target}" if rel_target and not nas_base.lower().startswith("smb://") else file_smb_url,
+        "nas_folder": f"{nas_base}/{rel_folder}" if rel_folder and not nas_base.lower().startswith("smb://") else folder_smb_url,
         "is_file": is_file,
+        "smb_base_url": smb_base,
         "folder_smb_url": folder_smb_url,
         "file_smb_url": file_smb_url,
-        "alt_folder_smb_url": alt_folder,
-        "alt_file_smb_url": alt_file,
+        "legacy_folder_smb_url": legacy_folder_smb_url,
+        "legacy_file_smb_url": legacy_file_smb_url,
+        "alt_folder_smb_url": legacy_folder_smb_url or folder_smb_url,
+        "alt_file_smb_url": legacy_file_smb_url or file_smb_url,
+        "finder_open_folder_command": finder_open_folder_command,
+        "finder_open_file_command": finder_open_file_command,
     }
 
 
@@ -1764,7 +1787,7 @@ def startup():
 
 @app.get("/api/health")
 def health():
-    return {"ok": True, "version": "1.8.5", "music_root": str(get_music_root()), "db": str(DB_PATH)}
+    return {"ok": True, "version": "1.8.7", "music_root": str(get_music_root()), "db": str(DB_PATH)}
 
 
 @app.post("/api/scan")
@@ -2515,23 +2538,30 @@ def _embedded_cover_from_file(p: Path):
 
 @app.post("/api/tags/cover")
 async def api_tags_cover(request: Request):
-    """Embed an uploaded cover into all MP3 files of a selected album folder.
+    """Embed an uploaded cover into all audio files of a selected album folder.
 
-    The frontend sends JSON with base64 data instead of multipart/form-data.
-    No cover.jpg/folder.jpg is created. The music folder remains clean; the
-    artwork lives inside the MP3 files as ID3 APIC front cover.
+    v1.8.7: The old implementation only worked for real physical folder keys
+    and only wrote MP3/APIC. In the Tags view, however, albums can also be
+    opened through a virtual ``__album__:...`` key. That made "Cover speichern"
+    look like it did nothing or fail with "Albumordner nicht gefunden". This
+    endpoint now resolves virtual album keys to the first matching physical
+    album folder and writes covers to MP3, M4A/AAC, FLAC and OGG/Vorbis where
+    Mutagen supports it.
     """
     import base64
     try:
         payload = await request.json()
     except Exception:
         raise HTTPException(status_code=400, detail="Ungültige Cover-Daten")
+
     folder = str(payload.get("folder") or "").strip().strip("/")
-    if not folder:
-        raise HTTPException(status_code=400, detail="folder fehlt")
     filename = str(payload.get("filename") or "cover").lower()
     ctype = str(payload.get("content_type") or "").lower()
     data_url = str(payload.get("data") or "")
+
+    if not folder:
+        raise HTTPException(status_code=400, detail="folder fehlt")
+
     if "," in data_url and data_url.startswith("data:"):
         data_url = data_url.split(",", 1)[1]
     try:
@@ -2540,39 +2570,95 @@ async def api_tags_cover(request: Request):
         raise HTTPException(status_code=400, detail="Cover konnte nicht gelesen werden")
     if not raw:
         raise HTTPException(status_code=400, detail="Leere Datei")
-    if "png" in ctype or filename.endswith(".png"):
+
+    if "png" in ctype or filename.endswith(".png") or raw.startswith(b"\x89PNG"):
         mime = "image/png"
-    elif "jpeg" in ctype or "jpg" in ctype or filename.endswith((".jpg", ".jpeg")):
+        mp4_format = MP4Cover.FORMAT_PNG
+        flac_pic_type = 3
+    elif "jpeg" in ctype or "jpg" in ctype or filename.endswith((".jpg", ".jpeg")) or raw.startswith(b"\xff\xd8"):
         mime = "image/jpeg"
+        mp4_format = MP4Cover.FORMAT_JPEG
+        flac_pic_type = 3
     else:
         raise HTTPException(status_code=400, detail="Bitte JPG oder PNG verwenden")
 
     root = get_music_root().resolve()
+
+    # Resolve virtual album keys from the UI to a concrete folder. This is the
+    # most common cause when saving a cover appears to do nothing.
+    if folder.startswith("__album__:"):
+        album_name = folder[len("__album__:"):].strip().lower()
+        for r in _media_rows():
+            if (r.get("album") or "Unbekanntes Album").strip().lower() == album_name:
+                folder = media_album_folder_key(r.get("path") or "") or parent_folder_key(r.get("path") or "")
+                break
+
     base = (root / folder).resolve()
     if not base.is_relative_to(root) or not base.exists() or not base.is_dir():
-        raise HTTPException(status_code=404, detail="Albumordner nicht gefunden")
+        raise HTTPException(status_code=404, detail=f"Albumordner nicht gefunden: {folder}")
 
-    files = [p for p in _album_audio_paths(folder) if p.suffix.lower() == ".mp3"]
-    updated = 0; errors = []
+    files = _album_audio_paths(folder)
+    if not files:
+        raise HTTPException(status_code=404, detail=f"Keine Audiodateien im Albumordner gefunden: {folder}")
+
+    updated = 0
+    skipped = 0
+    errors = []
+
     for p in files:
         rel = str(p.relative_to(root))
+        ext = p.suffix.lower()
         try:
-            try:
-                tags = ID3(str(p))
-            except ID3NoHeaderError:
-                tags = ID3()
-            tags.delall("APIC")
-            tags.add(APIC(encoding=3, mime=mime, type=3, desc="Front Cover", data=raw))
-            tags.save(str(p), v2_version=3)
-            updated += 1
+            if ext == ".mp3":
+                try:
+                    tags = ID3(str(p))
+                except ID3NoHeaderError:
+                    tags = ID3()
+                tags.delall("APIC")
+                tags.add(APIC(encoding=3, mime=mime, type=3, desc="Front Cover", data=raw))
+                tags.save(str(p), v2_version=3)
+                updated += 1
+
+            elif ext in {".m4a", ".mp4", ".aac"}:
+                audio = MP4(str(p))
+                if audio.tags is None:
+                    audio.add_tags()
+                audio.tags["covr"] = [MP4Cover(raw, imageformat=mp4_format)]
+                audio.save()
+                updated += 1
+
+            elif ext == ".flac":
+                audio = FLAC(str(p))
+                audio.clear_pictures()
+                pic = Picture()
+                pic.type = flac_pic_type
+                pic.mime = mime
+                pic.desc = "Front Cover"
+                pic.data = raw
+                audio.add_picture(pic)
+                audio.save()
+                updated += 1
+
+            elif ext == ".ogg" and OggVorbis is not None:
+                audio = OggVorbis(str(p))
+                pic = Picture()
+                pic.type = flac_pic_type
+                pic.mime = mime
+                pic.desc = "Front Cover"
+                pic.data = raw
+                encoded = base64.b64encode(pic.write()).decode("ascii")
+                audio["metadata_block_picture"] = [encoded]
+                audio.save()
+                updated += 1
+
+            else:
+                skipped += 1
         except Exception as e:
-            if len(errors) < 20:
+            if len(errors) < 30:
                 errors.append(f"{rel}: {e}")
 
-    # Do not create cover.jpg/folder.jpg. Existing folder images are left alone
-    # but are no longer used by MusicLab.
-    add_log(f"Cover eingebettet: {folder} ({updated} MP3-Dateien)")
-    return {"ok": True, "updated": updated, "total": len(files), "errors": errors}
+    add_log(f"Cover eingebettet: {folder} ({updated}/{len(files)} Dateien, übersprungen {skipped}, Fehler {len(errors)})", bool(errors))
+    return {"ok": True, "folder": folder, "updated": updated, "total": len(files), "skipped": skipped, "errors": errors}
 
 
 @app.get("/api/media/cover_by_path")

@@ -1,5 +1,5 @@
 const API='http://'+location.hostname+':8091/api';
-const APP_VERSION='1.7.3';
+const APP_VERSION='1.8.7';
 let selectedArtist=null, selectedAlbum=null, selectedTagFolder=null;
 let selectedTagGenre=null, selectedTagYear=null;
 let browserMode='artist';
@@ -206,6 +206,8 @@ async function loadSettings(){
   if(typeof watchMode!=='undefined' && s.watch_mode) watchMode.value=s.watch_mode;
   if(typeof sortAfterTags!=='undefined' && s.sort_after_tags) sortAfterTags.value=s.sort_after_tags;
   if(typeof sortAfterTagsPage!=='undefined' && s.sort_after_tags) sortAfterTagsPage.value=s.sort_after_tags;
+  if(typeof smbBaseUrl!=='undefined' && s.smb_base_url) smbBaseUrl.value=s.smb_base_url;
+  if(typeof smbBaseUrlPage!=='undefined' && s.smb_base_url) smbBaseUrlPage.value=s.smb_base_url;
   updateTargetInfo();
   if(typeof syncSettingsPageFromMain==='function') syncSettingsPageFromMain();
 }
@@ -223,7 +225,7 @@ async function saveSettings(){
   await j(API+'/settings',{
     method:'POST',
     headers:{'Content-Type':'application/json'},
-    body:JSON.stringify({target_lufs:targetLufs.value,true_peak:truePeak.value,lra:lra.value,backup_mode:backupMode.value,parallel_analysis:parallelAnalysis.value,music_root:musicRoot.value,watch_mode:watchMode.value,sort_after_tags:(typeof sortAfterTags!=='undefined'?sortAfterTags.value:(typeof sortAfterTagsPage!=='undefined'?sortAfterTagsPage.value:'off'))})
+    body:JSON.stringify({target_lufs:targetLufs.value,true_peak:truePeak.value,lra:lra.value,backup_mode:backupMode.value,parallel_analysis:parallelAnalysis.value,music_root:musicRoot.value,watch_mode:watchMode.value,sort_after_tags:(typeof sortAfterTags!=='undefined'?sortAfterTags.value:(typeof sortAfterTagsPage!=='undefined'?sortAfterTagsPage.value:'off')),smb_base_url:(typeof smbBaseUrl!=='undefined'?smbBaseUrl.value:(typeof smbBaseUrlPage!=='undefined'?smbBaseUrlPage.value:'smb://DS923/Musik'))})
   });
   updateTargetInfo();
 }
@@ -797,48 +799,88 @@ function jsArg(v){return JSON.stringify(String(v??''));}
 function renderPathRow(x){
   const path=String(x?.path||'');
   if(!path) return '';
-  return `<div class="checkPathRow"><div class="checkPath">${escHtml(path)}</div><div class="checkPathActions"><button class="miniBtn" onclick="openMusicPath(${jsArg(path)});event.stopPropagation();">Pfad öffnen</button><button class="miniBtn secondary" onclick="copyMusicPath(${jsArg(path)});event.stopPropagation();">Pfad kopieren</button></div></div>`;
+  return `<div class="checkPathRow"><div class="checkPath">${escHtml(path)}</div><div class="checkPathActions"><button class="miniBtn" onclick="showOpenPathHelp(${jsArg(path)});event.stopPropagation();">Öffnen…</button><button class="miniBtn secondary" onclick="copyMusicPath(${jsArg(path)});event.stopPropagation();">Pfad kopieren</button></div></div>`;
 }
-function renderCheckList(el, groups, emptyText, options={}){
-  if(!el) return;
-  if(!groups || !groups.length){ el.innerHTML=`<div class="muted">${emptyText}</div>`; return; }
-  el.innerHTML=groups.map(g=>{
-    const pct=g.score!==undefined?`<span class="badge">${Math.round(g.score*100)}%</span>`:'';
-    const subtitle=[g.artist,g.album].filter(Boolean).join(' • ');
-    const paths=(g.items||[]).map(x=>String(x.path||'')).filter(Boolean);
-    const confirmBtn=options.confirmFalseDuplicate && paths.length>=2
-      ? `<button class="miniBtn danger" onclick='confirmNonDuplicate(${JSON.stringify(paths).replace(/'/g,"&#39;")}, ${jsArg(g.title||'Duplikat')});event.stopPropagation();'>Kein Duplikat bestätigen</button>`
-      : '';
-    return `<div class="checkItem"><div class="checkTitle"><b>${escHtml(g.title||g.name||g.album||'Eintrag')}</b><div class="checkTitleActions">${pct}${confirmBtn}</div></div><div class="small muted">${escHtml(subtitle)}</div>${(g.items||[]).map(renderPathRow).join('')}</div>`;
-  }).join('');
+
+async function copyText(text, label='Text'){
+  try{
+    await navigator.clipboard.writeText(text);
+    const statusEl=document.getElementById('checkStatus');
+    if(statusEl) statusEl.textContent=label+' kopiert: '+text;
+    return true;
+  }catch(e){
+    prompt(label+' manuell kopieren:', text);
+    return false;
+  }
 }
 
 async function copyMusicPath(path){
   try{
     const info=await j(API+'/path_info?path='+encodeURIComponent(path));
-    const text=info.nas_path || info.container_path || path;
-    await navigator.clipboard.writeText(text);
-    const statusEl=document.getElementById('checkStatus');
-    if(statusEl) statusEl.textContent='Pfad kopiert: '+text;
+    const text=info.container_path || path;
+    await copyText(text, 'Container-Pfad');
   }catch(e){
-    try{await navigator.clipboard.writeText(path);}catch(_e){}
-    alert('Pfad konnte nur roh kopiert/gezeigt werden:\n'+path+'\n\nFehler: '+e.message);
+    await copyText(path, 'Pfad');
+  }
+}
+
+async function copySmbPath(path){
+  try{
+    const info=await j(API+'/path_info?path='+encodeURIComponent(path));
+    await copyText(info.folder_smb_url || info.file_smb_url || path, 'SMB-Link');
+  }catch(e){
+    alert('SMB-Link konnte nicht erzeugt werden:\n'+e.message);
+  }
+}
+
+async function copyFinderOpenCommand(path){
+  try{
+    const info=await j(API+'/path_info?path='+encodeURIComponent(path));
+    await copyText(info.finder_open_folder_command || ('open "'+(info.folder_smb_url||path)+'"'), 'Finder-Befehl');
+  }catch(e){
+    alert('Finder-Befehl konnte nicht erzeugt werden:\n'+e.message);
   }
 }
 
 async function openMusicPath(path){
   try{
     const info=await j(API+'/path_info?path='+encodeURIComponent(path));
+    const url=info.folder_smb_url || info.file_smb_url;
     const statusEl=document.getElementById('checkStatus');
-    if(statusEl) statusEl.textContent='Öffne Ordner: '+(info.nas_folder||info.folder||path);
-    try{ await navigator.clipboard.writeText(info.nas_folder || info.nas_path || path); }catch(_e){}
-    // macOS/Safari/Finder kann smb:// Links direkt öffnen. Falls die Freigabe anders heißt,
-    // bleibt der kopierte NAS-Pfad als Fallback erhalten.
-    window.location.href = info.folder_smb_url || info.alt_folder_smb_url || info.file_smb_url;
+    if(statusEl) statusEl.textContent='Versuche zu öffnen: '+url+' · Falls nichts passiert: „Finder-Befehl kopieren“ nutzen.';
+    try{ await navigator.clipboard.writeText(info.finder_open_folder_command || ('open "'+url+'"')); }catch(_e){}
+    const a=document.createElement('a');
+    a.href=url;
+    a.target='_self';
+    a.rel='noreferrer';
+    document.body.appendChild(a);
+    a.click();
+    setTimeout(()=>a.remove(),500);
   }catch(e){
     alert('Pfad konnte nicht geöffnet werden:\n'+path+'\n\n'+e.message);
   }
 }
+
+async function showOpenPathHelp(path){
+  try{
+    const info=await j(API+'/path_info?path='+encodeURIComponent(path));
+    const msg=[
+      'Direktes Öffnen kann Safari/Chrome blockieren. Sicher funktioniert der Finder-Befehl im Terminal.',
+      '',
+      'SMB-Ordner:', info.folder_smb_url || '-',
+      '',
+      'Finder-Befehl:', info.finder_open_folder_command || '-',
+      '',
+      'Container-Pfad:', info.container_path || path
+    ].join('\n');
+    const openNow=confirm(msg+'\n\nJetzt trotzdem per Browser öffnen?');
+    if(openNow) await openMusicPath(path);
+    else await copyText(info.finder_open_folder_command || info.folder_smb_url || path, 'Finder-Befehl');
+  }catch(e){
+    alert('Pfad-Infos konnten nicht erzeugt werden:\n'+e.message);
+  }
+}
+
 
 async function confirmNonDuplicate(paths, title){
   if(!Array.isArray(paths) || paths.length<2) return;
@@ -860,7 +902,7 @@ async function runLibraryCheck(force=true){
     if(btn){btn.disabled=true; btn.textContent='Prüfe…';}
     if(statusEl) statusEl.textContent='Duplikatprüfung läuft…';
 
-    // v1.8.5: zuerst dedizierten Duplikat-Endpunkt nutzen, Fallback bleibt library_check.
+    // v1.8.6: zuerst dedizierten Duplikat-Endpunkt nutzen, Fallback bleibt library_check.
     let res;
     try{
       res=await j(API+'/duplicates?threshold=0.90');
@@ -1051,11 +1093,11 @@ function setAppView(view){
 function openSettings(){setAppView('settings')}
 function closeSettings(){document.getElementById('settingsModal')?.classList.add('hidden');setAppView(currentView==='settings'?'dashboard':currentView)}
 function syncSettingsPageFromMain(){
-  const pairs=[['targetLufs','targetLufsPage'],['truePeak','truePeakPage'],['lra','lraPage'],['backupMode','backupModePage'],['parallelAnalysis','parallelAnalysisPage'],['musicRoot','musicRootPage'],['watchMode','watchModePage'],['sortAfterTags','sortAfterTagsPage']];
+  const pairs=[['targetLufs','targetLufsPage'],['truePeak','truePeakPage'],['lra','lraPage'],['backupMode','backupModePage'],['parallelAnalysis','parallelAnalysisPage'],['musicRoot','musicRootPage'],['watchMode','watchModePage'],['sortAfterTags','sortAfterTagsPage'],['smbBaseUrl','smbBaseUrlPage']];
   for(const [a,b] of pairs){const x=document.getElementById(a), y=document.getElementById(b); if(x&&y)y.value=x.value;}
 }
 function syncSettingsMainFromPage(){
-  const pairs=[['targetLufs','targetLufsPage'],['truePeak','truePeakPage'],['lra','lraPage'],['backupMode','backupModePage'],['parallelAnalysis','parallelAnalysisPage'],['musicRoot','musicRootPage'],['watchMode','watchModePage'],['sortAfterTags','sortAfterTagsPage']];
+  const pairs=[['targetLufs','targetLufsPage'],['truePeak','truePeakPage'],['lra','lraPage'],['backupMode','backupModePage'],['parallelAnalysis','parallelAnalysisPage'],['musicRoot','musicRootPage'],['watchMode','watchModePage'],['sortAfterTags','sortAfterTagsPage'],['smbBaseUrl','smbBaseUrlPage']];
   for(const [a,b] of pairs){const x=document.getElementById(a), y=document.getElementById(b); if(x&&y)x.value=y.value;}
 }
 function downloadSortPreviewExport(){
@@ -1320,11 +1362,15 @@ async function uploadTagCover(){
   const f=inp?.files?.[0];
   if(!f){return;}
   let folder=selectedTagFolder;
-  if(!folder){
-    const first=document.querySelector('#tagTracks tr[data-path]')?.dataset.path;
-    folder=parentFolderFromPath(first||'');
+  const first=document.querySelector('#tagTracks tr[data-path]')?.dataset.path;
+  // v1.8.7: Wenn die Ansicht über einen virtuellen Album-Schlüssel geöffnet wurde
+  // (__album__:...), kann das Backend keinen echten Ordner finden. Deshalb beim
+  // Cover-Speichern immer den Ordner des ersten sichtbaren Titels bevorzugen.
+  const firstFolder=parentFolderFromPath(first||'');
+  if(firstFolder) folder=firstFolder;
+  if(!folder || String(folder).startsWith('__album__:')){
+    alert('Bitte zuerst ein konkretes Album/einen Ordner auswählen.'); return;
   }
-  if(!folder){alert('Bitte zuerst ein Album/einen Ordner auswählen.'); return;}
   try{
     const data=await new Promise((resolve,reject)=>{
       const r=new FileReader();
@@ -1333,7 +1379,7 @@ async function uploadTagCover(){
       r.readAsDataURL(f);
     });
     const res=await j(API+'/tags/cover', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({folder, filename:f.name, content_type:f.type, data})});
-    const msg=`Cover gespeichert: ${res.updated}/${res.total} MP3-Dateien`+(res.errors?.length?` · Fehler: ${res.errors.length}`:'');
+    const msg=`Cover gespeichert: ${res.updated}/${res.total} Dateien`+(res.errors?.length?` · Fehler: ${res.errors.length}`:'');
     progressText.textContent=msg;
     status.textContent=msg;
     if(res.errors?.length) alert(msg+'\n'+res.errors.join('\n'));
