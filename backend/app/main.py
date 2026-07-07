@@ -36,7 +36,7 @@ LOG_MAX_BYTES = int(os.getenv("LOG_MAX_BYTES", str(10 * 1024 * 1024)))
 EXTS = {".mp3", ".m4a", ".aac", ".flac", ".ogg"}
 SCHEMA_VERSION = 24
 
-app = FastAPI(title="MusicLab API", version="1.8.7")
+app = FastAPI(title="MusicLab API", version="1.8.8")
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
 
 stop_event = threading.Event()
@@ -1787,7 +1787,7 @@ def startup():
 
 @app.get("/api/health")
 def health():
-    return {"ok": True, "version": "1.8.7", "music_root": str(get_music_root()), "db": str(DB_PATH)}
+    return {"ok": True, "version": "1.8.8", "music_root": str(get_music_root()), "db": str(DB_PATH)}
 
 
 @app.post("/api/scan")
@@ -2536,17 +2536,126 @@ def _embedded_cover_from_file(p: Path):
     return None
 
 
+
+def _safe_audio_path_from_rel(rel: str):
+    """Resolve one relative audio path below MUSIC_ROOT, or return None."""
+    root = get_music_root().resolve()
+    rel = str(rel or "").strip().lstrip("/").replace("\\", "/")
+    if rel.startswith("music/"):
+        rel = rel[len("music/"):]
+    if rel.startswith("/music/"):
+        rel = rel[len("/music/"):]
+    if not rel:
+        return None
+    try:
+        p = (root / rel).resolve()
+        if p.is_relative_to(root) and p.exists() and p.is_file() and p.suffix.lower() in EXTS:
+            return p
+    except Exception:
+        return None
+    return None
+
+
+def _unique_paths(paths):
+    out = []
+    seen = set()
+    for p in paths or []:
+        try:
+            key = str(p.resolve())
+        except Exception:
+            key = str(p)
+        if key not in seen:
+            seen.add(key)
+            out.append(p)
+    return out
+
+
+def _audio_paths_from_cover_payload(payload: dict, folder: str):
+    """Resolve the exact tracks visible in the Tags UI first.
+
+    This is safer than guessing by album name or folder, especially for:
+    - duplicate album names,
+    - compilations,
+    - virtual selections such as __album__:Name,
+    - albums where the folder name and Album tag differ.
+    """
+    paths = []
+    raw_paths = payload.get("paths") or payload.get("track_paths") or []
+    if isinstance(raw_paths, str):
+        raw_paths = [raw_paths]
+    for rel in raw_paths:
+        p = _safe_audio_path_from_rel(rel)
+        if p is not None:
+            paths.append(p)
+    paths = _unique_paths(paths)
+    if paths:
+        return paths
+
+    # Fallback for older frontend builds.
+    folder = str(folder or "").strip().strip("/")
+    if folder.startswith("__album__:"):
+        album_name = folder[len("__album__:"):].strip().lower()
+        rows = [r for r in _media_rows() if (r.get("album") or "Unbekanntes Album").strip().lower() == album_name]
+        for r in rows:
+            p = _safe_audio_path_from_rel(r.get("path") or "")
+            if p is not None:
+                paths.append(p)
+        return _unique_paths(paths)
+
+    return _album_audio_paths(folder)
+
+
+def _cover_folder_candidates(files):
+    """Return physical album folders that contain the selected files."""
+    folders = []
+    seen = set()
+    for f in files or []:
+        try:
+            parent = f.parent.resolve()
+            key = str(parent)
+            if key not in seen:
+                seen.add(key)
+                folders.append(parent)
+        except Exception:
+            continue
+    return folders
+
+
+def _write_folder_cover_files(folders, raw: bytes, mime: str):
+    """Write a folder cover next to the selected tracks as a compatibility fallback.
+
+    Embedding is still the main operation. The folder file helps Finder, Synology,
+    Jellyfin/Infuse and other tools that prefer cover.jpg/folder.jpg.
+    """
+    written = []
+    errors = []
+    if not folders:
+        return written, errors
+    if mime == "image/png":
+        names = ["cover.png", "folder.png"]
+    else:
+        names = ["cover.jpg", "folder.jpg"]
+    root = get_music_root().resolve()
+    for folder in folders:
+        for name in names:
+            try:
+                target = folder / name
+                target.write_bytes(raw)
+                written.append(str(target.relative_to(root)))
+            except Exception as e:
+                if len(errors) < 20:
+                    errors.append(f"{folder.name}/{name}: {e}")
+    return written, errors
+
+
 @app.post("/api/tags/cover")
 async def api_tags_cover(request: Request):
-    """Embed an uploaded cover into all audio files of a selected album folder.
+    """Embed an uploaded cover into exactly the tracks currently shown in Tags.
 
-    v1.8.7: The old implementation only worked for real physical folder keys
-    and only wrote MP3/APIC. In the Tags view, however, albums can also be
-    opened through a virtual ``__album__:...`` key. That made "Cover speichern"
-    look like it did nothing or fail with "Albumordner nicht gefunden". This
-    endpoint now resolves virtual album keys to the first matching physical
-    album folder and writes covers to MP3, M4A/AAC, FLAC and OGG/Vorbis where
-    Mutagen supports it.
+    v1.8.8: The frontend now sends the concrete visible track paths. That avoids
+    wrong albums when the UI selection is virtual, when album names exist more
+    than once, or when folder names differ from Album tags. A folder cover file is
+    also written as a compatibility fallback.
     """
     import base64
     try:
@@ -2559,8 +2668,8 @@ async def api_tags_cover(request: Request):
     ctype = str(payload.get("content_type") or "").lower()
     data_url = str(payload.get("data") or "")
 
-    if not folder:
-        raise HTTPException(status_code=400, detail="folder fehlt")
+    if not folder and not payload.get("paths") and not payload.get("track_paths"):
+        raise HTTPException(status_code=400, detail="folder oder paths fehlen")
 
     if "," in data_url and data_url.startswith("data:"):
         data_url = data_url.split(",", 1)[1]
@@ -2583,26 +2692,19 @@ async def api_tags_cover(request: Request):
         raise HTTPException(status_code=400, detail="Bitte JPG oder PNG verwenden")
 
     root = get_music_root().resolve()
-
-    # Resolve virtual album keys from the UI to a concrete folder. This is the
-    # most common cause when saving a cover appears to do nothing.
-    if folder.startswith("__album__:"):
-        album_name = folder[len("__album__:"):].strip().lower()
-        for r in _media_rows():
-            if (r.get("album") or "Unbekanntes Album").strip().lower() == album_name:
-                folder = media_album_folder_key(r.get("path") or "") or parent_folder_key(r.get("path") or "")
-                break
-
-    base = (root / folder).resolve()
-    if not base.is_relative_to(root) or not base.exists() or not base.is_dir():
-        raise HTTPException(status_code=404, detail=f"Albumordner nicht gefunden: {folder}")
-
-    files = _album_audio_paths(folder)
+    files = _audio_paths_from_cover_payload(payload, folder)
+    files = _unique_paths(files)
     if not files:
-        raise HTTPException(status_code=404, detail=f"Keine Audiodateien im Albumordner gefunden: {folder}")
+        raise HTTPException(status_code=404, detail=f"Keine passenden Audiodateien gefunden: {folder or 'Auswahl'}")
+
+    try:
+        folder = str(files[0].parent.relative_to(root))
+    except Exception:
+        folder = folder or "Auswahl"
 
     updated = 0
     skipped = 0
+    verified = 0
     errors = []
 
     for p in files:
@@ -2615,7 +2717,7 @@ async def api_tags_cover(request: Request):
                 except ID3NoHeaderError:
                     tags = ID3()
                 tags.delall("APIC")
-                tags.add(APIC(encoding=3, mime=mime, type=3, desc="Front Cover", data=raw))
+                tags.add(APIC(encoding=3, mime=mime, type=3, desc="Cover", data=raw))
                 tags.save(str(p), v2_version=3)
                 updated += 1
 
@@ -2633,7 +2735,7 @@ async def api_tags_cover(request: Request):
                 pic = Picture()
                 pic.type = flac_pic_type
                 pic.mime = mime
-                pic.desc = "Front Cover"
+                pic.desc = "Cover"
                 pic.data = raw
                 audio.add_picture(pic)
                 audio.save()
@@ -2644,7 +2746,7 @@ async def api_tags_cover(request: Request):
                 pic = Picture()
                 pic.type = flac_pic_type
                 pic.mime = mime
-                pic.desc = "Front Cover"
+                pic.desc = "Cover"
                 pic.data = raw
                 encoded = base64.b64encode(pic.write()).decode("ascii")
                 audio["metadata_block_picture"] = [encoded]
@@ -2653,13 +2755,35 @@ async def api_tags_cover(request: Request):
 
             else:
                 skipped += 1
+                continue
+
+            if _embedded_cover_from_file(p):
+                verified += 1
+            else:
+                if len(errors) < 30:
+                    errors.append(f"{rel}: Cover wurde geschrieben, konnte danach aber nicht gelesen werden")
+
         except Exception as e:
             if len(errors) < 30:
                 errors.append(f"{rel}: {e}")
 
-    add_log(f"Cover eingebettet: {folder} ({updated}/{len(files)} Dateien, übersprungen {skipped}, Fehler {len(errors)})", bool(errors))
-    return {"ok": True, "folder": folder, "updated": updated, "total": len(files), "skipped": skipped, "errors": errors}
+    folder_files, folder_file_errors = _write_folder_cover_files(_cover_folder_candidates(files), raw, mime)
+    errors.extend(folder_file_errors[: max(0, 30 - len(errors))])
 
+    add_log(
+        f"Cover gespeichert: {folder} ({updated}/{len(files)} eingebettet, {verified} geprüft, Folder-Dateien {len(folder_files)}, übersprungen {skipped}, Fehler {len(errors)})",
+        bool(errors),
+    )
+    return {
+        "ok": True,
+        "folder": folder,
+        "updated": updated,
+        "verified": verified,
+        "total": len(files),
+        "skipped": skipped,
+        "folder_files": folder_files,
+        "errors": errors,
+    }
 
 @app.get("/api/media/cover_by_path")
 def api_media_cover_by_path(path: str):

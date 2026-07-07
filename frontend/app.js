@@ -1,5 +1,6 @@
 const API='http://'+location.hostname+':8091/api';
-const APP_VERSION='1.8.7';
+const APP_VERSION='1.8.8';
+let coverCacheBust=Date.now();
 let selectedArtist=null, selectedAlbum=null, selectedTagFolder=null;
 let selectedTagGenre=null, selectedTagYear=null;
 let browserMode='artist';
@@ -27,8 +28,8 @@ function coverBox(src, large=false){
   // wird auf den Platzhalter umgeschaltet.
   return `<div class="${cls} loading"><div class="coverFallback">♪</div><img src="${src}" loading="lazy" onload="this.parentElement.classList.add('hasCover');this.parentElement.classList.remove('loading','noCover')" onerror="this.style.display='none';this.parentElement.classList.add('noCover');this.parentElement.classList.remove('loading','hasCover')" alt=""></div>`;
 }
-function coverUrl(folder, artist=''){return API+'/media/cover?folder='+encodeURIComponent(folder||'')+(artist?'&artist='+encodeURIComponent(artist):'')+'&v='+encodeURIComponent(APP_VERSION);}
-function coverUrlPath(path){return API+'/media/cover_by_path?path='+encodeURIComponent(path||'')+'&v='+encodeURIComponent(APP_VERSION);}
+function coverUrl(folder, artist=''){return API+'/media/cover?folder='+encodeURIComponent(folder||'')+(artist?'&artist='+encodeURIComponent(artist):'')+'&v='+encodeURIComponent(APP_VERSION)+'&cb='+encodeURIComponent(coverCacheBust);}
+function coverUrlPath(path){return API+'/media/cover_by_path?path='+encodeURIComponent(path||'')+'&v='+encodeURIComponent(APP_VERSION)+'&cb='+encodeURIComponent(coverCacheBust);}
 function escHtml(v){return String(v ?? '').replace(/[&<>"]/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]))}
 function resetTagFilters(){
   selectedArtist=null;
@@ -1357,20 +1358,38 @@ function syncDiscTotalPreview(){
   document.querySelectorAll('.tagDiscTotalShow').forEach(el=>el.textContent=total||'-');
 }
 
+function visibleTagPaths(){
+  return [...document.querySelectorAll('#tagTracks tr[data-path]')]
+    .map(r=>r.dataset.path||'')
+    .filter(Boolean);
+}
+function setTagCoverPreviewFromFile(file){
+  const box=document.getElementById('tagCoverPreview');
+  if(!box || !file) return null;
+  const url=URL.createObjectURL(file);
+  box.outerHTML=`<div id="tagCoverPreview" class="mediaCoverBox large tagCoverBox hasCover"><img src="${url}" alt=""></div>`;
+  return url;
+}
+
 async function uploadTagCover(){
   const inp=document.getElementById('tagCoverInput');
   const f=inp?.files?.[0];
   if(!f){return;}
+
+  const paths=visibleTagPaths();
   let folder=selectedTagFolder;
-  const first=document.querySelector('#tagTracks tr[data-path]')?.dataset.path;
-  // v1.8.7: Wenn die Ansicht über einen virtuellen Album-Schlüssel geöffnet wurde
-  // (__album__:...), kann das Backend keinen echten Ordner finden. Deshalb beim
-  // Cover-Speichern immer den Ordner des ersten sichtbaren Titels bevorzugen.
+  const first=paths[0] || '';
   const firstFolder=parentFolderFromPath(first||'');
+
+  // v1.8.8: Die sichtbaren Track-Pfade werden direkt ans Backend geschickt.
+  // Der Ordner ist nur noch Fallback/Hinweis. Damit landet das Cover nicht
+  // im falschen Album, wenn Albumname und Ordnername auseinanderlaufen.
   if(firstFolder) folder=firstFolder;
-  if(!folder || String(folder).startsWith('__album__:')){
+  if((!folder || String(folder).startsWith('__album__:')) && !paths.length){
     alert('Bitte zuerst ein konkretes Album/einen Ordner auswählen.'); return;
   }
+
+  const previewUrl=setTagCoverPreviewFromFile(f);
   try{
     const data=await new Promise((resolve,reject)=>{
       const r=new FileReader();
@@ -1378,15 +1397,30 @@ async function uploadTagCover(){
       r.onerror=()=>reject(new Error('Datei konnte nicht gelesen werden'));
       r.readAsDataURL(f);
     });
-    const res=await j(API+'/tags/cover', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({folder, filename:f.name, content_type:f.type, data})});
-    const msg=`Cover gespeichert: ${res.updated}/${res.total} Dateien`+(res.errors?.length?` · Fehler: ${res.errors.length}`:'');
+    const payload={folder, paths, filename:f.name, content_type:f.type, data};
+    const res=await j(API+'/tags/cover', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(payload)});
+    coverCacheBust=Date.now();
+    const folderFiles=(res.folder_files||[]).length;
+    const verified=Number(res.verified||0);
+    const msg=`Cover gespeichert: ${res.updated}/${res.total} Dateien · geprüft: ${verified}`+(folderFiles?` · Ordnercover: ${folderFiles}`:'')+(res.errors?.length?` · Fehler: ${res.errors.length}`:'');
     progressText.textContent=msg;
     status.textContent=msg;
-    if(res.errors?.length) alert(msg+'\n'+res.errors.join('\n'));
+    const ci=document.getElementById('tagCoverInfo');
+    if(ci) ci.textContent=msg;
+    if(res.errors?.length || verified < Number(res.updated||0)){
+      alert(msg+(res.errors?.length?'\n'+res.errors.join('\n'):''));
+    }
     await loadTagsPage();
     if(currentView==='media') await loadMediaPage();
-  }catch(e){alert('Cover konnte nicht gespeichert werden: '+e.message);}
-  finally{ if(inp) inp.value=''; }
+  }catch(e){
+    coverCacheBust=Date.now();
+    alert('Cover konnte nicht gespeichert werden: '+e.message);
+    await loadTagsPage().catch(()=>{});
+  }
+  finally{
+    if(previewUrl) setTimeout(()=>URL.revokeObjectURL(previewUrl), 15000);
+    if(inp) inp.value='';
+  }
 }
 
 async function saveAlbumTags(){

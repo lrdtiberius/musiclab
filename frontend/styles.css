@@ -839,7 +839,7 @@ tbody tr:hover td{background:rgba(255,255,255,.018)}
   #protocolView .protocolGrid{grid-template-columns:1fr!important;grid-template-rows:minmax(180px,.45fr) minmax(0,.55fr)!important}
 }
 
-/* v1.8.7: Bibliotheksprüfung */
+/* v1.8.8: Bibliotheksprüfung */
 .checkPage{height:100%;min-height:0;display:none;grid-template-rows:auto auto 1fr;gap:12px;}
 .checkPage.active{display:grid;}
 .checkSummary{padding:12px 14px;}
@@ -857,7 +857,7 @@ tbody tr:hover td{background:rgba(255,255,255,.018)}
 @media (max-width: 1100px){.checkGrid{grid-template-columns:1fr}.checkStats{grid-template-columns:repeat(2,1fr)}}
 
 
-/* v1.8.7 echter Audio-Flächen-Fix: bewusst am Dateiende, damit ältere Regeln sicher überschrieben werden */
+/* v1.8.8 echter Audio-Flächen-Fix: bewusst am Dateiende, damit ältere Regeln sicher überschrieben werden */
 body.audioMode .layout{
   grid-template-columns:300px minmax(0,1fr)!important;
   height:calc(100vh - 72px)!important;
@@ -976,7 +976,7 @@ body.audioMode #audioView #normalizePreview{
   body.audioMode #audioView > .trackPanel{grid-column:1!important;grid-row:4!important;}
 }
 
-/* v1.8.7 Duplikate: Pfad öffnen + falsche Treffer bestätigen */
+/* v1.8.8 Duplikate: Pfad öffnen + falsche Treffer bestätigen */
 .checkTitleActions{display:flex;align-items:center;gap:8px;flex-wrap:wrap;justify-content:flex-end;}
 .checkPathRow{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:8px;align-items:center;margin-top:6px;padding:6px 7px;border:1px solid rgba(255,255,255,.045);border-radius:10px;background:#111722;}
 .checkPathRow .checkPath{margin:0;min-width:0;}
@@ -986,7 +986,7 @@ body.audioMode #audioView #normalizePreview{
 .miniBtn.danger{background:#8a6236!important;color:#fff2de!important;}
 @media(max-width:900px){.checkPathRow{grid-template-columns:1fr}.checkPathActions{justify-content:flex-start;flex-wrap:wrap}}
 
-/* v1.8.7 nochmals härter: Audio-Seite darf keine ungenutzten Zwischenräume behalten */
+/* v1.8.8 nochmals härter: Audio-Seite darf keine ungenutzten Zwischenräume behalten */
 body.audioMode #audioView.appView.active{grid-template-columns:minmax(520px,46%) minmax(0,54%)!important;grid-template-rows:auto auto minmax(0,1fr)!important;}
 body.audioMode #audioView > .trackPanel{margin-top:0!important;}
 body.audioMode #audioView .albums{grid-template-columns:repeat(auto-fill,minmax(280px,1fr))!important;}

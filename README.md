@@ -1,50 +1,45 @@
-# MusicLab v1.8.7
+# MusicLab v1.8.8
 
-Bugfix-/Komfortversion auf Basis von v1.8.0.
+Bugfix-Version auf Basis deiner v1.8.0-Linie.
 
-## Neu in v1.8.7
+## Neu in v1.8.8
 
-- Cover speichern repariert: virtuelle Album-Auswahl wird auf echten Albumordner aufgelöst.
-- Cover werden nicht mehr nur in MP3 geschrieben, sondern auch in M4A/AAC, FLAC und OGG/Vorbis, soweit Mutagen das Format unterstützt.
-- Die Rückmeldung zeigt jetzt Dateien statt nur MP3-Dateien.
+### Cover speichern korrigiert
 
+- Das Frontend sendet beim Cover-Speichern jetzt die **konkreten sichtbaren Track-Pfade** an das Backend.
+- Dadurch wird nicht mehr nur anhand von Albumname/virtueller Auswahl geraten.
+- Das verhindert falsche Treffer bei:
+  - doppelten Albumnamen,
+  - Compilations,
+  - virtuellen `__album__:`-Auswahlen,
+  - abweichendem Ordnernamen vs. Album-Tag.
+- Nach dem Speichern wird das Cover direkt erneut mit Cache-Buster geladen.
+- Die Rückmeldung zeigt jetzt:
+  - eingebettete Dateien,
+  - geprüfte Dateien,
+  - Ordnercover-Dateien,
+  - Fehler.
+- Zusätzlich zum Einbetten wird als Kompatibilitäts-Fallback ein `cover.jpg`/`folder.jpg` bzw. `cover.png`/`folder.png` im echten Albumordner gespeichert.
 
-- Duplikat-Treffer zeigen jetzt pro Datei Aktionen:
-  - **Pfad öffnen**: öffnet den Ordner per `smb://` und kopiert den NAS-Pfad als Fallback in die Zwischenablage.
-  - **Pfad kopieren**: kopiert den NAS-Pfad.
-- Bei echten Duplikaten gibt es **Kein Duplikat bestätigen**.
-  - Der Treffer wird dauerhaft in der MusicLab-Datenbank gespeichert und danach ausgeblendet.
-  - Dateien werden dabei nicht verändert oder gelöscht.
-- Backend-Endpunkte:
-  - `GET /api/path_info?path=...`
-  - `POST /api/duplicates/confirm`
-  - `GET /api/duplicates/confirmed`
-  - `DELETE /api/duplicates/confirmed`
-- Duplikatregel bleibt: gleicher Interpret + gleiches Album + mindestens 90 % ähnlicher Titel.
-- Audio-Tab enthält nochmals härtere Flächen-/Kachel-Regeln und Cache-Buster `?v=1.8.7`.
+### Weiterhin enthalten
 
-## SMB-Hinweis
+- CREDITS.md enthalten.
+- Duplikat-Treffer können als „kein Duplikat“ bestätigt werden.
+- Duplikatregel: gleicher Interpret + gleiches Album + mindestens 90 % ähnlicher Titel.
+- Pfad-/SMB-Helfer für Duplikate.
+- Audio-/Media-/Tags-/Protokoll-/Einstellungen-Ansichten aus der v1.8er-Linie.
 
-Standardannahme aus der Docker-Compose:
+## Wichtig beim Update
 
-- Container: `/music`
-- NAS: `/volume1/DS420/Musik`
-- SMB-Link: `smb://<NAS-IP>/DS420/Musik/...`
+Nach dem Einspielen:
 
-Falls deine SMB-Freigabe anders heißt, kann sie im Backend per Environment angepasst werden:
+```bash
+docker compose down
+docker compose up -d --build
+```
 
-- `SMB_SHARE`, Standard: `DS420`
-- `SMB_PREFIX`, Standard: `Musik`
-- `SMB_ALT_SHARE`, Standard: `Musik`
-- `NAS_MUSIC_PATH`, Standard: `/volume1/DS420/Musik`
+Danach im Browser einmal hart neu laden, damit Safari/Chrome keine alte `app.js`/`styles.css` nutzt.
 
 ## Credits
 
 Idea & Umsetzung by Lrd.Tiberius.
-
-
-## v1.8.7
-
-- Pfad öffnen bei Duplikaten robuster gemacht: einstellbare SMB-Basis, SMB-Link kopieren und Finder-Befehl kopieren.
-- Einstellung `SMB-Basis für Finder`, z.B. `smb://DS923/Musik` oder `smb://192.168.178.50/Musik`.
-- Direkter Browser-Open bleibt verfügbar, aber mit Hinweis, falls Safari/Chrome es blockiert.
