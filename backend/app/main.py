@@ -36,7 +36,7 @@ LOG_MAX_BYTES = int(os.getenv("LOG_MAX_BYTES", str(10 * 1024 * 1024)))
 EXTS = {".mp3", ".m4a", ".aac", ".flac", ".ogg"}
 SCHEMA_VERSION = 24
 
-app = FastAPI(title="MusicLab API", version="1.8.8")
+app = FastAPI(title="MusicLab API", version="1.8.9")
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
 
 stop_event = threading.Event()
@@ -1787,7 +1787,7 @@ def startup():
 
 @app.get("/api/health")
 def health():
-    return {"ok": True, "version": "1.8.8", "music_root": str(get_music_root()), "db": str(DB_PATH)}
+    return {"ok": True, "version": "1.8.9", "music_root": str(get_music_root()), "db": str(DB_PATH)}
 
 
 @app.post("/api/scan")
@@ -2652,7 +2652,7 @@ def _write_folder_cover_files(folders, raw: bytes, mime: str):
 async def api_tags_cover(request: Request):
     """Embed an uploaded cover into exactly the tracks currently shown in Tags.
 
-    v1.8.8: The frontend now sends the concrete visible track paths. That avoids
+    v1.8.9: The frontend now sends the concrete visible track paths. That avoids
     wrong albums when the UI selection is virtual, when album names exist more
     than once, or when folder names differ from Album tags. A folder cover file is
     also written as a compatibility fallback.
@@ -2783,6 +2783,7 @@ async def api_tags_cover(request: Request):
         "skipped": skipped,
         "folder_files": folder_files,
         "errors": errors,
+        "paths": [str(p.relative_to(root)) for p in files],
     }
 
 @app.get("/api/media/cover_by_path")

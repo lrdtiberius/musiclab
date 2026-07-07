@@ -1,5 +1,5 @@
 const API='http://'+location.hostname+':8091/api';
-const APP_VERSION='1.8.8';
+const APP_VERSION='1.8.9';
 let coverCacheBust=Date.now();
 let selectedArtist=null, selectedAlbum=null, selectedTagFolder=null;
 let selectedTagGenre=null, selectedTagYear=null;
@@ -803,6 +803,33 @@ function renderPathRow(x){
   return `<div class="checkPathRow"><div class="checkPath">${escHtml(path)}</div><div class="checkPathActions"><button class="miniBtn" onclick="showOpenPathHelp(${jsArg(path)});event.stopPropagation();">Öffnen…</button><button class="miniBtn secondary" onclick="copyMusicPath(${jsArg(path)});event.stopPropagation();">Pfad kopieren</button></div></div>`;
 }
 
+
+function itemPaths(item){
+  if(!item) return [];
+  if(Array.isArray(item.items)) return item.items.map(x=>String(x?.path||x||'')).filter(Boolean);
+  if(item.path) return [String(item.path)];
+  return [];
+}
+function renderCheckList(el, items, emptyText, opts={}){
+  if(!el) return;
+  if(!Array.isArray(items) || !items.length){
+    el.innerHTML=`<div class="muted">${escHtml(emptyText||'Keine Einträge gefunden.')}</div>`;
+    return;
+  }
+  el.innerHTML=items.slice(0,80).map((item,idx)=>{
+    const title=item.title || item.name || item.album || item.artist || ('Treffer '+(idx+1));
+    const artist=item.artist ? `<span>${escHtml(item.artist)}</span>` : '';
+    const album=item.album ? `<span>${escHtml(item.album)}</span>` : '';
+    const score=(item.score!==undefined && item.score!==null) ? `<span>${Math.round(Number(item.score)*100)}%</span>` : '';
+    const paths=itemPaths(item);
+    const rows=paths.length ? paths.map(p=>renderPathRow({path:p})).join('') : renderPathRow(item);
+    const confirmBtn=(opts.confirmFalseDuplicate && paths.length>=2)
+      ? `<button class="miniBtn danger" onclick='confirmNonDuplicate(${JSON.stringify(paths).replace(/'/g,"&#39;")}, ${JSON.stringify(title).replace(/'/g,"&#39;")});event.stopPropagation();'>Kein Duplikat bestätigen</button>`
+      : '';
+    return `<div class="checkItem"><div class="checkItemHead"><b>${escHtml(title)}</b><div class="checkMeta">${artist}${album}${score}</div></div>${rows}<div class="checkPathActions footerActions">${confirmBtn}</div></div>`;
+  }).join('') + (items.length>80 ? `<div class="small muted">… ${items.length-80} weitere Einträge</div>` : '');
+}
+
 async function copyText(text, label='Text'){
   try{
     await navigator.clipboard.writeText(text);
@@ -1280,7 +1307,7 @@ async function loadTagsPage(){
       const first=rows[0];
       const cp=document.getElementById('tagCoverPreview'); const ci=document.getElementById('tagCoverInfo');
       if(cp){ cp.outerHTML = coverBox(coverUrlPath(first.path||''), true).replace('mediaCoverBox large','mediaCoverBox large tagCoverBox'); }
-      if(ci) ci.textContent = 'Cover wird in die MP3s des gewählten Albumordners eingebettet.';
+      if(ci) ci.textContent = 'Cover wird in die sichtbaren Audiodateien dieses Albums eingebettet.';
       const aa=document.getElementById('tagAlbumArtist'), al=document.getElementById('tagAlbumName'), tt=document.getElementById('tagTrackTotal'), dt=document.getElementById('tagDiscTotal'), yr=document.getElementById('tagYear'), ge=document.getElementById('tagGenre');
       const artists=[...new Set(rows.map(r=>r.artist||'').filter(Boolean))];
       const albums=[...new Set(rows.map(r=>r.album||'').filter(Boolean))];
@@ -1381,7 +1408,7 @@ async function uploadTagCover(){
   const first=paths[0] || '';
   const firstFolder=parentFolderFromPath(first||'');
 
-  // v1.8.8: Die sichtbaren Track-Pfade werden direkt ans Backend geschickt.
+  // v1.8.9: Die sichtbaren Track-Pfade werden direkt ans Backend geschickt.
   // Der Ordner ist nur noch Fallback/Hinweis. Damit landet das Cover nicht
   // im falschen Album, wenn Albumname und Ordnername auseinanderlaufen.
   if(firstFolder) folder=firstFolder;
@@ -1411,6 +1438,11 @@ async function uploadTagCover(){
       alert(msg+(res.errors?.length?'\n'+res.errors.join('\n'):''));
     }
     await loadTagsPage();
+    try{
+      const firstPath=(res.paths && res.paths[0]) || paths[0] || '';
+      const cp=document.getElementById('tagCoverPreview');
+      if(cp && firstPath){ cp.outerHTML = coverBox(coverUrlPath(firstPath), true).replace('mediaCoverBox large','mediaCoverBox large tagCoverBox'); }
+    }catch(_e){}
     if(currentView==='media') await loadMediaPage();
   }catch(e){
     coverCacheBust=Date.now();

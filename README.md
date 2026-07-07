@@ -1,8 +1,8 @@
-# MusicLab v1.8.8
+# MusicLab v1.8.9
 
 Bugfix-Version auf Basis deiner v1.8.0-Linie.
 
-## Neu in v1.8.8
+## Neu in v1.8.9
 
 ### Cover speichern korrigiert
 
@@ -43,3 +43,8 @@ Danach im Browser einmal hart neu laden, damit Safari/Chrome keine alte `app.js`
 ## Credits
 
 Idea & Umsetzung by Lrd.Tiberius.
+
+
+## v1.8.9
+- Fehler `renderCheckList` in der Duplikatprüfung behoben.
+- Cover-Speichern zeigt nun die konkret bearbeiteten Track-Pfade im Backend-Ergebnis und aktualisiert die Vorschau gezielt.
