@@ -36,7 +36,7 @@ LOG_MAX_BYTES = int(os.getenv("LOG_MAX_BYTES", str(10 * 1024 * 1024)))
 EXTS = {".mp3", ".m4a", ".aac", ".flac", ".ogg"}
 SCHEMA_VERSION = 24
 
-app = FastAPI(title="MusicLab API", version="1.8.10")
+app = FastAPI(title="MusicLab API", version="1.8.11")
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
 
 stop_event = threading.Event()
@@ -1377,9 +1377,21 @@ def build_sort_plan(limit_preview: int = 100):
             if not current.exists() or not current.is_file():
                 skipped += 1
                 continue
-            artist = r.get("artist") or "Unbekannter Interpret"
-            album = r.get("album") or "Unbekanntes Album"
-            title = r.get("title") or current.stem
+
+            # v1.8.11: Die Sortierung darf NICHT mehr blind den Datenbankwerten
+            # vertrauen. Nach manuellen Tag-Änderungen kann die DB kurzzeitig/stale
+            # sein. Würden wir dann nach DB sortieren, kann MusicLab Dateien wieder
+            # in die alte Struktur zurückschieben. Deshalb liest die Sortierplanung
+            # immer die aktuellen Tags aus der Datei und nutzt nur bei Lesefehlern
+            # die DB als Fallback.
+            live = None
+            try:
+                live = scan_file(current, root)
+            except Exception:
+                live = None
+            artist = (live or {}).get("artist") or r.get("artist") or "Unbekannter Interpret"
+            album = (live or {}).get("album") or r.get("album") or "Unbekanntes Album"
+            title = (live or {}).get("title") or r.get("title") or current.stem
             ext = current.suffix or Path(r.get("filename") or current.name).suffix or ".mp3"
             target_rel = Path(safe_name(artist, "Unbekannter Interpret")) / safe_name(album, "Unbekanntes Album") / f"{safe_name(title, current.stem)}{ext}"
             target = (root / target_rel).resolve()
@@ -1428,8 +1440,16 @@ def sort_library_worker():
                         shutil.move(str(src), str(final))
                         prune_empty_dirs(src.parent, root)
                         rel = final.relative_to(root).as_posix()
-                        st = final.stat()
-                        con.execute("UPDATE tracks SET path=?, filename=?, size=?, mtime=? WHERE path=?", (rel, final.name, st.st_size, st.st_mtime, it["from"]))
+                        # Nach dem Verschieben direkt neu aus der Datei lesen und DB
+                        # synchronisieren. So bleibt die Sortierung tag-basiert und
+                        # alte DB-Werte können spätere Sortierläufe nicht zurückdrehen.
+                        try:
+                            fresh = scan_file(final, root)
+                            con.execute("DELETE FROM tracks WHERE path=? AND path<>?", (it["from"], rel))
+                            upsert_track(con, fresh)
+                        except Exception:
+                            st = final.stat()
+                            con.execute("UPDATE tracks SET path=?, filename=?, size=?, mtime=? WHERE path=?", (rel, final.name, st.st_size, st.st_mtime, it["from"]))
                         moved += 1
                 except Exception as e:
                     state["errors"] += 1
@@ -1515,7 +1535,7 @@ def api_about():
     # the attribution is not a purely cosmetic UI string.
     return {
         "name": "MusicLab",
-        "version": "1.8.0",
+        "version": "1.8.11",
         "credit": CREDIT_TEXT,
         "copyright": COPYRIGHT_TEXT,
         "integrity": "ok",
@@ -1787,7 +1807,7 @@ def startup():
 
 @app.get("/api/health")
 def health():
-    return {"ok": True, "version": "1.8.10", "music_root": str(get_music_root()), "db": str(DB_PATH)}
+    return {"ok": True, "version": "1.8.11", "music_root": str(get_music_root()), "db": str(DB_PATH)}
 
 
 @app.post("/api/scan")
@@ -2652,7 +2672,7 @@ def _write_folder_cover_files(folders, raw: bytes, mime: str):
 async def api_tags_cover(request: Request):
     """Embed an uploaded cover into exactly the tracks currently shown in Tags.
 
-    v1.8.10: The frontend now sends the concrete visible track paths. That avoids
+    v1.8.11: The frontend now sends the concrete visible track paths. That avoids
     wrong albums when the UI selection is virtual, when album names exist more
     than once, or when folder names differ from Album tags. A folder cover file is
     also written as a compatibility fallback.
