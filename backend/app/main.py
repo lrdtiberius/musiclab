@@ -9,6 +9,7 @@ import difflib
 import tempfile
 import zipfile
 import hashlib
+import unicodedata
 from urllib.parse import quote
 import threading
 import time
@@ -36,7 +37,7 @@ LOG_MAX_BYTES = int(os.getenv("LOG_MAX_BYTES", str(10 * 1024 * 1024)))
 EXTS = {".mp3", ".m4a", ".aac", ".flac", ".ogg"}
 SCHEMA_VERSION = 24
 
-app = FastAPI(title="MusicLab API", version="1.8.11")
+app = FastAPI(title="MusicLab API", version="1.8.12")
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
 
 stop_event = threading.Event()
@@ -434,6 +435,47 @@ def tag_first(tags, keys) -> Optional[str]:
     return None
 
 
+def fold_ascii(value: Optional[str]) -> str:
+    """Accent-insensitive comparison key, e.g. Die Ärzte == Die Arzte."""
+    text = str(value or "").strip().lower()
+    text = unicodedata.normalize("NFD", text)
+    text = "".join(ch for ch in text if unicodedata.category(ch) != "Mn")
+    text = re.sub(r"[^a-z0-9]+", "", text)
+    return text
+
+
+def accent_score(value: Optional[str]) -> int:
+    """Prefer the spelling that actually keeps umlauts/diacritics when two tags mean the same artist."""
+    score = 0
+    for ch in str(value or ""):
+        decomp = unicodedata.normalize("NFD", ch)
+        if any(unicodedata.category(c) == "Mn" for c in decomp):
+            score += 2
+        elif ord(ch) > 127:
+            score += 1
+    return score
+
+
+def choose_artist_tag(tags, fallback_artist: str) -> str:
+    """Resolve artist for DB/sorting without letting stale albumartist tags undo manual fixes.
+
+    Older files often have both Artist and Album Artist. In the tag editor the visible
+    field is called "Interpret". If the user fixes "Die Arzte" to "Die Ärzte", some
+    files may still contain the old Album Artist value. Since scan/sort previously
+    preferred albumartist blindly, the library sorter could move the files back to
+    the old ASCII folder. If Artist and Album Artist are the same after removing
+    accents, use the spelling with the richer diacritics. Otherwise keep the usual
+    Album Artist preference for compilations.
+    """
+    album_artist = tag_first(tags, ["albumartist", "album artist"])
+    artist = tag_first(tags, ["artist"])
+    if album_artist and artist:
+        if fold_ascii(album_artist) == fold_ascii(artist) and accent_score(artist) > accent_score(album_artist):
+            return artist
+        return album_artist
+    return album_artist or artist or fallback_artist
+
+
 def parse_number_pair(raw: Optional[str]) -> Tuple[Optional[int], Optional[int]]:
     if not raw:
         return None, None
@@ -471,7 +513,7 @@ def scan_file(path: Path, root: Optional[Path] = None) -> Optional[dict]:
     audio = MutagenFile(path, easy=True)
     tags = audio.tags if audio and getattr(audio, "tags", None) else {}
     info = audio.info if audio and getattr(audio, "info", None) else None
-    artist = tag_first(tags, ["albumartist", "album artist", "artist"]) or fallback_artist
+    artist = choose_artist_tag(tags, fallback_artist)
     album = tag_first(tags, ["album"]) or fallback_album
     title = tag_first(tags, ["title"]) or path.stem
     track_raw = tag_first(tags, ["tracknumber", "track"])
@@ -1378,7 +1420,7 @@ def build_sort_plan(limit_preview: int = 100):
                 skipped += 1
                 continue
 
-            # v1.8.11: Die Sortierung darf NICHT mehr blind den Datenbankwerten
+            # v1.8.12: Die Sortierung darf NICHT mehr blind den Datenbankwerten
             # vertrauen. Nach manuellen Tag-Änderungen kann die DB kurzzeitig/stale
             # sein. Würden wir dann nach DB sortieren, kann MusicLab Dateien wieder
             # in die alte Struktur zurückschieben. Deshalb liest die Sortierplanung
@@ -1535,7 +1577,7 @@ def api_about():
     # the attribution is not a purely cosmetic UI string.
     return {
         "name": "MusicLab",
-        "version": "1.8.11",
+        "version": "1.8.12",
         "credit": CREDIT_TEXT,
         "copyright": COPYRIGHT_TEXT,
         "integrity": "ok",
@@ -1807,7 +1849,7 @@ def startup():
 
 @app.get("/api/health")
 def health():
-    return {"ok": True, "version": "1.8.11", "music_root": str(get_music_root()), "db": str(DB_PATH)}
+    return {"ok": True, "version": "1.8.12", "music_root": str(get_music_root()), "db": str(DB_PATH)}
 
 
 @app.post("/api/scan")
@@ -2316,26 +2358,31 @@ def update_tags(payload: dict):
                     raise ValueError("Datei kann nicht gelesen werden")
                 changed = {}
                 mapping = {
-                    "title": "title",
-                    "artist": "artist",
-                    "album": "album",
-                    "tracknumber": "tracknumber",
-                    "discnumber": "discnumber",
-                    "year": "date",
-                    "genre": "genre",
+                    "title": ["title"],
+                    # Das sichtbare Feld heißt "Interpret". Damit spätere Scans und
+                    # "Bibliothek anhand der Tags neu sortieren" nicht wieder den alten
+                    # Album-Artist bevorzugen, schreiben wir den Wert bewusst in beide
+                    # Tags: Artist und Album Artist.
+                    "artist": ["artist", "albumartist"],
+                    "album": ["album"],
+                    "tracknumber": ["tracknumber"],
+                    "discnumber": ["discnumber"],
+                    "year": ["date"],
+                    "genre": ["genre"],
                 }
-                for src, tag in mapping.items():
+                for src, tag_names in mapping.items():
                     if src in item:
                         val = str(item.get(src) or "").strip()
-                        if val:
-                            audio[tag] = [val]
-                        else:
-                            # Leeres Feld bedeutet bewusst entfernen/leeren (wichtig z. B. für falsche Genres).
-                            try:
-                                if tag in audio:
-                                    del audio[tag]
-                            except Exception:
-                                audio[tag] = []
+                        for tag in tag_names:
+                            if val:
+                                audio[tag] = [val]
+                            else:
+                                # Leeres Feld bedeutet bewusst entfernen/leeren (wichtig z. B. für falsche Genres).
+                                try:
+                                    if tag in audio:
+                                        del audio[tag]
+                                except Exception:
+                                    audio[tag] = []
                         changed[src] = val
                 audio.save()
 
@@ -2672,7 +2719,7 @@ def _write_folder_cover_files(folders, raw: bytes, mime: str):
 async def api_tags_cover(request: Request):
     """Embed an uploaded cover into exactly the tracks currently shown in Tags.
 
-    v1.8.11: The frontend now sends the concrete visible track paths. That avoids
+    v1.8.12: The frontend now sends the concrete visible track paths. That avoids
     wrong albums when the UI selection is virtual, when album names exist more
     than once, or when folder names differ from Album tags. A folder cover file is
     also written as a compatibility fallback.

@@ -1,57 +1,22 @@
-# MusicLab v1.8.10
+# MusicLab v1.8.12
 
+## Änderungen
 
-## v1.8.10
+- Sortierung nach Tags repariert: MusicLab lässt veraltete `Album Artist`-Tags nicht mehr die sichtbare Interpret-Korrektur zurückdrehen.
+- Beispiel: `Die Arzte` wird nicht mehr wiederhergestellt, wenn der sichtbare Artist bereits `Die Ärzte` ist.
+- Beim Speichern von Tags schreibt das Feld `Interpret` jetzt sowohl `artist` als auch `albumartist`.
+- Die Duplikatseite bleibt ohne Pfad-Öffnen/Pfad-Kopieren-Buttons; Pfade werden nur noch angezeigt.
+- Version/Cache-Buster auf 1.8.12 gesetzt.
 
-- Cover-Vorschau in Tags repariert: Beim Albumwechsel wird das alte Cover sofort entfernt.
-- `#tagCoverPreview` behält jetzt dauerhaft seine ID; dadurch kann die Vorschau nach dem ersten geladenen Cover weiter ersetzt werden.
-- Medien-Albumkopf wird beim Albumwechsel sofort geleert, damit kein altes Cover während des Ladens stehen bleibt.
-
-Bugfix-Version auf Basis deiner v1.8.0-Linie.
-
-## Neu in v1.8.10
-
-### Cover speichern korrigiert
-
-- Das Frontend sendet beim Cover-Speichern jetzt die **konkreten sichtbaren Track-Pfade** an das Backend.
-- Dadurch wird nicht mehr nur anhand von Albumname/virtueller Auswahl geraten.
-- Das verhindert falsche Treffer bei:
-  - doppelten Albumnamen,
-  - Compilations,
-  - virtuellen `__album__:`-Auswahlen,
-  - abweichendem Ordnernamen vs. Album-Tag.
-- Nach dem Speichern wird das Cover direkt erneut mit Cache-Buster geladen.
-- Die Rückmeldung zeigt jetzt:
-  - eingebettete Dateien,
-  - geprüfte Dateien,
-  - Ordnercover-Dateien,
-  - Fehler.
-- Zusätzlich zum Einbetten wird als Kompatibilitäts-Fallback ein `cover.jpg`/`folder.jpg` bzw. `cover.png`/`folder.png` im echten Albumordner gespeichert.
-
-### Weiterhin enthalten
-
-- CREDITS.md enthalten.
-- Duplikat-Treffer können als „kein Duplikat“ bestätigt werden.
-- Duplikatregel: gleicher Interpret + gleiches Album + mindestens 90 % ähnlicher Titel.
-- Pfad-/SMB-Helfer für Duplikate.
-- Audio-/Media-/Tags-/Protokoll-/Einstellungen-Ansichten aus der v1.8er-Linie.
-
-## Wichtig beim Update
-
-Nach dem Einspielen:
+## Nach dem Update
 
 ```bash
 docker compose down
 docker compose up -d --build
 ```
 
-Danach im Browser einmal hart neu laden, damit Safari/Chrome keine alte `app.js`/`styles.css` nutzt.
+Danach den Browser hart neu laden.
 
-## Credits
+## Hinweis
 
-Idea & Umsetzung by Lrd.Tiberius.
-
-
-## v1.8.10
-- Fehler `renderCheckList` in der Duplikatprüfung behoben.
-- Cover-Speichern zeigt nun die konkret bearbeiteten Track-Pfade im Backend-Ergebnis und aktualisiert die Vorschau gezielt.
+Falls alte Dateien bereits unterschiedliche Werte für `artist` und `albumartist` enthalten, korrigiere den Interpret einmal in MusicLab und speichere. Ab dieser Version werden beide Felder synchron geschrieben.
