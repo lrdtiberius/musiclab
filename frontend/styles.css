@@ -658,3 +658,183 @@ body.audioMode #audioView .trackScroll{flex:1;min-height:0;overflow:auto}
   body.audioMode #audioView > section.panel:not(.albumPanel){grid-column:1;grid-row:4}
   #protocolView .protocolGrid{grid-template-columns:1fr!important;grid-template-rows:minmax(180px,.45fr) minmax(0,.55fr)}
 }
+
+
+/* v1.7.3: Deep UI polish – saubere Arbeitsflächen, volle Höhen, konsistente Listen */
+:root{
+  --line:#2a303b;
+  --line2:#303847;
+  --hover:#2b3444;
+  --selected:#263248;
+  --selectedSoft:rgba(106,169,255,.16);
+}
+
+/* Grundlayout stabilisieren */
+.appView.active{height:100%;min-height:0;overflow:hidden}
+.panel{border-color:var(--line);box-shadow:0 0 0 1px rgba(255,255,255,.015) inset}
+.toolbar,.sectionHead{min-height:0}
+button{transition:filter .12s ease, background .12s ease, opacity .12s ease}
+button:hover:not(:disabled),.buttonLike:hover{filter:brightness(1.08)}
+input:focus,select:focus{outline:2px solid rgba(106,169,255,.45);outline-offset:1px;border-color:var(--accent)}
+
+/* Scrollbars in allen Hauptbereichen einheitlich */
+*{scrollbar-width:thin;scrollbar-color:#3a4353 transparent}
+*::-webkit-scrollbar{width:10px;height:10px}
+*::-webkit-scrollbar-thumb{background:#3a4353;border-radius:999px;border:2px solid transparent;background-clip:content-box}
+*::-webkit-scrollbar-track{background:transparent}
+
+/* Linke Listen: Auswahlrahmen darf nie angeschnitten werden */
+.list,.albums,.mediaList,.tagTrackScroll,.trackScroll,.historyList,.logBox{scrollbar-gutter:stable}
+.row,.album,.mediaAlbumRow{border:1px solid transparent;outline:none!important}
+.row.sel,.row:hover{background:var(--panel2);border-color:transparent}
+.album.sel,.album:hover,.mediaAlbumRow.sel,.mediaAlbumRow:hover{
+  border-color:var(--accent)!important;
+  box-shadow:0 0 0 1px rgba(106,169,255,.30) inset;
+  background:var(--selected)!important;
+}
+.album.ref{border-color:var(--gold)!important;box-shadow:0 0 0 1px rgba(255,204,102,.32) inset}
+.albums{padding:2px 5px 8px 2px!important;gap:9px!important}
+.album{margin:0!important}
+
+/* Header besser balancieren */
+header{gap:10px!important}
+header h1{min-width:max-content}
+.headerStatus{min-width:280px;max-width:520px}
+.viewTabs{gap:6px!important}
+.viewTabs button{padding:8px 11px!important;min-width:0}
+
+/* Audio: freigewordenen Platz komplett nutzen */
+body.audioMode main{
+  grid-template-columns:minmax(330px,36%) minmax(0,1fr)!important;
+  grid-template-rows:minmax(0,1fr) 18px!important;
+  gap:10px!important;
+  height:100%;
+}
+body.audioMode #audioView.appView.active{
+  height:100%;
+  min-height:0;
+  display:grid!important;
+  grid-template-columns:minmax(330px,36%) minmax(0,1fr)!important;
+  grid-template-rows:44px 60px minmax(0,1fr)!important;
+  gap:10px!important;
+  align-items:stretch;
+}
+body.audioMode #audioView .statsLine{grid-column:1 / -1!important;grid-row:1!important;margin:0!important;align-self:stretch}
+body.audioMode #audioView .refbox{grid-column:1 / -1!important;grid-row:2!important;margin:0!important;align-self:stretch}
+body.audioMode #audioView .albumPanel{
+  grid-column:1!important;grid-row:3!important;
+  margin:0!important;min-height:0!important;height:100%;
+  display:flex!important;flex-direction:column!important;overflow:hidden!important;
+}
+body.audioMode #audioView > section.panel:not(.albumPanel){
+  grid-column:2!important;grid-row:3!important;
+  margin:0!important;min-height:0!important;height:100%;
+  display:flex!important;flex-direction:column!important;overflow:hidden!important;
+}
+body.audioMode #audioView .albumPanel .sectionHead{flex:0 0 auto;margin-bottom:8px!important}
+body.audioMode #audioView .albumPanel .batchbar{flex:0 0 auto}
+body.audioMode #audioView .albums{flex:1 1 auto!important;min-height:0!important;max-height:none!important;overflow:auto!important}
+body.audioMode #audioView .trackScroll{flex:1 1 auto!important;min-height:0!important;max-height:none!important;overflow:auto!important}
+body.audioMode #audioView .toolbar{flex:0 0 auto}
+body.audioMode #audioView #albumSummary,
+body.audioMode #audioView #normalizePreview{flex:0 0 auto}
+body.audioMode #audioView .albumTools{min-height:0;margin:0;color:var(--muted)}
+body.audioMode #audioView .sectionHead h2{line-height:1.15}
+
+/* Tabellen: ruhigeres Lesen, weniger harte Sprünge */
+thead th{position:sticky;top:0;background:var(--panel);z-index:2}
+tbody tr:hover td{background:rgba(255,255,255,.018)}
+.trackScroll table,.tagTrackScroll table,.mediaTracks table{border-spacing:0}
+
+/* Tags: Drag&Drop-Cover und Formbereiche sauber ausrichten */
+.tagCoverDrop{min-height:88px;max-width:560px}
+.tagCoverBox,.mediaCoverBox{box-shadow:0 0 0 1px rgba(255,255,255,.04) inset}
+.tagsPage .tagEditor,.tagsPage .tagTracksPanel{min-height:0}
+.tagsPage .formgrid.compact{gap:10px 12px}
+#tagDirtyInfo{font-weight:700;color:var(--gold)}
+#btnApplyTagChanges:not(:disabled){box-shadow:0 0 0 1px rgba(106,169,255,.35),0 8px 24px rgba(106,169,255,.12)}
+
+/* Medien: Karten konsistent, Cover und Text stabil */
+.mediaPage.active{height:100%}
+.mediaColumns{height:100%;min-height:0}
+.mediaAlbumRow{transition:border-color .12s ease, background .12s ease}
+.mediaAlbumText b{font-size:15px}
+.mediaAlbumHead{min-height:104px}
+.mediaTracks{min-height:0;overflow:auto}
+.mediaSearchBox input{height:36px!important;padding-right:40px!important}
+.mediaSearchBox .mediaClear{
+  right:8px!important;
+  top:50%!important;
+  transform:translateY(-50%)!important;
+  width:24px!important;
+  height:24px!important;
+  min-width:24px!important;
+}
+.mediaSearchBox .mediaClear::before,.mediaSearchBox .mediaClear::after{top:50%!important;left:50%!important}
+
+/* Protokoll: volle Breite, lesbare Filter/Export-Zeile, gleich hohe Karten */
+#protocolView.appView.active{
+  height:100%;
+  display:grid!important;
+  grid-template-rows:70px auto minmax(0,1fr)!important;
+  gap:10px!important;
+}
+#protocolView .tagsHeader{min-height:70px!important;padding:12px 16px!important}
+#protocolView .protocolTools{
+  display:grid!important;
+  grid-template-columns:minmax(0,1fr) auto!important;
+  gap:12px!important;
+  align-items:center!important;
+  padding:12px 16px!important;
+}
+#protocolView .filterPills{display:flex!important;gap:8px!important;align-items:center!important;flex-wrap:wrap!important}
+#protocolView .filterPills button{
+  min-width:92px!important;
+  padding:8px 12px!important;
+  background:#303847!important;
+  color:var(--txt)!important;
+  border:1px solid transparent!important;
+  text-align:center!important;
+}
+#protocolView .filterPills button.active{
+  background:var(--accent)!important;
+  color:#07111f!important;
+  border-color:var(--accent)!important;
+}
+#protocolView .toolbar{display:flex!important;gap:8px!important;justify-content:flex-end!important;flex-wrap:nowrap!important;margin:0!important}
+#protocolView .toolbar button{min-width:142px!important;white-space:nowrap!important;text-align:center!important}
+#protocolView .protocolGrid{
+  display:grid!important;
+  grid-template-columns:minmax(0,1fr) minmax(0,1.2fr)!important;
+  gap:10px!important;
+  min-height:0!important;
+  height:100%!important;
+}
+#protocolView .protocolGrid .panel{min-height:0!important;height:100%!important;display:flex!important;flex-direction:column!important;overflow:hidden!important}
+#protocolView .historyList,#protocolView .logBox{flex:1!important;min-height:0!important;max-height:none!important;overflow:auto!important}
+#protocolView .logBox{font-size:12px;line-height:1.45;padding:12px!important}
+#protocolView .protocolHistory .toolbar,#protocolView .protocolLog .toolbar{flex:0 0 auto!important}
+
+/* Dashboard: Unterstützung ohne Dopplung, Kacheln ruhiger */
+.dashboardBox.supportBox .coffeeButton{margin-top:10px}
+.dashboardGrid .dashCard{min-height:96px}
+.dashboardMain{min-height:0}
+
+/* Kompakte Höhen für kleinere Fenster, ohne Layoutbruch */
+@media(max-height:820px) and (min-width:1151px){
+  body.audioMode #audioView.appView.active{grid-template-rows:40px 54px minmax(0,1fr)!important}
+  #protocolView.appView.active{grid-template-rows:62px auto minmax(0,1fr)!important}
+  #protocolView .tagsHeader{min-height:62px!important}
+}
+@media(max-width:1150px){
+  body.audioMode main{grid-template-columns:1fr!important}
+  body.audioMode #audioView.appView.active{
+    grid-template-columns:1fr!important;
+    grid-template-rows:44px 60px minmax(220px,.45fr) minmax(0,.55fr)!important;
+  }
+  body.audioMode #audioView .albumPanel{grid-column:1!important;grid-row:3!important}
+  body.audioMode #audioView > section.panel:not(.albumPanel){grid-column:1!important;grid-row:4!important}
+  #protocolView .protocolTools{grid-template-columns:1fr!important}
+  #protocolView .toolbar{justify-content:flex-start!important;flex-wrap:wrap!important}
+  #protocolView .protocolGrid{grid-template-columns:1fr!important;grid-template-rows:minmax(180px,.45fr) minmax(0,.55fr)!important}
+}

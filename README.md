@@ -1,1 +1,1 @@
-MusicLab v1.7.1 - Protokoll-Tab mit Log und Historie.
+MusicLab v1.7.3 - tiefgehendes UI-Polishing für Audio, Protokoll, Dashboard, Listen und Karten.
