@@ -1,5 +1,5 @@
 const API='http://'+location.hostname+':8091/api';
-const APP_VERSION='1.8.9';
+const APP_VERSION='1.8.10';
 let coverCacheBust=Date.now();
 let selectedArtist=null, selectedAlbum=null, selectedTagFolder=null;
 let selectedTagGenre=null, selectedTagYear=null;
@@ -21,12 +21,26 @@ function dur(s){s=Number(s||0);let h=Math.floor(s/3600),m=Math.floor((s%3600)/60
 function trackNo(t){if(!t.track_number)return'';return (!t.track_total || Number(t.track_total)===0) ? String(t.track_number) : `${t.track_number}/${t.track_total}`}
 function relPath(p){return String(p||'').replace(/^\/music\//,'')}
 function parentFolderFromPath(p){const s=relPath(p); const i=s.lastIndexOf('/'); return i>0?s.slice(0,i):''}
-function coverBox(src, large=false){
-  const cls=large?'mediaCoverBox large':'mediaCoverBox';
-  // Wichtig: Das Bild darf beim Start NICHT per noCover ausgeblendet werden,
-  // sonst lädt der Browser die Cover-URL gar nicht erst. Erst bei onerror
-  // wird auf den Platzhalter umgeschaltet.
-  return `<div class="${cls} loading"><div class="coverFallback">♪</div><img src="${src}" loading="lazy" onload="this.parentElement.classList.add('hasCover');this.parentElement.classList.remove('loading','noCover')" onerror="this.style.display='none';this.parentElement.classList.add('noCover');this.parentElement.classList.remove('loading','hasCover')" alt=""></div>`;
+function coverBox(src, large=false, opts={}){
+  const id=opts.id ? ` id="${escAttr(opts.id)}"` : '';
+  const extra=opts.extraClass ? ' '+opts.extraClass : '';
+  const cls=(large?'mediaCoverBox large':'mediaCoverBox')+extra;
+  const loading=opts.eager ? 'eager' : 'lazy';
+  // v1.8.10: Cover-Boxen müssen beim Albumwechsel immer eine neue, eindeutige
+  // DOM-Box bekommen. Besonders wichtig bei #tagCoverPreview: Wenn die ID beim
+  // ersten Cover verloren geht, kann die Vorschau bei Albumwechseln nicht mehr
+  // ersetzt werden und Safari zeigt das zuletzt sichtbare Cover weiter an.
+  const safeSrc=escAttr(src||'');
+  return `<div${id} class="${cls} loading" data-cover-src="${safeSrc}"><div class="coverFallback">♪</div><img src="${safeSrc}" loading="${loading}" onload="this.parentElement.classList.add('hasCover');this.parentElement.classList.remove('loading','noCover')" onerror="this.removeAttribute('src');this.style.display='none';this.parentElement.classList.add('noCover');this.parentElement.classList.remove('loading','hasCover')" alt=""></div>`;
+}
+function tagCoverPlaceholder(text='Cover wird geladen…'){
+  const box=document.getElementById('tagCoverPreview');
+  if(box){ box.outerHTML=`<div id="tagCoverPreview" class="mediaCoverBox large tagCoverBox loading noCover"><div class="coverFallback">♪</div></div>`; }
+  const ci=document.getElementById('tagCoverInfo');
+  if(ci) ci.textContent=text;
+}
+function tagCoverBox(src){
+  return coverBox(src, true, {id:'tagCoverPreview', extraClass:'tagCoverBox', eager:true});
 }
 function coverUrl(folder, artist=''){return API+'/media/cover?folder='+encodeURIComponent(folder||'')+(artist?'&artist='+encodeURIComponent(artist):'')+'&v='+encodeURIComponent(APP_VERSION)+'&cb='+encodeURIComponent(coverCacheBust);}
 function coverUrlPath(path){return API+'/media/cover_by_path?path='+encodeURIComponent(path||'')+'&v='+encodeURIComponent(APP_VERSION)+'&cb='+encodeURIComponent(coverCacheBust);}
@@ -1290,10 +1304,14 @@ async function getTagTrackUrl(){
 async function loadTagsPage(){
   const body=document.getElementById('tagTracks'); const hint=document.getElementById('tagHint');
   if(!body||!hint)return;
+  // v1.8.10: Beim Albumwechsel sofort die alte Vorschau entfernen.
+  // Sonst bleibt bei langsamer/fehlender Cover-Antwort das zuletzt gesehene Cover stehen.
+  tagCoverPlaceholder('Cover wird geladen…');
   if(!selectedAlbum && selectedTagFolder===null){
     hint.textContent = selectedArtist ? 'Bitte links ein Album von '+selectedArtist+' auswählen.' : 'Noch kein Album ausgewählt.';
     body.innerHTML='';
     const tt=document.getElementById('tagTrackTotal'); if(tt)tt.value=''; const dt=document.getElementById('tagDiscTotal'); if(dt)dt.value='';
+    tagCoverPlaceholder('Noch kein Album ausgewählt.');
     setTagsDirty(false);
     setupCoverDrop();
     return;
@@ -1306,7 +1324,7 @@ async function loadTagsPage(){
     if(rows.length){
       const first=rows[0];
       const cp=document.getElementById('tagCoverPreview'); const ci=document.getElementById('tagCoverInfo');
-      if(cp){ cp.outerHTML = coverBox(coverUrlPath(first.path||''), true).replace('mediaCoverBox large','mediaCoverBox large tagCoverBox'); }
+      if(cp){ cp.outerHTML = tagCoverBox(coverUrlPath(first.path||'')); }
       if(ci) ci.textContent = 'Cover wird in die sichtbaren Audiodateien dieses Albums eingebettet.';
       const aa=document.getElementById('tagAlbumArtist'), al=document.getElementById('tagAlbumName'), tt=document.getElementById('tagTrackTotal'), dt=document.getElementById('tagDiscTotal'), yr=document.getElementById('tagYear'), ge=document.getElementById('tagGenre');
       const artists=[...new Set(rows.map(r=>r.artist||'').filter(Boolean))];
@@ -1338,6 +1356,7 @@ async function loadTagsPage(){
       if(yr){ const y=String(first.year||'').trim(); yr.value=(y==='0000'||y==='0')?'':y; }
       if(ge)ge.value=first.genre||'';
     } else {
+      tagCoverPlaceholder('Keine Titel in dieser Auswahl.');
       renderDiscTotalsEditor([]);
     }
     await loadGenreOptions();
@@ -1354,7 +1373,7 @@ async function loadTagsPage(){
     bindTagDirtyHandlers();
     setupCoverDrop();
     setTagsDirty(false);
-  }catch(e){hint.textContent='Tags konnten nicht geladen werden: '+e.message; body.innerHTML=''; setTagsDirty(false);}
+  }catch(e){hint.textContent='Tags konnten nicht geladen werden: '+e.message; body.innerHTML=''; tagCoverPlaceholder('Cover konnte nicht geladen werden.'); setTagsDirty(false);}
 }
 function escAttr(s){return String(s ?? '').replaceAll('&','&amp;').replaceAll('"','&quot;').replaceAll('<','&lt;').replaceAll('>','&gt;')}
 function renderDiscTotalsEditor(discs){
@@ -1408,7 +1427,7 @@ async function uploadTagCover(){
   const first=paths[0] || '';
   const firstFolder=parentFolderFromPath(first||'');
 
-  // v1.8.9: Die sichtbaren Track-Pfade werden direkt ans Backend geschickt.
+  // v1.8.10: Die sichtbaren Track-Pfade werden direkt ans Backend geschickt.
   // Der Ordner ist nur noch Fallback/Hinweis. Damit landet das Cover nicht
   // im falschen Album, wenn Albumname und Ordnername auseinanderlaufen.
   if(firstFolder) folder=firstFolder;
@@ -1441,7 +1460,7 @@ async function uploadTagCover(){
     try{
       const firstPath=(res.paths && res.paths[0]) || paths[0] || '';
       const cp=document.getElementById('tagCoverPreview');
-      if(cp && firstPath){ cp.outerHTML = coverBox(coverUrlPath(firstPath), true).replace('mediaCoverBox large','mediaCoverBox large tagCoverBox'); }
+      if(cp && firstPath){ cp.outerHTML = tagCoverBox(coverUrlPath(firstPath)); }
     }catch(_e){}
     if(currentView==='media') await loadMediaPage();
   }catch(e){
@@ -1642,6 +1661,10 @@ async function loadMediaAlbums(sort){
 async function selectMediaAlbum(folder, album){
   selectedMediaFolder=folder;
   selectedMediaAlbum=album;
+  const head=document.getElementById('mediaAlbumHead');
+  const tracksBox=document.getElementById('mediaTracks');
+  if(head) head.innerHTML='<div class="mediaCoverBox large loading noCover"><div class="coverFallback">♪</div></div><div class="mediaAlbumText"><b>'+escHtml(album||'Album')+'</b><br><span>Cover/Titel werden geladen…</span></div>';
+  if(tracksBox) tracksBox.innerHTML='';
   renderMediaBrowser();
   await loadMediaAlbums('artist');
 }

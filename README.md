@@ -1,8 +1,15 @@
-# MusicLab v1.8.9
+# MusicLab v1.8.10
+
+
+## v1.8.10
+
+- Cover-Vorschau in Tags repariert: Beim Albumwechsel wird das alte Cover sofort entfernt.
+- `#tagCoverPreview` behält jetzt dauerhaft seine ID; dadurch kann die Vorschau nach dem ersten geladenen Cover weiter ersetzt werden.
+- Medien-Albumkopf wird beim Albumwechsel sofort geleert, damit kein altes Cover während des Ladens stehen bleibt.
 
 Bugfix-Version auf Basis deiner v1.8.0-Linie.
 
-## Neu in v1.8.9
+## Neu in v1.8.10
 
 ### Cover speichern korrigiert
 
@@ -45,6 +52,6 @@ Danach im Browser einmal hart neu laden, damit Safari/Chrome keine alte `app.js`
 Idea & Umsetzung by Lrd.Tiberius.
 
 
-## v1.8.9
+## v1.8.10
 - Fehler `renderCheckList` in der Duplikatprüfung behoben.
 - Cover-Speichern zeigt nun die konkret bearbeiteten Track-Pfade im Backend-Ergebnis und aktualisiert die Vorschau gezielt.
