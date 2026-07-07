@@ -993,10 +993,60 @@ body.audioMode #audioView .albums{grid-template-columns:repeat(auto-fill,minmax(
 body.audioMode #audioView .album{min-height:132px!important;}
 
 
-/* v1.8.13: Duplikatseite ohne linke Suche/Liste */
+/* v1.8.15: Duplikatseite ohne linke Suche/Liste */
 body.checkMode aside.panel{display:none!important;}
 body.checkMode .layout{grid-template-columns:1fr!important;}
 body.checkMode main{display:block!important;height:100%!important;min-height:0!important;overflow:hidden!important;}
 body.checkMode #checkView.appView.active{display:grid!important;height:100%!important;min-height:0!important;grid-template-rows:auto auto minmax(0,1fr)!important;gap:12px!important;overflow:hidden!important;}
 body.checkMode #checkView .checkGrid{min-height:0!important;height:100%!important;}
 body.checkMode #checkView .checkList{min-height:0!important;max-height:none!important;overflow:auto!important;}
+
+/* v1.8.15: Kachel-Überschriften stabilisieren
+   Nach dem Ausblenden der linken Spalte konnten die Toolbar-Regeln aus anderen
+   Ansichten die Überschriften/Hinweise in den einzelnen Kacheln verschieben. */
+#checkView .checkGrid > .panel > .toolbar,
+#protocolView .protocolGrid > .panel > .toolbar{
+  display:grid!important;
+  grid-template-columns:minmax(0,1fr) auto!important;
+  align-items:start!important;
+  gap:6px 10px!important;
+  min-height:34px!important;
+  margin:0 0 10px 0!important;
+  flex:0 0 auto!important;
+}
+#checkView .checkGrid > .panel > .toolbar h2,
+#checkView .checkGrid > .panel > .toolbar h3,
+#protocolView .protocolGrid > .panel > .toolbar h2,
+#protocolView .protocolGrid > .panel > .toolbar h3{
+  margin:0!important;
+  line-height:1.2!important;
+  min-width:0!important;
+  overflow:hidden!important;
+  text-overflow:ellipsis!important;
+}
+#checkView .checkGrid > .panel > .toolbar .small,
+#protocolView .protocolGrid > .panel > .toolbar .small{
+  justify-self:end!important;
+  align-self:center!important;
+  text-align:right!important;
+  white-space:normal!important;
+  max-width:360px!important;
+}
+#checkView .checkGrid > .panel,
+#protocolView .protocolGrid > .panel{
+  display:flex!important;
+  flex-direction:column!important;
+  overflow:hidden!important;
+}
+#checkView .checkList,
+#protocolView .historyList,
+#protocolView .logBox{
+  flex:1 1 auto!important;
+  min-height:0!important;
+}
+@media(max-width:900px){
+  #checkView .checkGrid > .panel > .toolbar,
+  #protocolView .protocolGrid > .panel > .toolbar{grid-template-columns:1fr!important;}
+  #checkView .checkGrid > .panel > .toolbar .small,
+  #protocolView .protocolGrid > .panel > .toolbar .small{justify-self:start!important;text-align:left!important;max-width:none!important;}
+}

@@ -16,6 +16,11 @@ import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 from typing import Optional, Tuple
+from datetime import datetime
+try:
+    from zoneinfo import ZoneInfo
+except Exception:
+    ZoneInfo = None
 
 from fastapi import FastAPI, HTTPException, Response, Request
 from fastapi.responses import FileResponse, StreamingResponse
@@ -36,8 +41,17 @@ LOG_PATH = LOG_DIR / "musiclab.log"
 LOG_MAX_BYTES = int(os.getenv("LOG_MAX_BYTES", str(10 * 1024 * 1024)))
 EXTS = {".mp3", ".m4a", ".aac", ".flac", ".ogg"}
 SCHEMA_VERSION = 24
+LOG_TZ = os.getenv("TZ") or os.getenv("LOG_TZ") or "Europe/Berlin"
 
-app = FastAPI(title="MusicLab API", version="1.8.12")
+def local_log_time() -> str:
+    try:
+        if ZoneInfo:
+            return datetime.now(ZoneInfo(LOG_TZ)).strftime("%H:%M:%S")
+    except Exception:
+        pass
+    return time.strftime("%H:%M:%S")
+
+app = FastAPI(title="MusicLab API", version="1.8.15")
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
 
 stop_event = threading.Event()
@@ -77,7 +91,7 @@ def rotate_log_if_needed():
 
 
 def add_log(message: str, is_error: bool = False):
-    line = f"{time.strftime('%H:%M:%S')} | {message}"
+    line = f"{local_log_time()} | {message}"
     state["log"].append(line)
     state["log"] = state["log"][-200:]
     if is_error:

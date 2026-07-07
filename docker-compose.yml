@@ -11,6 +11,8 @@ services:
     environment:
       - MUSIC_ROOT=/music
       - DB_PATH=/data/musiclab.sqlite
+      - TZ=Europe/Berlin
+      - LOG_TZ=Europe/Berlin
     restart: unless-stopped
 
   musiclab-frontend:

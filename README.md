@@ -1,12 +1,17 @@
-# MusicLab v1.8.13
+# MusicLab v1.8.15
 
 ## Änderungen
 
-- Sortierung nach Tags repariert: MusicLab lässt veraltete `Album Artist`-Tags nicht mehr die sichtbare Interpret-Korrektur zurückdrehen.
-- Beispiel: `Die Arzte` wird nicht mehr wiederhergestellt, wenn der sichtbare Artist bereits `Die Ärzte` ist.
-- Beim Speichern von Tags schreibt das Feld `Interpret` jetzt sowohl `artist` als auch `albumartist`.
-- Die Duplikatseite bleibt ohne Pfad-Öffnen/Pfad-Kopieren-Buttons; Pfade werden nur noch angezeigt.
-- Version/Cache-Buster auf 1.8.13 gesetzt.
+- Live-Log-Zeit auf `Europe/Berlin` umgestellt.
+  - `TZ=Europe/Berlin` und `LOG_TZ=Europe/Berlin` sind in `docker-compose.yml` gesetzt.
+  - Neue Logeinträge verwenden dadurch die lokale Uhrzeit statt UTC.
+- Kachel-Überschriften auf Duplikate- und Protokollseite stabilisiert.
+  - Hinweise/Buttons rutschen nicht mehr in die falsche Zeile.
+  - Die einzelnen Kacheln behalten wieder saubere Kopfbereiche.
+- Basis bleibt v1.8.13/v1.8.14 mit:
+  - Duplikatseite ohne linke Suche/Liste
+  - keine Pfad-Öffnen-/Pfad-Kopieren-Buttons
+  - Tag-Sortierung bevorzugt saubere Umlaut-Schreibweise wie `Die Ärzte` statt `Die Arzte`
 
 ## Nach dem Update
 
@@ -15,15 +20,6 @@ docker compose down
 docker compose up -d --build
 ```
 
-Danach den Browser hart neu laden.
+Danach im Browser hart neu laden.
 
-## Hinweis
-
-Falls alte Dateien bereits unterschiedliche Werte für `artist` und `albumartist` enthalten, korrigiere den Interpret einmal in MusicLab und speichere. Ab dieser Version werden beide Felder synchron geschrieben.
-
-
-## v1.8.13
-
-- Duplikatseite nutzt jetzt die komplette Breite.
-- Die linke Such-/Listen-Spalte wird im Duplikate-Tab komplett ausgeblendet.
-- Pfad öffnen/kopieren bleibt entfernt; Pfade sind nur noch als Text sichtbar.
+Hinweis: Bereits vorhandene alte Logzeilen behalten ihre alte Uhrzeit. Die Korrektur gilt für neue Logeinträge nach dem Neustart.
