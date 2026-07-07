@@ -838,3 +838,20 @@ tbody tr:hover td{background:rgba(255,255,255,.018)}
   #protocolView .toolbar{justify-content:flex-start!important;flex-wrap:wrap!important}
   #protocolView .protocolGrid{grid-template-columns:1fr!important;grid-template-rows:minmax(180px,.45fr) minmax(0,.55fr)!important}
 }
+
+/* v1.8.0: Bibliotheksprüfung */
+.checkPage{height:100%;min-height:0;display:none;grid-template-rows:auto auto 1fr;gap:12px;}
+.checkPage.active{display:grid;}
+.checkSummary{padding:12px 14px;}
+.checkStats{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;}
+.checkStats>div{background:var(--panel2);border:1px solid #303847;border-radius:12px;padding:10px 12px;display:flex;flex-direction:column;gap:3px;}
+.checkStats b{font-size:22px;}
+.checkStats span{font-size:12px;color:var(--muted);}
+.checkGrid{min-height:0;display:grid;grid-template-columns:1fr 1fr;grid-template-rows:1fr 1fr;gap:12px;}
+.checkGrid>.panel{min-height:0;display:flex;flex-direction:column;}
+.checkList{min-height:0;overflow:auto;padding-right:4px;}
+.checkItem{border:1px solid #303847;background:#151922;border-radius:12px;padding:10px;margin:0 0 8px 0;}
+.checkTitle{display:flex;align-items:center;gap:8px;justify-content:space-between;}
+.badge{font-size:11px;border:1px solid #3e4b61;border-radius:999px;padding:2px 7px;color:var(--muted);}
+.checkPath{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;color:var(--muted);font-size:12px;margin-top:5px;word-break:break-word;}
+@media (max-width: 1100px){.checkGrid{grid-template-columns:1fr}.checkStats{grid-template-columns:repeat(2,1fr)}}

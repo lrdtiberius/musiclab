@@ -5,6 +5,7 @@ import re
 import sqlite3
 import subprocess
 import shutil
+import difflib
 import tempfile
 import zipfile
 import threading
@@ -27,7 +28,7 @@ LOG_MAX_BYTES = int(os.getenv("LOG_MAX_BYTES", str(10 * 1024 * 1024)))
 EXTS = {".mp3", ".m4a", ".aac", ".flac", ".ogg"}
 SCHEMA_VERSION = 23
 
-app = FastAPI(title="MusicLab API", version="1.6.9")
+app = FastAPI(title="MusicLab API", version="1.8.0")
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
 
 stop_event = threading.Event()
@@ -1371,6 +1372,205 @@ def api_library_sort():
     threading.Thread(target=sort_library_worker, daemon=True).start()
     return {"ok": True, "started": True}
 
+
+# ---------------------------------------------------------------------------
+# Credits / Integrität
+# ---------------------------------------------------------------------------
+CREDIT_TEXT = "Idea & Umsetzung by Lrd.Tiberius"
+COPYRIGHT_TEXT = "Copyright © 2026 Lrd.Tiberius"
+
+@app.get("/api/about")
+def api_about():
+    # Credits intentionally come from the backend as well as the frontend so
+    # the attribution is not a purely cosmetic UI string.
+    return {
+        "name": "MusicLab",
+        "version": "1.8.0",
+        "credit": CREDIT_TEXT,
+        "copyright": COPYRIGHT_TEXT,
+        "integrity": "ok",
+    }
+
+
+def norm_text(v: str) -> str:
+    v = (v or "").lower()
+    v = re.sub(r"\b(remaster(?:ed)?|deluxe|explicit|radio edit|bonus track|version)\b", " ", v)
+    v = re.sub(r"[\[\](){}_.\-]+", " ", v)
+    v = re.sub(r"\s+", " ", v).strip()
+    return v
+
+
+def similarity(a: str, b: str) -> float:
+    a, b = norm_text(a), norm_text(b)
+    if not a or not b:
+        return 0.0
+    return difflib.SequenceMatcher(None, a, b).ratio()
+
+
+def intended_rel_path_for_row(r) -> str:
+    artist = safe_name(r["artist"], "Unbekannter Interpret")
+    album = safe_name(r["album"], "Unbekanntes Album")
+    title = safe_name(r["title"], Path(r["path"]).stem)
+    ext = Path(r["path"]).suffix or ".mp3"
+    return (Path(artist) / album / f"{title}{ext}").as_posix()
+
+
+def check_album_cover(paths: list) -> bool:
+    root = get_music_root()
+    for rel in paths[:3]:
+        try:
+            p = root / rel
+            if p.exists() and _embedded_cover_from_file(p):
+                return True
+        except Exception:
+            continue
+    return False
+
+
+@app.get("/api/library_check")
+def api_library_check(threshold: float = 0.90):
+    threshold = max(0.50, min(float(threshold or 0.90), 1.0))
+    with db() as con:
+        rows = [dict(r) for r in con.execute("""
+            SELECT id,path,artist,album,title,track_number,track_total,disc_number,disc_total,genre,year,duration,size,bitrate,codec
+            FROM tracks
+            ORDER BY artist COLLATE NOCASE, album COLLATE NOCASE, disc_number, track_number, title COLLATE NOCASE
+        """).fetchall()]
+
+    # 1) Echte Duplikate: gleicher Interpret + Album, ähnlicher Titel, ähnliche Dauer.
+    by_album = {}
+    for r in rows:
+        key = (norm_text(r.get("artist") or ""), norm_text(r.get("album") or ""))
+        by_album.setdefault(key, []).append(r)
+    real_duplicates = []
+    for (_, _), items in by_album.items():
+        n = len(items)
+        for i in range(n):
+            for j in range(i + 1, n):
+                a, b = items[i], items[j]
+                score = similarity(a.get("title") or "", b.get("title") or "")
+                if score < threshold:
+                    continue
+                da, db = a.get("duration"), b.get("duration")
+                if da and db and abs(float(da) - float(db)) > 2.5:
+                    continue
+                # Same title in same album but different track numbers can be valid on live/bonus discs.
+                # Stronger duplicate if track number is equal or filename collision-like.
+                if a.get("track_number") and b.get("track_number") and a.get("track_number") != b.get("track_number"):
+                    continue
+                real_duplicates.append({
+                    "title": a.get("title") or b.get("title"),
+                    "artist": a.get("artist"),
+                    "album": a.get("album"),
+                    "score": round(score, 3),
+                    "items": [
+                        {"path": a.get("path"), "duration": a.get("duration"), "bitrate": a.get("bitrate")},
+                        {"path": b.get("path"), "duration": b.get("duration"), "bitrate": b.get("bitrate")},
+                    ],
+                })
+                if len(real_duplicates) >= 200:
+                    break
+            if len(real_duplicates) >= 200:
+                break
+        if len(real_duplicates) >= 200:
+            break
+
+    # 2) Mehrfach vorhandene Titel: gleicher Interpret + Titel in mehreren Alben = Hinweis, kein Fehler.
+    title_groups = {}
+    for r in rows:
+        key = (norm_text(r.get("artist") or ""), norm_text(r.get("title") or ""))
+        if not key[0] or not key[1]:
+            continue
+        g = title_groups.setdefault(key, {"title": r.get("title"), "artist": r.get("artist"), "albums": {}, "items": []})
+        g["albums"].setdefault(r.get("album") or "", 0)
+        g["albums"][r.get("album") or ""] += 1
+        if len(g["items"]) < 12:
+            g["items"].append({"path": r.get("path"), "album": r.get("album")})
+    repeated_titles = []
+    for g in title_groups.values():
+        if len(g["albums"]) > 1:
+            repeated_titles.append({
+                "title": g["title"],
+                "artist": g["artist"],
+                "album": f"{len(g['albums'])} Alben",
+                "score": 1.0,
+                "items": g["items"],
+            })
+    repeated_titles.sort(key=lambda x: (-len(x.get("items", [])), (x.get("artist") or "").lower(), (x.get("title") or "").lower()))
+    repeated_titles = repeated_titles[:200]
+
+    # 3) Dateikonflikte nach Sortierung: mehrere aktuelle Dateien würden auf denselben Zielpfad zeigen.
+    targets = {}
+    for r in rows:
+        targets.setdefault(intended_rel_path_for_row(r), []).append(r)
+    file_conflicts = []
+    for target, items in targets.items():
+        if len(items) > 1:
+            file_conflicts.append({
+                "title": target,
+                "name": target,
+                "score": 1.0,
+                "items": [{"path": x.get("path")} for x in items[:20]],
+            })
+    file_conflicts.sort(key=lambda x: x["title"].lower())
+    file_conflicts = file_conflicts[:200]
+
+    missing_year = [r for r in rows if not str(r.get("year") or "").strip()]
+    missing_genre = [r for r in rows if not str(r.get("genre") or "").strip()]
+
+    # Missing cover is checked per album/folder group to avoid scanning all files repeatedly.
+    album_paths = {}
+    for r in rows:
+        folder = str(Path(r["path"]).parent.as_posix())
+        album_paths.setdefault(folder, {"album": r.get("album"), "artist": r.get("artist"), "paths": []})["paths"].append(r["path"])
+    missing_cover = []
+    for folder, g in album_paths.items():
+        if not check_album_cover(g["paths"]):
+            missing_cover.append({"path": folder, "artist": g.get("artist"), "album": g.get("album")})
+        if len(missing_cover) >= 50:
+            break
+
+    root = get_music_root()
+    broken = []
+    for r in rows:
+        p = root / r["path"]
+        if not p.exists() or not p.is_file() or int(r.get("size") or 0) <= 0:
+            broken.append({"path": r["path"], "reason": "Datei fehlt oder ist leer"})
+        if len(broken) >= 100:
+            break
+
+    return {
+        "tracks": len(rows),
+        "threshold_percent": int(threshold * 100),
+        "real_duplicates": real_duplicates,
+        "repeated_titles": repeated_titles,
+        "file_conflicts": file_conflicts,
+        "missing_year": {"count": len(missing_year), "examples": [{"path": r["path"]} for r in missing_year[:20]]},
+        "missing_genre": {"count": len(missing_genre), "examples": [{"path": r["path"]} for r in missing_genre[:20]]},
+        "missing_cover": {"count": len(missing_cover), "examples": missing_cover[:20]},
+        "broken_files": broken,
+    }
+
+
+@app.get("/api/library_check/export")
+def api_library_check_export():
+    data = api_library_check()
+    out = io.StringIO()
+    out.write("category;title;artist;album;path\n")
+    def cell(v):
+        return '"' + str(v or '').replace('"', '""') + '"'
+    for cat, key in [("echte_duplikate", "real_duplicates"), ("mehrfach_vorhanden", "repeated_titles"), ("dateikonflikt", "file_conflicts")]:
+        for g in data.get(key, []):
+            for item in g.get("items", []):
+                out.write(';'.join([cell(cat), cell(g.get("title") or g.get("name")), cell(g.get("artist")), cell(g.get("album")), cell(item.get("path"))]) + "\n")
+    for cat in ["missing_year", "missing_genre", "missing_cover"]:
+        for item in data.get(cat, {}).get("examples", []):
+            out.write(';'.join([cell(cat), cell(""), cell(item.get("artist")), cell(item.get("album")), cell(item.get("path"))]) + "\n")
+    for item in data.get("broken_files", []):
+        out.write(';'.join([cell("broken_file"), cell(item.get("reason")), cell(""), cell(""), cell(item.get("path"))]) + "\n")
+    filename = f"musiclab_bibliothekspruefung_{time.strftime('%Y-%m-%d_%H-%M-%S')}.csv"
+    return Response(out.getvalue(), media_type="text/csv; charset=utf-8", headers={"Content-Disposition": f"attachment; filename={filename}"})
+
 @app.on_event("startup")
 def startup():
     init_db()
@@ -1381,7 +1581,7 @@ def startup():
 
 @app.get("/api/health")
 def health():
-    return {"ok": True, "version": "1.6.9", "music_root": str(get_music_root()), "db": str(DB_PATH)}
+    return {"ok": True, "version": "1.8.0", "music_root": str(get_music_root()), "db": str(DB_PATH)}
 
 
 @app.post("/api/scan")

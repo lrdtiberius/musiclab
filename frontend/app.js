@@ -785,6 +785,57 @@ async function normalizeSelectedAlbums(){
   }
 }
 
+let lastLibraryCheck=null;
+function escAttr(v){return String(v??'').replace(/"/g,'&quot;').replace(/</g,'&lt;').replace(/>/g,'&gt;')}
+function renderIssueGroup(title, items){
+  if(!items || !items.length) return '';
+  const rows=items.slice(0,6).map(x=>`<div class="checkPath">${escHtml(x.path||x.title||'')}</div>`).join('');
+  const more=items.length>6?`<div class="small muted">… ${items.length-6} weitere</div>`:'';
+  return `<div class="checkItem"><b>${escHtml(title)}</b>${rows}${more}</div>`;
+}
+function renderCheckList(el, groups, emptyText){
+  if(!el) return;
+  if(!groups || !groups.length){ el.innerHTML=`<div class="muted">${emptyText}</div>`; return; }
+  el.innerHTML=groups.map(g=>{
+    const pct=g.score!==undefined?`<span class="badge">${Math.round(g.score*100)}%</span>`:'';
+    const subtitle=[g.artist,g.album].filter(Boolean).join(' • ');
+    return `<div class="checkItem"><div class="checkTitle"><b>${escHtml(g.title||g.name||g.album||'Eintrag')}</b>${pct}</div><div class="small muted">${escHtml(subtitle)}</div>${(g.items||[]).map(x=>`<div class="checkPath">${escHtml(x.path||'')}</div>`).join('')}</div>`;
+  }).join('');
+}
+async function runLibraryCheck(force=true){
+  try{
+    const statusEl=document.getElementById('checkStatus');
+    if(statusEl) statusEl.textContent='Prüfung läuft...';
+    const res=await j(API+'/library_check');
+    lastLibraryCheck=res;
+    document.getElementById('checkRealDupes').textContent=res.real_duplicates?.length||0;
+    document.getElementById('checkRepeatedTitles').textContent=res.repeated_titles?.length||0;
+    document.getElementById('checkConflicts').textContent=res.file_conflicts?.length||0;
+    const missing=(res.missing_year?.count||0)+(res.missing_genre?.count||0)+(res.missing_cover?.count||0)+(res.broken_files?.length||0);
+    document.getElementById('checkMissingMeta').textContent=missing;
+    renderCheckList(document.getElementById('realDuplicates'), res.real_duplicates, 'Keine echten Duplikate gefunden.');
+    renderCheckList(document.getElementById('repeatedTitles'), res.repeated_titles, 'Keine mehrfach vorhandenen Titel gefunden.');
+    renderCheckList(document.getElementById('fileConflicts'), res.file_conflicts, 'Keine Dateikonflikte nach Sortierung gefunden.');
+    const meta=[];
+    if(res.missing_year?.count) meta.push({title:`Fehlendes Jahr: ${res.missing_year.count}`, items:res.missing_year.examples||[]});
+    if(res.missing_genre?.count) meta.push({title:`Fehlendes Genre: ${res.missing_genre.count}`, items:res.missing_genre.examples||[]});
+    if(res.missing_cover?.count) meta.push({title:`Fehlende Cover: ${res.missing_cover.count}`, items:res.missing_cover.examples||[]});
+    if(res.broken_files?.length) meta.push({title:`Beschädigte/nicht lesbare Dateien: ${res.broken_files.length}`, items:res.broken_files});
+    const mbox=document.getElementById('metadataIssues');
+    mbox.innerHTML=meta.length?meta.map(g=>renderIssueGroup(g.title,g.items)).join(''):'<div class="muted">Keine relevanten Metadatenprobleme gefunden.</div>';
+    if(statusEl) statusEl.textContent=`Geprüft: ${res.tracks||0} Titel · Toleranz ${res.threshold_percent||90}%`;
+  }catch(e){
+    const statusEl=document.getElementById('checkStatus');
+    if(statusEl) statusEl.textContent='Prüfung fehlgeschlagen: '+e.message;
+  }
+}
+function exportLibraryCheck(){
+  const a=document.createElement('a');
+  a.href=API+'/library_check/export';
+  a.download='musiclab_bibliothekspruefung.csv';
+  document.body.appendChild(a);a.click();a.remove();
+}
+
 
 async function stopJob(){
   try{
@@ -837,6 +888,10 @@ function filterLogLine(line, filter){
 
 async function loadLog(){
   try{
+    const box=document.getElementById('logBox');
+    const auto=document.getElementById('protocolAutoscroll');
+    const keepTop=box?box.scrollTop:0;
+    const wasNearBottom=box ? (box.scrollTop + box.clientHeight >= box.scrollHeight - 12) : true;
     let l=await j(API+'/log');
     const raw=[...(l.lines||[]), ...(l.errors||[])];
     const seen=new Set();
@@ -848,10 +903,16 @@ async function loadLog(){
       lines.push({line:key, ...logLineTimeKey(key, idx)});
     });
     lines.sort((a,b)=>a.t-b.t || a.idx-b.idx);
-    const filter=(logBox?.dataset?.filter)||'all';
-    const shown=lines.map(x=>x.line).filter(line=>filterLogLine(line, filter)).slice(-80);
-    logBox.textContent=shown.length ? shown.join('\n') : 'Noch kein Log.';
-    logBox.scrollTop=logBox.scrollHeight;
+    const filter=(box?.dataset?.filter)||'all';
+    const shown=lines.map(x=>x.line).filter(line=>filterLogLine(line, filter)).slice(-200);
+    if(box){
+      box.textContent=shown.length ? shown.join('\n') : 'Noch kein Log.';
+      if(auto?.checked && wasNearBottom){
+        box.scrollTop=box.scrollHeight;
+      }else{
+        box.scrollTop=keepTop;
+      }
+    }
   }catch(e){}
 }
 
@@ -879,11 +940,13 @@ let currentView='dashboard';
 function setAppView(view){
   currentView=view;
   document.querySelectorAll('.appView').forEach(el=>el.classList.toggle('active', el.id===view+'View'));
-  [['tabDashboard','dashboard'],['tabAudio','audio'],['tabTags','tags'],['tabMedia','media'],['tabProtocol','protocol'],['tabSettings','settings']].forEach(([id,v])=>{const b=document.getElementById(id); if(b)b.classList.toggle('active', view===v)});
+  [['tabDashboard','dashboard'],['tabAudio','audio'],['tabTags','tags'],['tabMedia','media'],['tabCheck','check'],['tabProtocol','protocol'],['tabSettings','settings']].forEach(([id,v])=>{const b=document.getElementById(id); if(b)b.classList.toggle('active', view===v)});
   document.body.classList.toggle('settingsMode', view==='settings');
+  document.body.classList.toggle('audioMode', view==='audio');
   document.body.classList.toggle('mediaMode', view==='media');
   document.body.classList.toggle('dashboardMode', view==='dashboard');
   document.body.classList.toggle('protocolMode', view==='protocol');
+  document.body.classList.toggle('checkMode', view==='check');
   if(view==='dashboard'){
     updateBrowserTabsForView();
     loadDashboard();
@@ -905,6 +968,9 @@ function setAppView(view){
   }else if(view==='media'){
     updateBrowserTabsForView();
     loadMediaPage();
+  }else if(view==='check'){
+    updateBrowserTabsForView();
+    runLibraryCheck(false);
   }else if(view==='protocol'){
     updateBrowserTabsForView();
     loadLog();
@@ -1524,3 +1590,15 @@ loadHistory();
 renderBatchBar();
 if(typeof albumAction !== 'undefined' && albumAction) albumAction.onchange = renderBatchBar;
 poll();
+
+// Protokoll: manuelles Hochscrollen pausiert Autoscroll, damit die Ansicht nicht zurückspringt.
+document.addEventListener('DOMContentLoaded',()=>{
+  const box=document.getElementById('logBox');
+  const auto=document.getElementById('protocolAutoscroll');
+  if(box && auto){
+    box.addEventListener('scroll',()=>{
+      const nearBottom=box.scrollTop + box.clientHeight >= box.scrollHeight - 16;
+      if(!nearBottom && auto.checked) auto.checked=false;
+    }, {passive:true});
+  }
+});
