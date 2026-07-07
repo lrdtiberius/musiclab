@@ -1,35 +1,38 @@
-# MusicLab v1.8.0
+# MusicLab v1.8.5
 
-MusicLab – lokale Musikbibliothek analysieren, normalisieren, taggen und prüfen.
+Bugfix-/Komfortversion auf Basis von v1.8.0.
 
-## Neu in v1.8.0
+## Neu in v1.8.5
 
-- Neuer Tab **Bibliotheksprüfung**
-  - echte Duplikate innerhalb desselben Albums
-  - mehrfach vorhandene Titel als Hinweis, nicht als Fehler
-  - Dateikonflikte nach Sortierung
-  - fehlende Jahre, Genres, Cover und beschädigte/fehlende Dateien
-- Protokoll-Autoscroll repariert: manuelles Hochscrollen springt nicht mehr nach unten.
-- Nach Normalisierung bleibt der Auto-Refresh aktiv.
-- Credits/Projektidentität ergänzt:
-  - `CREDITS.md`
-  - `NOTICE`
-  - Backend-Endpunkt `/api/about`
+- Duplikat-Treffer zeigen jetzt pro Datei Aktionen:
+  - **Pfad öffnen**: öffnet den Ordner per `smb://` und kopiert den NAS-Pfad als Fallback in die Zwischenablage.
+  - **Pfad kopieren**: kopiert den NAS-Pfad.
+- Bei echten Duplikaten gibt es **Kein Duplikat bestätigen**.
+  - Der Treffer wird dauerhaft in der MusicLab-Datenbank gespeichert und danach ausgeblendet.
+  - Dateien werden dabei nicht verändert oder gelöscht.
+- Backend-Endpunkte:
+  - `GET /api/path_info?path=...`
+  - `POST /api/duplicates/confirm`
+  - `GET /api/duplicates/confirmed`
+  - `DELETE /api/duplicates/confirmed`
+- Duplikatregel bleibt: gleicher Interpret + gleiches Album + mindestens 90 % ähnlicher Titel.
+- Audio-Tab enthält nochmals härtere Flächen-/Kachel-Regeln und Cache-Buster `?v=1.8.5`.
 
-## Projektstruktur
+## SMB-Hinweis
 
-```text
-backend/
-frontend/
-data/
-docker-compose.yml
-README.md
-LICENSE
-NOTICE
-CREDITS.md
-```
+Standardannahme aus der Docker-Compose:
 
-## Credit
+- Container: `/music`
+- NAS: `/volume1/DS420/Musik`
+- SMB-Link: `smb://<NAS-IP>/DS420/Musik/...`
 
-MusicLab – Idea & Umsetzung by Lrd.Tiberius.
-Copyright © 2026 Lrd.Tiberius.
+Falls deine SMB-Freigabe anders heißt, kann sie im Backend per Environment angepasst werden:
+
+- `SMB_SHARE`, Standard: `DS420`
+- `SMB_PREFIX`, Standard: `Musik`
+- `SMB_ALT_SHARE`, Standard: `Musik`
+- `NAS_MUSIC_PATH`, Standard: `/volume1/DS420/Musik`
+
+## Credits
+
+Idea & Umsetzung by Lrd.Tiberius.

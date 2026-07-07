@@ -1,7 +1,5 @@
-# MusicLab Credits
+# Credits
 
-MusicLab – Idea & Umsetzung by Lrd.Tiberius.
+Idea & Umsetzung by Lrd.Tiberius.
 
-Copyright © 2026 Lrd.Tiberius.
-
-Der Hinweis „Idea & Umsetzung by Lrd.Tiberius“ ist Bestandteil der Projektidentität und soll in abgeleiteten Versionen erhalten bleiben.
+MusicLab enthält eine sichtbare Credit-Zeile und projektinterne Hinweise auf Lrd.Tiberius.

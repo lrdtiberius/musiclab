@@ -793,42 +793,110 @@ function renderIssueGroup(title, items){
   const more=items.length>6?`<div class="small muted">… ${items.length-6} weitere</div>`:'';
   return `<div class="checkItem"><b>${escHtml(title)}</b>${rows}${more}</div>`;
 }
-function renderCheckList(el, groups, emptyText){
+function jsArg(v){return JSON.stringify(String(v??''));}
+function renderPathRow(x){
+  const path=String(x?.path||'');
+  if(!path) return '';
+  return `<div class="checkPathRow"><div class="checkPath">${escHtml(path)}</div><div class="checkPathActions"><button class="miniBtn" onclick="openMusicPath(${jsArg(path)});event.stopPropagation();">Pfad öffnen</button><button class="miniBtn secondary" onclick="copyMusicPath(${jsArg(path)});event.stopPropagation();">Pfad kopieren</button></div></div>`;
+}
+function renderCheckList(el, groups, emptyText, options={}){
   if(!el) return;
   if(!groups || !groups.length){ el.innerHTML=`<div class="muted">${emptyText}</div>`; return; }
   el.innerHTML=groups.map(g=>{
     const pct=g.score!==undefined?`<span class="badge">${Math.round(g.score*100)}%</span>`:'';
     const subtitle=[g.artist,g.album].filter(Boolean).join(' • ');
-    return `<div class="checkItem"><div class="checkTitle"><b>${escHtml(g.title||g.name||g.album||'Eintrag')}</b>${pct}</div><div class="small muted">${escHtml(subtitle)}</div>${(g.items||[]).map(x=>`<div class="checkPath">${escHtml(x.path||'')}</div>`).join('')}</div>`;
+    const paths=(g.items||[]).map(x=>String(x.path||'')).filter(Boolean);
+    const confirmBtn=options.confirmFalseDuplicate && paths.length>=2
+      ? `<button class="miniBtn danger" onclick='confirmNonDuplicate(${JSON.stringify(paths).replace(/'/g,"&#39;")}, ${jsArg(g.title||'Duplikat')});event.stopPropagation();'>Kein Duplikat bestätigen</button>`
+      : '';
+    return `<div class="checkItem"><div class="checkTitle"><b>${escHtml(g.title||g.name||g.album||'Eintrag')}</b><div class="checkTitleActions">${pct}${confirmBtn}</div></div><div class="small muted">${escHtml(subtitle)}</div>${(g.items||[]).map(renderPathRow).join('')}</div>`;
   }).join('');
 }
-async function runLibraryCheck(force=true){
+
+async function copyMusicPath(path){
   try{
+    const info=await j(API+'/path_info?path='+encodeURIComponent(path));
+    const text=info.nas_path || info.container_path || path;
+    await navigator.clipboard.writeText(text);
     const statusEl=document.getElementById('checkStatus');
-    if(statusEl) statusEl.textContent='Prüfung läuft...';
-    const res=await j(API+'/library_check');
+    if(statusEl) statusEl.textContent='Pfad kopiert: '+text;
+  }catch(e){
+    try{await navigator.clipboard.writeText(path);}catch(_e){}
+    alert('Pfad konnte nur roh kopiert/gezeigt werden:\n'+path+'\n\nFehler: '+e.message);
+  }
+}
+
+async function openMusicPath(path){
+  try{
+    const info=await j(API+'/path_info?path='+encodeURIComponent(path));
+    const statusEl=document.getElementById('checkStatus');
+    if(statusEl) statusEl.textContent='Öffne Ordner: '+(info.nas_folder||info.folder||path);
+    try{ await navigator.clipboard.writeText(info.nas_folder || info.nas_path || path); }catch(_e){}
+    // macOS/Safari/Finder kann smb:// Links direkt öffnen. Falls die Freigabe anders heißt,
+    // bleibt der kopierte NAS-Pfad als Fallback erhalten.
+    window.location.href = info.folder_smb_url || info.alt_folder_smb_url || info.file_smb_url;
+  }catch(e){
+    alert('Pfad konnte nicht geöffnet werden:\n'+path+'\n\n'+e.message);
+  }
+}
+
+async function confirmNonDuplicate(paths, title){
+  if(!Array.isArray(paths) || paths.length<2) return;
+  const msg=`Diese Treffer künftig ausblenden?\n\n${title}\n\n${paths.slice(0,2).join('\n')}`;
+  if(!confirm(msg)) return;
+  const statusEl=document.getElementById('checkStatus');
+  try{
+    await j(API+'/duplicates/confirm',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({paths:paths.slice(0,2), reason:'Benutzerbestätigung: kein Duplikat'})});
+    if(statusEl) statusEl.textContent='Als kein Duplikat bestätigt. Prüfung wird aktualisiert…';
+    await runLibraryCheck(true);
+  }catch(e){
+    alert('Bestätigung konnte nicht gespeichert werden:\n'+e.message);
+  }
+}
+async function runLibraryCheck(force=true){
+  const statusEl=document.getElementById('checkStatus');
+  const btn=document.getElementById('btnRunCheck');
+  try{
+    if(btn){btn.disabled=true; btn.textContent='Prüfe…';}
+    if(statusEl) statusEl.textContent='Duplikatprüfung läuft…';
+
+    // v1.8.5: zuerst dedizierten Duplikat-Endpunkt nutzen, Fallback bleibt library_check.
+    let res;
+    try{
+      res=await j(API+'/duplicates?threshold=0.90');
+    }catch(_e){
+      res=await j(API+'/library_check?threshold=0.90');
+    }
     lastLibraryCheck=res;
-    document.getElementById('checkRealDupes').textContent=res.real_duplicates?.length||0;
-    document.getElementById('checkRepeatedTitles').textContent=res.repeated_titles?.length||0;
-    document.getElementById('checkConflicts').textContent=res.file_conflicts?.length||0;
+    const real=res.real_duplicates || res.duplicates || [];
+    const repeated=res.repeated_titles || [];
+    const conflicts=res.file_conflicts || [];
+
+    const realEl=document.getElementById('checkRealDupes'); if(realEl) realEl.textContent=real.length||0;
+    const repEl=document.getElementById('checkRepeatedTitles'); if(repEl) repEl.textContent=repeated.length||0;
+    const conEl=document.getElementById('checkConflicts'); if(conEl) conEl.textContent=conflicts.length||0;
     const missing=(res.missing_year?.count||0)+(res.missing_genre?.count||0)+(res.missing_cover?.count||0)+(res.broken_files?.length||0);
-    document.getElementById('checkMissingMeta').textContent=missing;
-    renderCheckList(document.getElementById('realDuplicates'), res.real_duplicates, 'Keine echten Duplikate gefunden.');
-    renderCheckList(document.getElementById('repeatedTitles'), res.repeated_titles, 'Keine mehrfach vorhandenen Titel gefunden.');
-    renderCheckList(document.getElementById('fileConflicts'), res.file_conflicts, 'Keine Dateikonflikte nach Sortierung gefunden.');
+    const metaEl=document.getElementById('checkMissingMeta'); if(metaEl) metaEl.textContent=missing;
+
+    renderCheckList(document.getElementById('realDuplicates'), real, 'Keine Duplikate gefunden. Regel: gleicher Interpret + gleiches Album + mindestens 90 % ähnlicher Titel.', {confirmFalseDuplicate:true});
+    renderCheckList(document.getElementById('repeatedTitles'), repeated, 'Keine mehrfach vorhandenen Titel auf verschiedenen Alben gefunden.');
+    renderCheckList(document.getElementById('fileConflicts'), conflicts, 'Keine Dateikonflikte nach Sortierung gefunden.');
     const meta=[];
     if(res.missing_year?.count) meta.push({title:`Fehlendes Jahr: ${res.missing_year.count}`, items:res.missing_year.examples||[]});
     if(res.missing_genre?.count) meta.push({title:`Fehlendes Genre: ${res.missing_genre.count}`, items:res.missing_genre.examples||[]});
     if(res.missing_cover?.count) meta.push({title:`Fehlende Cover: ${res.missing_cover.count}`, items:res.missing_cover.examples||[]});
     if(res.broken_files?.length) meta.push({title:`Beschädigte/nicht lesbare Dateien: ${res.broken_files.length}`, items:res.broken_files});
     const mbox=document.getElementById('metadataIssues');
-    mbox.innerHTML=meta.length?meta.map(g=>renderIssueGroup(g.title,g.items)).join(''):'<div class="muted">Keine relevanten Metadatenprobleme gefunden.</div>';
-    if(statusEl) statusEl.textContent=`Geprüft: ${res.tracks||0} Titel · Toleranz ${res.threshold_percent||90}%`;
+    if(mbox) mbox.innerHTML=meta.length?meta.map(g=>renderIssueGroup(g.title,g.items)).join(''):'<div class="muted">Keine relevanten Metadatenprobleme gefunden.</div>';
+    if(statusEl) statusEl.textContent=`Geprüft: ${res.tracks||0} Titel · Toleranz ${res.threshold_percent||90}% · ${real.length||0} Duplikatgruppe(n) · ${res.confirmed_false_duplicates||0} bestätigt ausgeblendet`;
   }catch(e){
-    const statusEl=document.getElementById('checkStatus');
-    if(statusEl) statusEl.textContent='Prüfung fehlgeschlagen: '+e.message;
+    if(statusEl) statusEl.textContent='Duplikatprüfung fehlgeschlagen: '+e.message;
+    alert('Duplikatprüfung fehlgeschlagen:\n'+e.message);
+  }finally{
+    if(btn){btn.disabled=false; btn.textContent='Duplikate suchen';}
   }
 }
+
 function exportLibraryCheck(){
   const a=document.createElement('a');
   a.href=API+'/library_check/export';

@@ -8,6 +8,8 @@ import shutil
 import difflib
 import tempfile
 import zipfile
+import hashlib
+from urllib.parse import quote
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -26,9 +28,9 @@ LOG_DIR = Path(os.getenv("LOG_DIR", str(DB_PATH.parent / "logs")))
 LOG_PATH = LOG_DIR / "musiclab.log"
 LOG_MAX_BYTES = int(os.getenv("LOG_MAX_BYTES", str(10 * 1024 * 1024)))
 EXTS = {".mp3", ".m4a", ".aac", ".flac", ".ogg"}
-SCHEMA_VERSION = 23
+SCHEMA_VERSION = 24
 
-app = FastAPI(title="MusicLab API", version="1.8.0")
+app = FastAPI(title="MusicLab API", version="1.8.5")
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
 
 stop_event = threading.Event()
@@ -221,6 +223,17 @@ def init_db():
         )
         con.execute("CREATE INDEX IF NOT EXISTS idx_history_job ON history(job_id)")
         con.execute("CREATE INDEX IF NOT EXISTS idx_history_created ON history(created_at)")
+        con.execute(
+            """
+            CREATE TABLE IF NOT EXISTS duplicate_confirmations (
+                pair_key TEXT PRIMARY KEY,
+                path_a TEXT NOT NULL,
+                path_b TEXT NOT NULL,
+                reason TEXT,
+                created_at REAL NOT NULL
+            )
+            """
+        )
         defaults = {"target_lufs": "-16", "true_peak": "-1.5", "lra": "11", "backup_mode": "on", "parallel_analysis": "2", "music_root": str(DEFAULT_MUSIC_ROOT), "watch_mode": "off", "sort_after_tags": "off"}
         for k, v in defaults.items():
             con.execute("INSERT OR IGNORE INTO settings(key,value) VALUES(?,?)", (k, v))
@@ -255,6 +268,100 @@ def get_music_root() -> Path:
         val = str(DEFAULT_MUSIC_ROOT)
     val = str(val).strip() or str(DEFAULT_MUSIC_ROOT)
     return Path(val)
+
+
+def duplicate_pair_key(paths) -> str:
+    """Stable key for a duplicate candidate, independent of item order."""
+    clean = [str(x or "").strip().replace("\\", "/") for x in (paths or []) if str(x or "").strip()]
+    clean = sorted(dict.fromkeys(clean))
+    joined = "\n".join(clean[:2])
+    return hashlib.sha1(joined.encode("utf-8", errors="replace")).hexdigest()
+
+
+def get_confirmed_duplicate_keys() -> set:
+    try:
+        with db() as con:
+            return {r["pair_key"] for r in con.execute("SELECT pair_key FROM duplicate_confirmations").fetchall()}
+    except Exception:
+        return set()
+
+
+def safe_music_path_info(rel_or_abs: str, request: Request) -> dict:
+    """Return NAS/Finder friendly path information for a track or folder below MUSIC_ROOT."""
+    root = get_music_root().resolve()
+    raw = str(rel_or_abs or "").strip().replace("\\", "/")
+    if not raw:
+        raise HTTPException(status_code=400, detail="Pfad fehlt")
+
+    root_str = root.as_posix().rstrip("/")
+    if raw.startswith(root_str + "/"):
+        rel = raw[len(root_str) + 1:]
+    elif raw.startswith("/music/"):
+        rel = raw[len("/music/"):]
+    elif raw == "/music":
+        rel = ""
+    else:
+        rel = raw.lstrip("/")
+
+    target = (root / rel).resolve()
+    if target != root and root not in target.parents:
+        raise HTTPException(status_code=400, detail="Pfad liegt außerhalb der Musikbibliothek")
+
+    is_file = target.is_file()
+    folder = target.parent if is_file else target
+    try:
+        rel_target = target.relative_to(root).as_posix()
+    except Exception:
+        rel_target = rel
+    try:
+        rel_folder = folder.relative_to(root).as_posix()
+    except Exception:
+        rel_folder = str(Path(rel).parent.as_posix()) if rel else ""
+
+    host = request.url.hostname or os.getenv("NAS_HOST", "localhost")
+    smb_share = os.getenv("SMB_SHARE", "DS420").strip("/") or "DS420"
+    smb_prefix = os.getenv("SMB_PREFIX", "Musik").strip("/")
+
+    def enc_path(parts):
+        return "/".join(quote(part) for part in parts if part not in ("", "."))
+
+    folder_parts = [smb_prefix] + ([p for p in rel_folder.split("/") if p] if rel_folder else [])
+    target_parts = [smb_prefix] + ([p for p in rel_target.split("/") if p] if rel_target else [])
+    folder_smb_url = f"smb://{host}/{quote(smb_share)}"
+    file_smb_url = f"smb://{host}/{quote(smb_share)}"
+    folder_suffix = enc_path(folder_parts)
+    target_suffix = enc_path(target_parts)
+    if folder_suffix:
+        folder_smb_url += "/" + folder_suffix
+    if target_suffix:
+        file_smb_url += "/" + target_suffix
+
+    # Alternative, falls der Musikordner direkt als eigene SMB-Freigabe eingebunden ist.
+    alt_share = os.getenv("SMB_ALT_SHARE", "Musik").strip("/") or "Musik"
+    alt_folder = f"smb://{host}/{quote(alt_share)}"
+    alt_file = f"smb://{host}/{quote(alt_share)}"
+    rel_folder_suffix = enc_path([p for p in rel_folder.split("/") if p])
+    rel_target_suffix = enc_path([p for p in rel_target.split("/") if p])
+    if rel_folder_suffix:
+        alt_folder += "/" + rel_folder_suffix
+    if rel_target_suffix:
+        alt_file += "/" + rel_target_suffix
+
+    nas_base = os.getenv("NAS_MUSIC_PATH", "/volume1/DS420/Musik").rstrip("/")
+    return {
+        "path": rel_target,
+        "folder": rel_folder,
+        "container_path": target.as_posix(),
+        "container_folder": folder.as_posix(),
+        "nas_path": f"{nas_base}/{rel_target}" if rel_target else nas_base,
+        "nas_folder": f"{nas_base}/{rel_folder}" if rel_folder else nas_base,
+        "is_file": is_file,
+        "folder_smb_url": folder_smb_url,
+        "file_smb_url": file_smb_url,
+        "alt_folder_smb_url": alt_folder,
+        "alt_file_smb_url": alt_file,
+    }
+
 
 def check_music_root(path_value: Optional[str] = None) -> dict:
     root = Path((path_value or str(get_music_root())).strip() or str(DEFAULT_MUSIC_ROOT))
@@ -1437,6 +1544,8 @@ def api_library_check(threshold: float = 0.90):
             ORDER BY artist COLLATE NOCASE, album COLLATE NOCASE, disc_number, track_number, title COLLATE NOCASE
         """).fetchall()]
 
+    confirmed_keys = get_confirmed_duplicate_keys()
+
     # 1) Echte Duplikate: gleicher Interpret + Album, ähnlicher Titel, ähnliche Dauer.
     by_album = {}
     for r in rows:
@@ -1451,18 +1560,19 @@ def api_library_check(threshold: float = 0.90):
                 score = similarity(a.get("title") or "", b.get("title") or "")
                 if score < threshold:
                     continue
-                da, db = a.get("duration"), b.get("duration")
-                if da and db and abs(float(da) - float(db)) > 2.5:
-                    continue
-                # Same title in same album but different track numbers can be valid on live/bonus discs.
-                # Stronger duplicate if track number is equal or filename collision-like.
-                if a.get("track_number") and b.get("track_number") and a.get("track_number") != b.get("track_number"):
+                # v1.8.5: Sebastian wollte die Duplikatregel bewusst einfach und sichtbar:
+                # gleicher Interpret + gleiches Album + mindestens 90 % ähnlicher Titel.
+                # Dauer und Tracknummer werden NICHT mehr als Ausschlusskriterium genutzt.
+                pair_paths = [a.get("path"), b.get("path")]
+                pair_key = duplicate_pair_key(pair_paths)
+                if pair_key in confirmed_keys:
                     continue
                 real_duplicates.append({
                     "title": a.get("title") or b.get("title"),
                     "artist": a.get("artist"),
                     "album": a.get("album"),
                     "score": round(score, 3),
+                    "pair_key": pair_key,
                     "items": [
                         {"path": a.get("path"), "duration": a.get("duration"), "bitrate": a.get("bitrate")},
                         {"path": b.get("path"), "duration": b.get("duration"), "bitrate": b.get("bitrate")},
@@ -1549,7 +1659,80 @@ def api_library_check(threshold: float = 0.90):
         "missing_genre": {"count": len(missing_genre), "examples": [{"path": r["path"]} for r in missing_genre[:20]]},
         "missing_cover": {"count": len(missing_cover), "examples": missing_cover[:20]},
         "broken_files": broken,
+        "confirmed_false_duplicates": len(confirmed_keys),
     }
+
+
+@app.get("/api/duplicates")
+def api_duplicates(threshold: float = 0.90):
+    """Schneller, klar benannter Endpunkt für den Duplikate-Tab.
+
+    Regel: gleicher Interpret + gleiches Album + Titelähnlichkeit >= threshold.
+    Titel auf verschiedenen Alben werden nicht als echte Duplikate gezählt.
+    """
+    data = api_library_check(threshold)
+    real = data.get("real_duplicates", [])
+    return {
+        "tracks": data.get("tracks", 0),
+        "threshold_percent": data.get("threshold_percent", int(float(threshold or 0.90) * 100)),
+        "duplicates": real,
+        "real_duplicates": real,
+        "repeated_titles": data.get("repeated_titles", []),
+        "file_conflicts": data.get("file_conflicts", []),
+        "missing_year": data.get("missing_year", {"count": 0, "examples": []}),
+        "missing_genre": data.get("missing_genre", {"count": 0, "examples": []}),
+        "missing_cover": data.get("missing_cover", {"count": 0, "examples": []}),
+        "broken_files": data.get("broken_files", []),
+        "confirmed_false_duplicates": data.get("confirmed_false_duplicates", 0),
+    }
+
+
+@app.post("/api/duplicates/confirm")
+def api_confirm_non_duplicate(payload: dict):
+    """Mark a duplicate candidate as checked/false positive so it no longer appears."""
+    init_db()
+    paths = payload.get("paths") or []
+    if len(paths) < 2:
+        raise HTTPException(status_code=400, detail="Mindestens zwei Pfade erforderlich")
+    paths = [str(x or "").strip().replace("\\", "/") for x in paths if str(x or "").strip()]
+    paths = sorted(dict.fromkeys(paths))
+    if len(paths) < 2:
+        raise HTTPException(status_code=400, detail="Mindestens zwei unterschiedliche Pfade erforderlich")
+    pair_key = duplicate_pair_key(paths[:2])
+    reason = str(payload.get("reason") or "Kein Duplikat bestätigt").strip()[:300]
+    with db() as con:
+        con.execute(
+            "INSERT OR REPLACE INTO duplicate_confirmations(pair_key,path_a,path_b,reason,created_at) VALUES(?,?,?,?,?)",
+            (pair_key, paths[0], paths[1], reason, time.time()),
+        )
+        con.commit()
+    add_log(f"Duplikat als geprüft/kein Duplikat bestätigt: {paths[0]} <-> {paths[1]}")
+    return {"ok": True, "pair_key": pair_key}
+
+
+@app.get("/api/duplicates/confirmed")
+def api_confirmed_non_duplicates():
+    init_db()
+    with db() as con:
+        rows = [dict(r) for r in con.execute("SELECT pair_key,path_a,path_b,reason,created_at FROM duplicate_confirmations ORDER BY created_at DESC").fetchall()]
+    return {"count": len(rows), "items": rows}
+
+
+@app.delete("/api/duplicates/confirmed")
+def api_clear_confirmed_non_duplicates(pair_key: Optional[str] = None):
+    init_db()
+    with db() as con:
+        if pair_key:
+            con.execute("DELETE FROM duplicate_confirmations WHERE pair_key=?", (pair_key,))
+        else:
+            con.execute("DELETE FROM duplicate_confirmations")
+        con.commit()
+    return {"ok": True}
+
+
+@app.get("/api/path_info")
+def api_path_info(path: str, request: Request):
+    return safe_music_path_info(path, request)
 
 
 @app.get("/api/library_check/export")
@@ -1581,7 +1764,7 @@ def startup():
 
 @app.get("/api/health")
 def health():
-    return {"ok": True, "version": "1.8.0", "music_root": str(get_music_root()), "db": str(DB_PATH)}
+    return {"ok": True, "version": "1.8.5", "music_root": str(get_music_root()), "db": str(DB_PATH)}
 
 
 @app.post("/api/scan")

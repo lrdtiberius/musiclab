@@ -839,7 +839,7 @@ tbody tr:hover td{background:rgba(255,255,255,.018)}
   #protocolView .protocolGrid{grid-template-columns:1fr!important;grid-template-rows:minmax(180px,.45fr) minmax(0,.55fr)!important}
 }
 
-/* v1.8.0: Bibliotheksprüfung */
+/* v1.8.5: Bibliotheksprüfung */
 .checkPage{height:100%;min-height:0;display:none;grid-template-rows:auto auto 1fr;gap:12px;}
 .checkPage.active{display:grid;}
 .checkSummary{padding:12px 14px;}
@@ -855,3 +855,139 @@ tbody tr:hover td{background:rgba(255,255,255,.018)}
 .badge{font-size:11px;border:1px solid #3e4b61;border-radius:999px;padding:2px 7px;color:var(--muted);}
 .checkPath{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;color:var(--muted);font-size:12px;margin-top:5px;word-break:break-word;}
 @media (max-width: 1100px){.checkGrid{grid-template-columns:1fr}.checkStats{grid-template-columns:repeat(2,1fr)}}
+
+
+/* v1.8.5 echter Audio-Flächen-Fix: bewusst am Dateiende, damit ältere Regeln sicher überschrieben werden */
+body.audioMode .layout{
+  grid-template-columns:300px minmax(0,1fr)!important;
+  height:calc(100vh - 72px)!important;
+  overflow:hidden!important;
+}
+body.audioMode main{
+  display:block!important;
+  min-height:0!important;
+  height:100%!important;
+  overflow:hidden!important;
+}
+body.audioMode #audioView.appView.active{
+  display:grid!important;
+  height:100%!important;
+  min-height:0!important;
+  grid-template-columns:minmax(430px,42%) minmax(0,58%)!important;
+  grid-template-rows:46px 66px minmax(0,1fr)!important;
+  gap:12px!important;
+  align-items:stretch!important;
+  overflow:hidden!important;
+}
+body.audioMode #audioView > .statsLine{
+  grid-column:1 / -1!important;
+  grid-row:1!important;
+  margin:0!important;
+  min-height:0!important;
+  height:46px!important;
+  padding:10px 14px!important;
+}
+body.audioMode #audioView > .refbox{
+  grid-column:1 / -1!important;
+  grid-row:2!important;
+  margin:0!important;
+  min-height:0!important;
+  height:66px!important;
+  padding:10px 14px!important;
+}
+body.audioMode #audioView > .albumPanel{
+  grid-column:1!important;
+  grid-row:3!important;
+  margin:0!important;
+  min-width:0!important;
+  min-height:0!important;
+  height:100%!important;
+  display:flex!important;
+  flex-direction:column!important;
+  overflow:hidden!important;
+}
+body.audioMode #audioView > .trackPanel{
+  grid-column:2!important;
+  grid-row:3!important;
+  margin:0!important;
+  min-width:0!important;
+  min-height:0!important;
+  height:100%!important;
+  display:flex!important;
+  flex-direction:column!important;
+  overflow:hidden!important;
+}
+body.audioMode #audioView .albumPanel .sectionHead{
+  flex:0 0 auto!important;
+  margin-bottom:10px!important;
+}
+body.audioMode #audioView .batchbar{
+  flex:0 0 auto!important;
+}
+body.audioMode #audioView .albums{
+  flex:1 1 auto!important;
+  min-height:0!important;
+  max-height:none!important;
+  height:auto!important;
+  overflow:auto!important;
+  display:grid!important;
+  grid-template-columns:repeat(auto-fill,minmax(250px,1fr))!important;
+  align-content:start!important;
+  gap:12px!important;
+  padding:4px 8px 12px 2px!important;
+}
+body.audioMode #audioView .album{
+  min-height:118px!important;
+  padding:15px 44px 15px 15px!important;
+  border-radius:16px!important;
+}
+body.audioMode #audioView .album b{
+  font-size:17px!important;
+  line-height:1.25!important;
+}
+body.audioMode #audioView .album .small{
+  font-size:13px!important;
+  line-height:1.35!important;
+}
+body.audioMode #audioView .album .pick{
+  width:20px!important;
+  height:20px!important;
+  right:13px!important;
+  top:13px!important;
+}
+body.audioMode #audioView .trackScroll{
+  flex:1 1 auto!important;
+  min-height:0!important;
+  max-height:none!important;
+  height:auto!important;
+  overflow:auto!important;
+}
+body.audioMode #audioView .toolbar,
+body.audioMode #audioView #albumSummary,
+body.audioMode #audioView #normalizePreview{
+  flex:0 0 auto!important;
+}
+@media(max-width:1200px){
+  body.audioMode #audioView.appView.active{
+    grid-template-columns:1fr!important;
+    grid-template-rows:46px 66px minmax(210px,.42fr) minmax(0,.58fr)!important;
+  }
+  body.audioMode #audioView > .albumPanel{grid-column:1!important;grid-row:3!important;}
+  body.audioMode #audioView > .trackPanel{grid-column:1!important;grid-row:4!important;}
+}
+
+/* v1.8.5 Duplikate: Pfad öffnen + falsche Treffer bestätigen */
+.checkTitleActions{display:flex;align-items:center;gap:8px;flex-wrap:wrap;justify-content:flex-end;}
+.checkPathRow{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:8px;align-items:center;margin-top:6px;padding:6px 7px;border:1px solid rgba(255,255,255,.045);border-radius:10px;background:#111722;}
+.checkPathRow .checkPath{margin:0;min-width:0;}
+.checkPathActions{display:flex;gap:6px;align-items:center;white-space:nowrap;}
+.miniBtn{padding:5px 8px!important;border-radius:8px!important;font-size:11px!important;line-height:1.1!important;box-shadow:none!important;}
+.miniBtn.secondary{background:#303847!important;color:var(--txt)!important;}
+.miniBtn.danger{background:#8a6236!important;color:#fff2de!important;}
+@media(max-width:900px){.checkPathRow{grid-template-columns:1fr}.checkPathActions{justify-content:flex-start;flex-wrap:wrap}}
+
+/* v1.8.5 nochmals härter: Audio-Seite darf keine ungenutzten Zwischenräume behalten */
+body.audioMode #audioView.appView.active{grid-template-columns:minmax(520px,46%) minmax(0,54%)!important;grid-template-rows:auto auto minmax(0,1fr)!important;}
+body.audioMode #audioView > .trackPanel{margin-top:0!important;}
+body.audioMode #audioView .albums{grid-template-columns:repeat(auto-fill,minmax(280px,1fr))!important;}
+body.audioMode #audioView .album{min-height:132px!important;}
