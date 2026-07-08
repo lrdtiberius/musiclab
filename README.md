@@ -1,4 +1,4 @@
-# MusicLab v1.8.18
+# MusicLab v1.8.19
 
 ## Änderungen
 
@@ -25,7 +25,7 @@ Danach im Browser hart neu laden.
 Hinweis: Bereits vorhandene alte Logzeilen behalten ihre alte Uhrzeit. Die Korrektur gilt für neue Logeinträge nach dem Neustart.
 
 
-## v1.8.18
+## v1.8.19
 
 - Tags-Seite erweitert: neuer Suchtyp „Fehlende/fehlerhafte Tags“.
 - Betroffene Albumordner werden links gesammelt angezeigt und öffnen direkt den vorhandenen Tag-Editor.
@@ -33,7 +33,7 @@ Hinweis: Bereits vorhandene alte Logzeilen behalten ihre alte Uhrzeit. Die Korre
 - Ordner-/Tag-Schreibweisen werden als Hinweis markiert, z. B. wenn Ordnername und Tag-Schreibweise abweichen.
 
 
-## v1.8.18
+## v1.8.19
 
 - Neuer Button **Alles normalisieren** in der Kopfzeile.
 - Normalisiert alle vollständig analysierten Alben auf die eingestellten Zielwerte.
