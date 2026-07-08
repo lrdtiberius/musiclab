@@ -1052,7 +1052,7 @@ body.checkMode #checkView .checkList{min-height:0!important;max-height:none!impo
 }
 
 
-/* v1.8.23 Tag Scraper */
+/* v1.8.24 Tag Scraper */
 .tagScraperPanel.hidden{display:none!important}
 .tagScraperResults{display:grid;gap:12px}
 .scraperCard{border:1px solid var(--border,#2c3340);border-radius:16px;padding:14px;background:rgba(255,255,255,.035)}
@@ -1067,7 +1067,7 @@ body.checkMode #checkView .checkList{min-height:0!important;max-height:none!impo
 .scraperActions{margin-top:8px}
 
 
-/* v1.8.23: Einstellungen als Zahnrad, damit die Kopfzeile nicht abgeschnitten wird */
+/* v1.8.24: Einstellungen als Zahnrad, damit die Kopfzeile nicht abgeschnitten wird */
 .viewTabs button.iconTab.settingsGear{
   min-width:40px;
   width:40px;
@@ -1082,7 +1082,7 @@ body.checkMode #checkView .checkList{min-height:0!important;max-height:none!impo
 }
 
 
-/* v1.8.23: Tag-Scraper als sichtbares Overlay.
+/* v1.8.24: Tag-Scraper als sichtbares Overlay.
    Der bisherige Inline-Bereich konnte im Tags-Grid durch die begrenzte Höhe
    hinter der Titel-Tabelle verschwinden. Jetzt wird er als Dialog über der
    Tags-Seite angezeigt, sobald die Suche gestartet wird. */
@@ -1128,6 +1128,57 @@ body.checkMode #checkView .checkList{min-height:0!important;max-height:none!impo
   #tagScraperPanel:not(.hidden){left:14px!important;right:14px!important;top:150px!important;bottom:18px!important;}
 }
 
-/* v1.8.23: Scraper-Sicherheitshinweis */
+/* v1.8.24: Scraper-Sicherheitshinweis */
 .scraperSafetyNote{margin:8px 0 4px;color:var(--muted);}
 .scraperActions{gap:8px;flex-wrap:wrap;}
+
+/* v1.8.24: Track-Gegenüberstellung im Tag-Scraper */
+.scraperCompare{
+  margin-top:10px;
+  border:1px solid var(--border);
+  border-radius:14px;
+  background:rgba(10,14,22,.42);
+  overflow:hidden;
+}
+.scraperCompare summary{
+  cursor:pointer;
+  padding:10px 12px;
+  font-weight:800;
+}
+.compareHint{
+  padding:0 12px 9px;
+}
+.scraperCompareTableWrap{
+  max-height:320px;
+  overflow:auto;
+  border-top:1px solid var(--border);
+}
+.scraperCompareTable{
+  width:100%;
+  border-collapse:collapse;
+  font-size:13px;
+}
+.scraperCompareTable th,
+.scraperCompareTable td{
+  padding:8px 9px;
+  border-bottom:1px solid rgba(255,255,255,.06);
+  vertical-align:top;
+}
+.scraperCompareTable th{
+  position:sticky;
+  top:0;
+  background:rgba(27,33,45,.96);
+  z-index:1;
+  text-align:left;
+}
+.matchPill{
+  display:inline-block;
+  min-width:44px;
+  text-align:center;
+  border-radius:999px;
+  padding:3px 7px;
+  font-weight:800;
+}
+.matchPill.good{background:rgba(54,180,96,.28);color:#bff5ce;}
+.matchPill.warn{background:rgba(255,184,77,.25);color:#ffe0a3;}
+.matchPill.bad{background:rgba(255,94,94,.23);color:#ffc0c0;}

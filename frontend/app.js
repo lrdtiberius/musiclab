@@ -1,5 +1,5 @@
 const API='http://'+location.hostname+':8091/api';
-const APP_VERSION='1.8.18';
+const APP_VERSION='1.8.24';
 let coverCacheBust=Date.now();
 let selectedArtist=null, selectedAlbum=null, selectedTagFolder=null;
 let selectedTagGenre=null, selectedTagYear=null;
@@ -26,7 +26,7 @@ function coverBox(src, large=false, opts={}){
   const extra=opts.extraClass ? ' '+opts.extraClass : '';
   const cls=(large?'mediaCoverBox large':'mediaCoverBox')+extra;
   const loading=opts.eager ? 'eager' : 'lazy';
-  // v1.8.23: Cover-Boxen müssen beim Albumwechsel immer eine neue, eindeutige
+  // v1.8.24: Cover-Boxen müssen beim Albumwechsel immer eine neue, eindeutige
   // DOM-Box bekommen. Besonders wichtig bei #tagCoverPreview: Wenn die ID beim
   // ersten Cover verloren geht, kann die Vorschau bei Albumwechseln nicht mehr
   // ersetzt werden und Safari zeigt das zuletzt sichtbare Cover weiter an.
@@ -858,7 +858,7 @@ function jsArg(v){return JSON.stringify(String(v??''));}
 function renderPathRow(x){
   const path=String(x?.path||'');
   if(!path) return '';
-  // v1.8.23: Auf der Duplikatseite keine Pfad-Buttons mehr.
+  // v1.8.24: Auf der Duplikatseite keine Pfad-Buttons mehr.
   // Direktes Öffnen/Kopieren war im Browser/NAS-Setup nicht zuverlässig genug
   // und hat die Seite unnötig überladen. Der Pfad bleibt nur als Hinweis sichtbar.
   return `<div class="checkPathRow"><div class="checkPath">${escHtml(path)}</div></div>`;
@@ -1357,7 +1357,7 @@ function clearTagForm(){
 async function loadTagsPage(){
   const body=document.getElementById('tagTracks'); const hint=document.getElementById('tagHint');
   if(!body||!hint)return;
-  // v1.8.23: Beim Albumwechsel sofort die alte Vorschau entfernen.
+  // v1.8.24: Beim Albumwechsel sofort die alte Vorschau entfernen.
   // Sonst bleibt bei langsamer/fehlender Cover-Antwort das zuletzt gesehene Cover stehen.
   tagCoverPlaceholder('Cover wird geladen…');
   if(!selectedAlbum && selectedTagFolder===null){
@@ -1482,7 +1482,7 @@ async function uploadTagCover(){
   const first=paths[0] || '';
   const firstFolder=parentFolderFromPath(first||'');
 
-  // v1.8.23: Die sichtbaren Track-Pfade werden direkt ans Backend geschickt.
+  // v1.8.24: Die sichtbaren Track-Pfade werden direkt ans Backend geschickt.
   // Der Ordner ist nur noch Fallback/Hinweis. Damit landet das Cover nicht
   // im falschen Album, wenn Albumname und Ordnername auseinanderlaufen.
   if(firstFolder) folder=firstFolder;
@@ -1539,14 +1539,66 @@ function currentTagPaths(){
 function closeTagScraper(){
   const p=document.getElementById('tagScraperPanel'); if(p)p.classList.add('hidden');
 }
+function currentTagTrackData(){
+  return currentTagRows().map((r,i)=>({
+    index:i+1,
+    path:r.dataset.path||'',
+    title:r.querySelector('.tagTitle')?.value||r.dataset.origTitle||'',
+    artist:r.querySelector('.tagArtist')?.value||r.dataset.origArtist||'',
+    track:r.querySelector('.tagTrack')?.value||r.dataset.origTrack||'',
+    disc:r.querySelector('.tagDisc')?.value||r.dataset.origDisc||''
+  }));
+}
+function scraperNorm(s){
+  return String(s||'').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[^a-z0-9]+/g,' ').trim();
+}
+function scraperTitleMatch(a,b){
+  a=scraperNorm(a); b=scraperNorm(b);
+  if(!a&&!b)return 100;
+  if(!a||!b)return 0;
+  const m=a.length,n=b.length;
+  const dp=Array.from({length:m+1},(_,i)=>[i]);
+  for(let j=1;j<=n;j++)dp[0][j]=j;
+  for(let i=1;i<=m;i++){
+    for(let j=1;j<=n;j++){
+      dp[i][j]=Math.min(dp[i-1][j]+1,dp[i][j-1]+1,dp[i-1][j-1]+(a[i-1]===b[j-1]?0:1));
+    }
+  }
+  return Math.max(0, Math.round((1-dp[m][n]/Math.max(m,n))*100));
+}
+function renderTrackComparison(onlineTracks){
+  const mine=currentTagTrackData();
+  const online=onlineTracks||[];
+  const max=Math.max(mine.length, online.length);
+  if(!max)return '<div class="empty">Keine Trackdaten für den Vergleich vorhanden.</div>';
+  const rows=[];
+  for(let i=0;i<max;i++){
+    const m=mine[i]||{};
+    const o=online[i]||{};
+    const oDisc=Number(o.disc_number||1);
+    const oPos=o.position||o.number||'';
+    const sim=(m.title||o.title)?scraperTitleMatch(m.title||'', o.title||''):0;
+    const cls=sim>=90?'good':(sim>=70?'warn':'bad');
+    rows.push(`<tr>
+      <td class="small">${i+1}</td>
+      <td><b>${escHtml(m.title||'—')}</b><br><span class="small muted">${escHtml(m.path||'')}</span></td>
+      <td class="small">${escHtml(m.disc||'')} ${m.disc?'·':''} ${escHtml(m.track||'')}</td>
+      <td><b>${escHtml(o.title||'—')}</b></td>
+      <td class="small">${oDisc>1?'CD '+escHtml(oDisc)+' · ':''}${escHtml(oPos)}</td>
+      <td><span class="matchPill ${cls}">${sim}%</span></td>
+    </tr>`);
+  }
+  return `<details class="scraperCompare" open>
+    <summary>Track-Vergleich: meine Dateien ↔ MusicBrainz</summary>
+    <div class="small muted compareHint">Nur zum Abgleichen. Die Buttons darunter übernehmen weiterhin nur Jahr/Cover und ändern keine Titel oder Reihenfolge.</div>
+    <div class="scraperCompareTableWrap"><table class="scraperCompareTable">
+      <thead><tr><th>#</th><th>Meine Tracks</th><th>Nr.</th><th>Gefundene Tracks</th><th>Nr.</th><th>Match</th></tr></thead>
+      <tbody>${rows.join('')}</tbody>
+    </table></div>
+  </details>`;
+}
 function scraperTrackPreview(tracks){
-  const shown=(tracks||[]).slice(0,12).map(t=>{
-    const d=Number(t.disc_number||1);
-    const pos=t.position||t.number||'';
-    return `<div class="scraperTrack"><span>${d>1?'CD '+d+' · ':''}${escHtml(pos)}</span><b>${escHtml(t.title||'')}</b></div>`;
-  }).join('');
-  const more=(tracks||[]).length>12?`<div class="small muted">… ${(tracks||[]).length-12} weitere Titel</div>`:'';
-  return shown+more;
+  return renderTrackComparison(tracks||[]);
 }
 function renderTagScraperResults(data){
   const panel=document.getElementById('tagScraperPanel');
