@@ -2280,7 +2280,7 @@ def _folder_matches(row, folder: str, artist: Optional[str] = None):
 # Online Tag Scraper (MusicBrainz)
 # -----------------------------
 MB_BASE = "https://musicbrainz.org/ws/2"
-MB_UA = "MusicLab/1.8.18 (local tag repair tool)"
+MB_UA = "MusicLab/1.8.20 (local tag repair tool)"
 
 
 def _norm_match(value: str) -> str:
@@ -2324,7 +2324,11 @@ def _folder_tracks_from_payload(payload: dict):
                     rows.append(dict(row))
         elif folder:
             all_rows = [dict(r) for r in con.execute("SELECT * FROM tracks ORDER BY COALESCE(disc_number,1), COALESCE(track_number,9999), path COLLATE NOCASE").fetchall()]
-            rows = [r for r in all_rows if parent_folder_key(r.get("path") or "") == folder]
+            if folder.startswith("__album__:"):
+                album_name = folder[len("__album__:"):].strip().lower()
+                rows = [r for r in all_rows if (r.get("album") or "Unbekanntes Album").strip().lower() == album_name]
+            else:
+                rows = [r for r in all_rows if parent_folder_key(r.get("path") or "") == folder]
     rows.sort(key=lambda r: (int(r.get("disc_number") or 1), int(r.get("track_number") or 9999), (r.get("title") or "").lower(), (r.get("path") or "").lower()))
     # safety: validate actual files are below music root when possible
     safe = []
@@ -2604,12 +2608,11 @@ def api_tag_issues(q: str = "", kind: str = "all"):
 
 @app.get("/api/tag_albums")
 def get_tag_albums(q: str = "", artist: Optional[str] = None, genre: Optional[str] = None, year: Optional[str] = None):
-    """Folder-based album list for the tag editor.
+    """Album list for the tag editor.
 
-    This deliberately groups by the physical album folder instead of existing
-    album tags. It prevents broken/foreign tags from merging unrelated files
-    into one pseudo album while the user is trying to repair metadata. Optional
-    filters (artist/genre/year) are applied to the contained tracks.
+    v1.8.20: Sampler/compilations that share one album tag but have several
+    artists/folders are shown as ONE virtual album again. Normal single-folder
+    albums stay physical, so broken folder/tag cases remain repairable.
     """
     q_norm = (q or "").strip().lower()
     artist_norm = (artist or "").strip().lower()
@@ -2620,13 +2623,13 @@ def get_tag_albums(q: str = "", artist: Optional[str] = None, genre: Optional[st
             """
             SELECT t.path,t.artist,t.album,t.title,t.genre,t.year,t.duration,a.track_id AS analyzed
             FROM tracks t LEFT JOIN analysis a ON a.track_id=t.id AND a.status='ok'
-            ORDER BY t.path COLLATE NOCASE
+            ORDER BY t.album COLLATE NOCASE, t.path COLLATE NOCASE
             """
         ).fetchall()]
-    groups = {}
+
+    filtered = []
     for r in rows:
-        folder = parent_folder_key(r.get("path") or "")
-        hay = " ".join([folder, r.get("artist") or "", r.get("album") or "", r.get("title") or "", r.get("genre") or "", r.get("year") or ""]).lower()
+        hay = " ".join([r.get("path") or "", r.get("artist") or "", r.get("album") or "", r.get("title") or "", r.get("genre") or "", r.get("year") or ""]).lower()
         if q_norm and q_norm not in hay:
             continue
         if artist_norm and (r.get("artist") or "").strip().lower() != artist_norm:
@@ -2635,6 +2638,55 @@ def get_tag_albums(q: str = "", artist: Optional[str] = None, genre: Optional[st
             continue
         if year_norm and not str(r.get("year") or "").strip().lower().startswith(year_norm):
             continue
+        filtered.append(r)
+
+    # First detect multi-artist/multi-folder albums. These are typical samplers
+    # and must not be shown once per contributing artist on the Tags page.
+    by_album = {}
+    for r in filtered:
+        album = (r.get("album") or "").strip()
+        if not album:
+            continue
+        key = album.lower()
+        g = by_album.setdefault(key, {"album": album, "rows": [], "artists": set(), "folders": set()})
+        g["rows"].append(r)
+        if r.get("artist"):
+            g["artists"].add(r.get("artist"))
+        g["folders"].add(parent_folder_key(r.get("path") or ""))
+
+    virtual_keys = set()
+    out = []
+    for key, g in by_album.items():
+        # Only virtualize real multi-artist/multi-folder cases. This avoids
+        # collapsing unrelated single-artist albums that happen to share a title.
+        if len(g["artists"]) > 1 and len(g["folders"]) > 1:
+            rows_g = g["rows"]
+            artists = sorted(g["artists"], key=lambda x: x.lower())
+            genres = sorted({r.get("genre") for r in rows_g if r.get("genre")}, key=lambda x: x.lower())
+            years = sorted({str(r.get("year")) for r in rows_g if r.get("year")}, key=lambda x: x.lower())
+            out.append({
+                "folder": "__album__:" + g["album"],
+                "album": g["album"],
+                "tag_album": g["album"],
+                "artist": "Verschiedene Interpreten",
+                "artist_count": len(artists),
+                "folder_count": len(g["folders"]),
+                "genre": genres[0] if len(genres) == 1 else ("Verschiedene Genres" if genres else ""),
+                "year": years[0] if len(years) == 1 else ("Verschiedene Jahre" if years else ""),
+                "tracks": len(rows_g),
+                "analyzed": sum(1 for r in rows_g if r.get("analyzed") is not None),
+                "duration": sum(float(r.get("duration") or 0) for r in rows_g),
+                "virtual": True,
+            })
+            virtual_keys.add(key)
+
+    # The rest remains folder-based for safe repair of broken tags.
+    groups = {}
+    for r in filtered:
+        album = (r.get("album") or "").strip()
+        if album and album.lower() in virtual_keys:
+            continue
+        folder = parent_folder_key(r.get("path") or "")
         g = groups.setdefault(folder, {"folder": folder, "album": folder_display_name(folder), "artists": set(), "tag_albums": set(), "genres": set(), "years": set(), "tracks": 0, "analyzed": 0, "duration": 0.0})
         if r.get("artist"):
             g["artists"].add(r.get("artist"))
@@ -2647,7 +2699,7 @@ def get_tag_albums(q: str = "", artist: Optional[str] = None, genre: Optional[st
         g["tracks"] += 1
         g["analyzed"] += 1 if r.get("analyzed") is not None else 0
         g["duration"] += float(r.get("duration") or 0)
-    out = []
+
     for g in groups.values():
         artists = sorted(g.pop("artists"), key=lambda x: x.lower())
         tag_albums = sorted(g.pop("tag_albums"), key=lambda x: x.lower())
@@ -2658,8 +2710,10 @@ def get_tag_albums(q: str = "", artist: Optional[str] = None, genre: Optional[st
         g["tag_album"] = tag_albums[0] if len(tag_albums) == 1 else ("Mehrere Album-Tags" if tag_albums else "")
         g["genre"] = genres[0] if len(genres) == 1 else ("Verschiedene Genres" if genres else "")
         g["year"] = years[0] if len(years) == 1 else ("Verschiedene Jahre" if years else "")
+        g["virtual"] = False
         out.append(g)
-    out.sort(key=lambda x: (x.get("album") or "").lower())
+
+    out.sort(key=lambda x: ((x.get("album") or "").lower(), (x.get("artist") or "").lower(), (x.get("folder") or "").lower()))
     return out[:1000]
 
 
@@ -2686,8 +2740,14 @@ def get_tracks_by_folder(folder: str, artist: Optional[str] = None, genre: Optio
             """
         ).fetchall()]
     out = []
+    virtual_album = ""
+    if folder.startswith("__album__:"):
+        virtual_album = folder[len("__album__:"):].strip().lower()
     for r in rows:
-        if parent_folder_key(r.get("path") or "") != folder:
+        if virtual_album:
+            if (r.get("album") or "Unbekanntes Album").strip().lower() != virtual_album:
+                continue
+        elif parent_folder_key(r.get("path") or "") != folder:
             continue
         if artist_norm and (r.get("artist") or "").strip().lower() != artist_norm:
             continue

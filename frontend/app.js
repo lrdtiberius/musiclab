@@ -26,7 +26,7 @@ function coverBox(src, large=false, opts={}){
   const extra=opts.extraClass ? ' '+opts.extraClass : '';
   const cls=(large?'mediaCoverBox large':'mediaCoverBox')+extra;
   const loading=opts.eager ? 'eager' : 'lazy';
-  // v1.8.19: Cover-Boxen müssen beim Albumwechsel immer eine neue, eindeutige
+  // v1.8.20: Cover-Boxen müssen beim Albumwechsel immer eine neue, eindeutige
   // DOM-Box bekommen. Besonders wichtig bei #tagCoverPreview: Wenn die ID beim
   // ersten Cover verloren geht, kann die Vorschau bei Albumwechseln nicht mehr
   // ersetzt werden und Safari zeigt das zuletzt sichtbare Cover weiter an.
@@ -507,9 +507,10 @@ async function loadAlbumBrowser(){
     browserList.innerHTML=a.map(x=>{
       const active = x.folder===selectedTagFolder;
       const artistData = x.artist && Number(x.artist_count||0)===1 ? ` data-artist="${encodeURIComponent(x.artist)}"` : '';
+      const isVirtual = String(x.folder||'').startsWith('__album__:') || x.virtual;
       const cleanTagAlbum = x.tag_album && x.tag_album !== 'Mehrere Album-Tags' ? x.tag_album : '';
       const shownAlbum = cleanTagAlbum || x.album;
-      const folderHint = cleanTagAlbum && cleanTagAlbum !== x.album ? ` · Ordner: ${escHtml(x.album)}` : '';
+      const folderHint = isVirtual ? ` · ${Number(x.folder_count||0)||'mehrere'} Ordner` : (cleanTagAlbum && cleanTagAlbum !== x.album ? ` · Ordner: ${escHtml(x.album)}` : '');
       const tagHint = x.tag_album === 'Mehrere Album-Tags' ? ' · Tag: Mehrere Album-Tags' : folderHint;
       return `<div class="row ${active?'sel':''}" data-folder="${encodeURIComponent(x.folder||'')}" data-album="${encodeURIComponent(shownAlbum)}"${artistData}><b>${escHtml(shownAlbum)}</b><br><span class="small">${escHtml(x.artist)} · ${x.tracks} Titel · ${x.analyzed}/${x.tracks} analysiert${tagHint}</span></div>`;
     }).join('') || '<div class="empty">Keine Albumordner gefunden.</div>';
@@ -585,6 +586,7 @@ async function selectTagFolder(folder, displayAlbum, artist=null){
   selectedTagFolder=folder || '';
   selectedAlbum=displayAlbum || folder || '';
   selectedArtist=artist || null;
+  closeTagScraper();
   await loadBrowser();
   await loadTagsPage();
 }
@@ -856,7 +858,7 @@ function jsArg(v){return JSON.stringify(String(v??''));}
 function renderPathRow(x){
   const path=String(x?.path||'');
   if(!path) return '';
-  // v1.8.19: Auf der Duplikatseite keine Pfad-Buttons mehr.
+  // v1.8.20: Auf der Duplikatseite keine Pfad-Buttons mehr.
   // Direktes Öffnen/Kopieren war im Browser/NAS-Setup nicht zuverlässig genug
   // und hat die Seite unnötig überladen. Der Pfad bleibt nur als Hinweis sichtbar.
   return `<div class="checkPathRow"><div class="checkPath">${escHtml(path)}</div></div>`;
@@ -1149,7 +1151,7 @@ function setAppView(view){
     loadDashboard();
   }else if(view==='tags'){
     // Tags arbeitet mit einem Suchtyp-Dropdown. Standard ist Album.
-    if(!['artist','album','genre','year'].includes(browserMode)) browserMode='album';
+    if(!['artist','album','genre','year','issues'].includes(browserMode)) browserMode='album';
     const tagSelect=document.getElementById('tagSearchType');
     if(tagSelect) tagSelect.value=browserMode;
     resetTagFilters();
@@ -1346,16 +1348,22 @@ async function getTagTrackUrl(){
   return {url, useArtist, byFolder:false};
 }
 
+function clearTagForm(){
+  ['tagAlbumArtist','tagAlbumName','tagYear','tagGenre','tagTrackTotal','tagDiscTotal'].forEach(id=>{const el=document.getElementById(id); if(el){el.value=''; el.disabled=false;}});
+  const box=document.getElementById('tagDiscTotalsBox'); if(box){box.innerHTML=''; box.style.display='none';}
+  const b=document.getElementById('btnTagScraper'); if(b)b.disabled=true;
+}
+
 async function loadTagsPage(){
   const body=document.getElementById('tagTracks'); const hint=document.getElementById('tagHint');
   if(!body||!hint)return;
-  // v1.8.19: Beim Albumwechsel sofort die alte Vorschau entfernen.
+  // v1.8.20: Beim Albumwechsel sofort die alte Vorschau entfernen.
   // Sonst bleibt bei langsamer/fehlender Cover-Antwort das zuletzt gesehene Cover stehen.
   tagCoverPlaceholder('Cover wird geladen…');
   if(!selectedAlbum && selectedTagFolder===null){
     hint.textContent = selectedArtist ? 'Bitte links ein Album von '+selectedArtist+' auswählen.' : 'Noch kein Album ausgewählt.';
     body.innerHTML='';
-    const tt=document.getElementById('tagTrackTotal'); if(tt)tt.value=''; const dt=document.getElementById('tagDiscTotal'); if(dt)dt.value='';
+    clearTagForm();
     tagCoverPlaceholder('Noch kein Album ausgewählt.');
     setTagsDirty(false);
     setupCoverDrop();
@@ -1402,6 +1410,7 @@ async function loadTagsPage(){
       if(yr){ const y=String(first.year||'').trim(); yr.value=(y==='0000'||y==='0')?'':y; }
       if(ge)ge.value=first.genre||'';
     } else {
+      clearTagForm();
       tagCoverPlaceholder('Keine Titel in dieser Auswahl.');
       renderDiscTotalsEditor([]);
     }
@@ -1419,7 +1428,7 @@ async function loadTagsPage(){
     bindTagDirtyHandlers();
     setupCoverDrop();
     setTagsDirty(false);
-  }catch(e){hint.textContent='Tags konnten nicht geladen werden: '+e.message; body.innerHTML=''; tagCoverPlaceholder('Cover konnte nicht geladen werden.'); const bs=document.getElementById('btnTagScraper'); if(bs) bs.disabled=true; setTagsDirty(false);}
+  }catch(e){hint.textContent='Tags konnten nicht geladen werden: '+e.message; body.innerHTML=''; tagCoverPlaceholder('Cover konnte nicht geladen werden.'); clearTagForm(); setTagsDirty(false);}
 }
 function escAttr(s){return String(s ?? '').replaceAll('&','&amp;').replaceAll('"','&quot;').replaceAll('<','&lt;').replaceAll('>','&gt;')}
 function renderDiscTotalsEditor(discs){
@@ -1473,7 +1482,7 @@ async function uploadTagCover(){
   const first=paths[0] || '';
   const firstFolder=parentFolderFromPath(first||'');
 
-  // v1.8.19: Die sichtbaren Track-Pfade werden direkt ans Backend geschickt.
+  // v1.8.20: Die sichtbaren Track-Pfade werden direkt ans Backend geschickt.
   // Der Ordner ist nur noch Fallback/Hinweis. Damit landet das Cover nicht
   // im falschen Album, wenn Albumname und Ordnername auseinanderlaufen.
   if(firstFolder) folder=firstFolder;
@@ -1566,14 +1575,19 @@ function renderTagScraperResults(data){
     </div>`;
   }).join('');
   window.__tagScraperProposals=proposals;
+  if(panel) panel.scrollIntoView({behavior:'smooth', block:'nearest'});
 }
 async function searchTagScraper(){
   const paths=currentTagPaths();
-  if(!paths.length){alert('Bitte zuerst ein Album auf der Tags-Seite auswählen.');return;}
   const panel=document.getElementById('tagScraperPanel');
   const box=document.getElementById('tagScraperResults');
   const st=document.getElementById('tagScraperStatus');
-  if(panel)panel.classList.remove('hidden');
+  if(panel){panel.classList.remove('hidden'); panel.scrollIntoView({behavior:'smooth', block:'nearest'});}
+  if(!paths.length){
+    if(st)st.textContent='Kein Album ausgewählt';
+    if(box)box.innerHTML='<div class="empty">Bitte links zuerst ein Album auswählen. Danach erscheinen hier die Online-Treffer.</div>';
+    return;
+  }
   if(box)box.innerHTML='<div class="empty">Suche Online-Tags…</div>';
   if(st)st.textContent='Suche läuft…';
   const payload={

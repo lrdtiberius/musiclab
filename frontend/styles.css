@@ -1052,7 +1052,7 @@ body.checkMode #checkView .checkList{min-height:0!important;max-height:none!impo
 }
 
 
-/* v1.8.19 Tag Scraper */
+/* v1.8.20 Tag Scraper */
 .tagScraperPanel.hidden{display:none!important}
 .tagScraperResults{display:grid;gap:12px}
 .scraperCard{border:1px solid var(--border,#2c3340);border-radius:16px;padding:14px;background:rgba(255,255,255,.035)}
@@ -1067,7 +1067,7 @@ body.checkMode #checkView .checkList{min-height:0!important;max-height:none!impo
 .scraperActions{margin-top:8px}
 
 
-/* v1.8.19: Einstellungen als Zahnrad, damit die Kopfzeile nicht abgeschnitten wird */
+/* v1.8.20: Einstellungen als Zahnrad, damit die Kopfzeile nicht abgeschnitten wird */
 .viewTabs button.iconTab.settingsGear{
   min-width:40px;
   width:40px;
