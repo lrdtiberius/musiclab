@@ -1,4 +1,11 @@
-# MusicLab v1.8.22
+# MusicLab v1.8.23
+
+## v1.8.23
+
+- Tags-Scraper schreibt keine Titel, Tracknummern, Discnummern, Interpret- oder Album-Tags mehr.
+- Scraper-Aktionen getrennt: Nur Jahr, Nur Cover, Jahr + Cover.
+- Bestätigungsdialog erklärt ausdrücklich, dass Trackdaten nicht überschrieben werden.
+
 
 ## Änderungen
 
@@ -25,7 +32,7 @@ Danach im Browser hart neu laden.
 Hinweis: Bereits vorhandene alte Logzeilen behalten ihre alte Uhrzeit. Die Korrektur gilt für neue Logeinträge nach dem Neustart.
 
 
-## v1.8.22
+## v1.8.23
 
 - Tags-Seite erweitert: neuer Suchtyp „Fehlende/fehlerhafte Tags“.
 - Betroffene Albumordner werden links gesammelt angezeigt und öffnen direkt den vorhandenen Tag-Editor.
@@ -33,7 +40,7 @@ Hinweis: Bereits vorhandene alte Logzeilen behalten ihre alte Uhrzeit. Die Korre
 - Ordner-/Tag-Schreibweisen werden als Hinweis markiert, z. B. wenn Ordnername und Tag-Schreibweise abweichen.
 
 
-## v1.8.22
+## v1.8.23
 
 - Neuer Button **Alles normalisieren** in der Kopfzeile.
 - Normalisiert alle vollständig analysierten Alben auf die eingestellten Zielwerte.

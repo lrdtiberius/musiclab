@@ -26,7 +26,7 @@ function coverBox(src, large=false, opts={}){
   const extra=opts.extraClass ? ' '+opts.extraClass : '';
   const cls=(large?'mediaCoverBox large':'mediaCoverBox')+extra;
   const loading=opts.eager ? 'eager' : 'lazy';
-  // v1.8.22: Cover-Boxen müssen beim Albumwechsel immer eine neue, eindeutige
+  // v1.8.23: Cover-Boxen müssen beim Albumwechsel immer eine neue, eindeutige
   // DOM-Box bekommen. Besonders wichtig bei #tagCoverPreview: Wenn die ID beim
   // ersten Cover verloren geht, kann die Vorschau bei Albumwechseln nicht mehr
   // ersetzt werden und Safari zeigt das zuletzt sichtbare Cover weiter an.
@@ -858,7 +858,7 @@ function jsArg(v){return JSON.stringify(String(v??''));}
 function renderPathRow(x){
   const path=String(x?.path||'');
   if(!path) return '';
-  // v1.8.22: Auf der Duplikatseite keine Pfad-Buttons mehr.
+  // v1.8.23: Auf der Duplikatseite keine Pfad-Buttons mehr.
   // Direktes Öffnen/Kopieren war im Browser/NAS-Setup nicht zuverlässig genug
   // und hat die Seite unnötig überladen. Der Pfad bleibt nur als Hinweis sichtbar.
   return `<div class="checkPathRow"><div class="checkPath">${escHtml(path)}</div></div>`;
@@ -1357,7 +1357,7 @@ function clearTagForm(){
 async function loadTagsPage(){
   const body=document.getElementById('tagTracks'); const hint=document.getElementById('tagHint');
   if(!body||!hint)return;
-  // v1.8.22: Beim Albumwechsel sofort die alte Vorschau entfernen.
+  // v1.8.23: Beim Albumwechsel sofort die alte Vorschau entfernen.
   // Sonst bleibt bei langsamer/fehlender Cover-Antwort das zuletzt gesehene Cover stehen.
   tagCoverPlaceholder('Cover wird geladen…');
   if(!selectedAlbum && selectedTagFolder===null){
@@ -1482,7 +1482,7 @@ async function uploadTagCover(){
   const first=paths[0] || '';
   const firstFolder=parentFolderFromPath(first||'');
 
-  // v1.8.22: Die sichtbaren Track-Pfade werden direkt ans Backend geschickt.
+  // v1.8.23: Die sichtbaren Track-Pfade werden direkt ans Backend geschickt.
   // Der Ordner ist nur noch Fallback/Hinweis. Damit landet das Cover nicht
   // im falschen Album, wenn Albumname und Ordnername auseinanderlaufen.
   if(firstFolder) folder=firstFolder;
@@ -1571,7 +1571,13 @@ function renderTagScraperResults(data){
         <div class="scraperScore ${scoreClass}">${score}%</div>
       </div>
       <div class="scraperTracks">${scraperTrackPreview(p.tracks||[])}</div>
-      <div class="toolbar scraperActions"><button onclick="applyTagScraperProposal(${i})">Diesen Vorschlag übernehmen</button>${p.source_url?`<button class="ghost" onclick="window.open('${escAttr(p.source_url)}','_blank')">MusicBrainz öffnen</button>`:''}</div>
+      <div class="small muted scraperSafetyNote">Die Trackliste ist nur Vorschau. Titel, Tracknummern, Discnummern, Interpret und Album werden nicht überschrieben.</div>
+      <div class="toolbar scraperActions">
+        <button onclick="applyTagScraperProposal(${i}, 'year')">Nur Jahr übernehmen</button>
+        <button onclick="applyTagScraperProposal(${i}, 'cover')">Nur Cover übernehmen</button>
+        <button onclick="applyTagScraperProposal(${i}, 'year_cover')">Jahr + Cover übernehmen</button>
+        ${p.source_url?`<button class="ghost" onclick="window.open('${escAttr(p.source_url)}','_blank')">MusicBrainz öffnen</button>`:''}
+      </div>
     </div>`;
   }).join('');
   window.__tagScraperProposals=proposals;
@@ -1609,25 +1615,30 @@ async function searchTagScraper(){
     if(btn){btn.disabled=false; btn.textContent='Tags scrapen…';}
   }
 }
-async function applyTagScraperProposal(index){
+async function applyTagScraperProposal(index, mode='year_cover'){
   const proposals=window.__tagScraperProposals||[];
   const proposal=proposals[index];
   const paths=currentTagPaths();
   if(!proposal || !paths.length)return;
-  const sortFiles=(document.getElementById('sortAfterTags')?.value==='on'||document.getElementById('sortAfterTagsPage')?.value==='on');
-  const trackInfo=`${proposal.track_count||0} Online-Titel für ${paths.length} sichtbare Dateien`;
-  if(!confirm(`Tags übernehmen?\n\n${proposal.artist} — ${proposal.album}\n${proposal.year||''}\n${trackInfo}\n\nDie Tags werden erst nach dieser Bestätigung in die Dateien geschrieben.${sortFiles?'\nDanach wird gemäß Einstellung auch sortiert/verschoben.':''}`))return;
+  const year=proposal.year||((proposal.date||'').slice(0,4));
+  const modeLabel={year:'Nur Jahr',cover:'Nur Cover',year_cover:'Jahr + Cover'}[mode]||'Jahr + Cover';
+  const details=[];
+  if(mode==='year' || mode==='year_cover') details.push(`Jahr: ${year||'nicht vorhanden'}`);
+  if(mode==='cover' || mode==='year_cover') details.push('Cover: aus MusicBrainz/Cover Art Archive');
+  const sortFiles=false;
+  if(!confirm(`${modeLabel} übernehmen?\n\n${proposal.artist||'-'} — ${proposal.album||'-'}\n${details.join('\n')}\n${paths.length} sichtbare Dateien\n\nWichtig:\nTitel, Tracknummern, Discnummern, Interpret und Album werden NICHT überschrieben.\nDie angezeigte Trackliste ist nur eine Vorschau.`))return;
   const st=document.getElementById('tagScraperStatus');
-  if(st)st.textContent='Übernehme Tags…';
+  if(st)st.textContent=`Übernehme ${modeLabel}…`;
   try{
-    const res=await j(API+'/tag_scraper/apply',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({folder:selectedTagFolder,paths,proposal,sort_files:sortFiles})});
-    const applied=res.applied||0;
-    const errors=res.result?.errors||[];
-    const moved=res.result?.moved||0;
-    const msg=`Online-Tags übernommen: ${applied}/${res.total||paths.length}`+(moved?` · verschoben: ${moved}`:'')+(errors.length?` · Fehler: ${errors.length}`:'');
+    const res=await j(API+'/tag_scraper/apply',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({folder:selectedTagFolder,paths,proposal,mode,sort_files:sortFiles})});
+    const yearApplied=res.year_applied||0;
+    const coverUpdated=res.cover?.updated||0;
+    const coverVerified=res.cover?.verified||0;
+    const errors=[...(res.result?.errors||[]), ...(res.cover?.errors||[])];
+    const msg=`Scraper übernommen: Jahr ${yearApplied} · Cover ${coverUpdated} · geprüft ${coverVerified}`+(errors.length?` · Fehler: ${errors.length}`:'');
     progressText.textContent=msg; status.textContent=msg;
     if(st)st.textContent=msg;
-    if(errors.length) alert(msg+'\n'+errors.join('\n'));
+    if(errors.length) alert(msg+'\n'+errors.slice(0,10).join('\n'));
     await loadStats();
     await loadGenreOptions();
     await loadBrowser();
@@ -1635,9 +1646,10 @@ async function applyTagScraperProposal(index){
     setTagsDirty(false);
   }catch(e){
     if(st)st.textContent='Übernahme fehlgeschlagen';
-    alert('Online-Tags konnten nicht übernommen werden: '+(e.message||e));
+    alert('Online-Daten konnten nicht übernommen werden: '+(e.message||e));
   }
 }
+
 
 async function saveAlbumTags(){
   const rows=[...document.querySelectorAll('#tagTracks tr[data-path]')];
