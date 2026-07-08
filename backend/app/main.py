@@ -2280,7 +2280,7 @@ def _folder_matches(row, folder: str, artist: Optional[str] = None):
 # Online Tag Scraper (MusicBrainz)
 # -----------------------------
 MB_BASE = "https://musicbrainz.org/ws/2"
-MB_UA = "MusicLab/1.8.24 (local tag repair tool)"
+MB_UA = "MusicLab/1.8.25 (local tag repair tool)"
 
 
 def _norm_match(value: str) -> str:
@@ -2537,13 +2537,15 @@ def _embed_cover_bytes(files, raw: bytes, mime: str):
 def api_tag_scraper_apply(payload: dict):
     """Apply only safe parts of an online tag proposal.
 
-    v1.8.24: The scraper no longer overwrites titles, track numbers,
-    disc numbers, artist or album. It can apply only year, only cover, or both.
+    v1.8.25: Safe scraper actions stay separated. Year/Cover actions never
+    overwrite track names. The explicit ``titles`` mode only writes title tags
+    in the currently visible/order-matched files and never changes track/disc
+    numbers, artist, album or file order.
     """
     rows = _folder_tracks_from_payload(payload or {})
     proposal = (payload or {}).get("proposal") or {}
     mode = str((payload or {}).get("mode") or "year_cover").strip().lower()
-    if mode not in {"year", "cover", "year_cover"}:
+    if mode not in {"year", "cover", "year_cover", "titles"}:
         raise HTTPException(status_code=400, detail="Ungültiger Scraper-Modus")
     if not rows:
         raise HTTPException(status_code=400, detail="Keine Titel ausgewählt")
@@ -2553,6 +2555,7 @@ def api_tag_scraper_apply(payload: dict):
     paths = [r.get("path") for r in rows if r.get("path")]
     result = {"errors": []}
     year_applied = 0
+    titles_applied = 0
     year = str(proposal.get("year") or (str(proposal.get("date") or "")[:4] if proposal.get("date") else "")).strip()
     if mode in {"year", "year_cover"}:
         if not re.match(r"^\d{4}$", year or ""):
@@ -2560,6 +2563,22 @@ def api_tag_scraper_apply(payload: dict):
         updates = [{"path": path, "year": year} for path in paths]
         result = update_tags({"updates": updates, "sort_files": False})
         year_applied = max(0, len(updates) - len(result.get("errors") or []))
+
+    if mode == "titles":
+        online_tracks = proposal.get("tracks") or []
+        if not isinstance(online_tracks, list) or not online_tracks:
+            raise HTTPException(status_code=400, detail="Der gewählte Treffer enthält keine Tracktitel")
+        updates = []
+        for idx, path in enumerate(paths):
+            if idx >= len(online_tracks):
+                break
+            title = str((online_tracks[idx] or {}).get("title") or "").strip()
+            if title:
+                updates.append({"path": path, "title": title})
+        if not updates:
+            raise HTTPException(status_code=400, detail="Keine verwertbaren Online-Titel gefunden")
+        result = update_tags({"updates": updates, "sort_files": False})
+        titles_applied = max(0, len(updates) - len(result.get("errors") or []))
 
     cover_result = {"updated": 0, "verified": 0, "skipped": 0, "folder_files": [], "errors": []}
     if mode in {"cover", "year_cover"}:
@@ -2572,12 +2591,13 @@ def api_tag_scraper_apply(payload: dict):
         cover_result = _embed_cover_bytes(files, raw, mime)
 
     add_log(
-        f"Tag-Scraper übernommen ({mode}): {proposal.get('artist','')} - {proposal.get('album','')} ({len(rows)} Dateien, Jahr {year_applied}, Cover {cover_result.get('updated',0)})",
+        f"Tag-Scraper übernommen ({mode}): {proposal.get('artist','')} - {proposal.get('album','')} ({len(rows)} Dateien, Jahr {year_applied}, Titel {titles_applied}, Cover {cover_result.get('updated',0)})",
         bool((result.get("errors") or []) or (cover_result.get("errors") or [])),
     )
     return {
-        "applied": year_applied + int(cover_result.get("updated") or 0),
+        "applied": year_applied + titles_applied + int(cover_result.get("updated") or 0),
         "year_applied": year_applied,
+        "titles_applied": titles_applied,
         "total": len(rows),
         "mode": mode,
         "proposal": {"artist": proposal.get("artist"), "album": proposal.get("album"), "year": year, "id": proposal.get("id")},
@@ -2708,7 +2728,7 @@ def api_tag_issues(q: str = "", kind: str = "all"):
 def get_tag_albums(q: str = "", artist: Optional[str] = None, genre: Optional[str] = None, year: Optional[str] = None):
     """Album list for the tag editor.
 
-    v1.8.24: Sampler/compilations that share one album tag but have several
+    v1.8.25: Sampler/compilations that share one album tag but have several
     artists/folders are shown as ONE virtual album again. Normal single-folder
     albums stay physical, so broken folder/tag cases remain repairable.
     """

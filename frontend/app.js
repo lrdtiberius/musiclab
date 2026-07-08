@@ -1,5 +1,5 @@
 const API='http://'+location.hostname+':8091/api';
-const APP_VERSION='1.8.24';
+const APP_VERSION='1.8.25';
 let coverCacheBust=Date.now();
 let selectedArtist=null, selectedAlbum=null, selectedTagFolder=null;
 let selectedTagGenre=null, selectedTagYear=null;
@@ -26,7 +26,7 @@ function coverBox(src, large=false, opts={}){
   const extra=opts.extraClass ? ' '+opts.extraClass : '';
   const cls=(large?'mediaCoverBox large':'mediaCoverBox')+extra;
   const loading=opts.eager ? 'eager' : 'lazy';
-  // v1.8.24: Cover-Boxen müssen beim Albumwechsel immer eine neue, eindeutige
+  // v1.8.25: Cover-Boxen müssen beim Albumwechsel immer eine neue, eindeutige
   // DOM-Box bekommen. Besonders wichtig bei #tagCoverPreview: Wenn die ID beim
   // ersten Cover verloren geht, kann die Vorschau bei Albumwechseln nicht mehr
   // ersetzt werden und Safari zeigt das zuletzt sichtbare Cover weiter an.
@@ -858,7 +858,7 @@ function jsArg(v){return JSON.stringify(String(v??''));}
 function renderPathRow(x){
   const path=String(x?.path||'');
   if(!path) return '';
-  // v1.8.24: Auf der Duplikatseite keine Pfad-Buttons mehr.
+  // v1.8.25: Auf der Duplikatseite keine Pfad-Buttons mehr.
   // Direktes Öffnen/Kopieren war im Browser/NAS-Setup nicht zuverlässig genug
   // und hat die Seite unnötig überladen. Der Pfad bleibt nur als Hinweis sichtbar.
   return `<div class="checkPathRow"><div class="checkPath">${escHtml(path)}</div></div>`;
@@ -1357,7 +1357,7 @@ function clearTagForm(){
 async function loadTagsPage(){
   const body=document.getElementById('tagTracks'); const hint=document.getElementById('tagHint');
   if(!body||!hint)return;
-  // v1.8.24: Beim Albumwechsel sofort die alte Vorschau entfernen.
+  // v1.8.25: Beim Albumwechsel sofort die alte Vorschau entfernen.
   // Sonst bleibt bei langsamer/fehlender Cover-Antwort das zuletzt gesehene Cover stehen.
   tagCoverPlaceholder('Cover wird geladen…');
   if(!selectedAlbum && selectedTagFolder===null){
@@ -1482,7 +1482,7 @@ async function uploadTagCover(){
   const first=paths[0] || '';
   const firstFolder=parentFolderFromPath(first||'');
 
-  // v1.8.24: Die sichtbaren Track-Pfade werden direkt ans Backend geschickt.
+  // v1.8.25: Die sichtbaren Track-Pfade werden direkt ans Backend geschickt.
   // Der Ordner ist nur noch Fallback/Hinweis. Damit landet das Cover nicht
   // im falschen Album, wenn Albumname und Ordnername auseinanderlaufen.
   if(firstFolder) folder=firstFolder;
@@ -1590,7 +1590,7 @@ function renderTrackComparison(onlineTracks){
   }
   return `<details class="scraperCompare" open>
     <summary>Track-Vergleich: meine Dateien ↔ MusicBrainz</summary>
-    <div class="small muted compareHint">Nur zum Abgleichen. Die Buttons darunter übernehmen weiterhin nur Jahr/Cover und ändern keine Titel oder Reihenfolge.</div>
+    <div class="small muted compareHint">Zum Abgleichen vor der Übernahme. „Titel übernehmen“ schreibt nur die sichtbaren Titel in der aktuellen Reihenfolge; Tracknummern/Reihenfolge bleiben unverändert.</div>
     <div class="scraperCompareTableWrap"><table class="scraperCompareTable">
       <thead><tr><th>#</th><th>Meine Tracks</th><th>Nr.</th><th>Gefundene Tracks</th><th>Nr.</th><th>Match</th></tr></thead>
       <tbody>${rows.join('')}</tbody>
@@ -1623,11 +1623,12 @@ function renderTagScraperResults(data){
         <div class="scraperScore ${scoreClass}">${score}%</div>
       </div>
       <div class="scraperTracks">${scraperTrackPreview(p.tracks||[])}</div>
-      <div class="small muted scraperSafetyNote">Die Trackliste ist nur Vorschau. Titel, Tracknummern, Discnummern, Interpret und Album werden nicht überschrieben.</div>
+      <div class="small muted scraperSafetyNote">Sicherheitsmodus: Jahr/Cover ändern keine Titel. „Titel übernehmen“ schreibt nur Titel-Tags anhand dieser Gegenüberstellung; Tracknummern, Discnummern, Interpret, Album und Dateireihenfolge bleiben unverändert.</div>
       <div class="toolbar scraperActions">
         <button onclick="applyTagScraperProposal(${i}, 'year')">Nur Jahr übernehmen</button>
         <button onclick="applyTagScraperProposal(${i}, 'cover')">Nur Cover übernehmen</button>
         <button onclick="applyTagScraperProposal(${i}, 'year_cover')">Jahr + Cover übernehmen</button>
+        <button class="secondary" onclick="applyTagScraperProposal(${i}, 'titles')">Titel übernehmen</button>
         ${p.source_url?`<button class="ghost" onclick="window.open('${escAttr(p.source_url)}','_blank')">MusicBrainz öffnen</button>`:''}
       </div>
     </div>`;
@@ -1673,21 +1674,26 @@ async function applyTagScraperProposal(index, mode='year_cover'){
   const paths=currentTagPaths();
   if(!proposal || !paths.length)return;
   const year=proposal.year||((proposal.date||'').slice(0,4));
-  const modeLabel={year:'Nur Jahr',cover:'Nur Cover',year_cover:'Jahr + Cover'}[mode]||'Jahr + Cover';
+  const modeLabel={year:'Nur Jahr',cover:'Nur Cover',year_cover:'Jahr + Cover',titles:'Titel'}[mode]||'Jahr + Cover';
   const details=[];
   if(mode==='year' || mode==='year_cover') details.push(`Jahr: ${year||'nicht vorhanden'}`);
   if(mode==='cover' || mode==='year_cover') details.push('Cover: aus MusicBrainz/Cover Art Archive');
+  if(mode==='titles') details.push(`Titel: ${Math.min(paths.length, (proposal.tracks||[]).length)} Online-Titel in der sichtbaren Reihenfolge`);
   const sortFiles=false;
-  if(!confirm(`${modeLabel} übernehmen?\n\n${proposal.artist||'-'} — ${proposal.album||'-'}\n${details.join('\n')}\n${paths.length} sichtbare Dateien\n\nWichtig:\nTitel, Tracknummern, Discnummern, Interpret und Album werden NICHT überschrieben.\nDie angezeigte Trackliste ist nur eine Vorschau.`))return;
+  const warning = mode==='titles'
+    ? 'Es werden NUR Titel-Tags überschrieben. Tracknummern, Discnummern, Interpret, Album, Dateinamen und Reihenfolge bleiben unverändert. Vorher bitte die Gegenüberstellung prüfen.'
+    : 'Titel, Tracknummern, Discnummern, Interpret und Album werden NICHT überschrieben. Die angezeigte Trackliste ist nur eine Vorschau.';
+  if(!confirm(`${modeLabel} übernehmen?\n\n${proposal.artist||'-'} — ${proposal.album||'-'}\n${details.join('\n')}\n${paths.length} sichtbare Dateien\n\nWichtig:\n${warning}`))return;
   const st=document.getElementById('tagScraperStatus');
   if(st)st.textContent=`Übernehme ${modeLabel}…`;
   try{
     const res=await j(API+'/tag_scraper/apply',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({folder:selectedTagFolder,paths,proposal,mode,sort_files:sortFiles})});
     const yearApplied=res.year_applied||0;
+    const titlesApplied=res.titles_applied||0;
     const coverUpdated=res.cover?.updated||0;
     const coverVerified=res.cover?.verified||0;
     const errors=[...(res.result?.errors||[]), ...(res.cover?.errors||[])];
-    const msg=`Scraper übernommen: Jahr ${yearApplied} · Cover ${coverUpdated} · geprüft ${coverVerified}`+(errors.length?` · Fehler: ${errors.length}`:'');
+    const msg=`Scraper übernommen: Jahr ${yearApplied} · Titel ${titlesApplied} · Cover ${coverUpdated} · geprüft ${coverVerified}`+(errors.length?` · Fehler: ${errors.length}`:'');
     progressText.textContent=msg; status.textContent=msg;
     if(st)st.textContent=msg;
     if(errors.length) alert(msg+'\n'+errors.slice(0,10).join('\n'));
