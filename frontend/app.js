@@ -26,7 +26,7 @@ function coverBox(src, large=false, opts={}){
   const extra=opts.extraClass ? ' '+opts.extraClass : '';
   const cls=(large?'mediaCoverBox large':'mediaCoverBox')+extra;
   const loading=opts.eager ? 'eager' : 'lazy';
-  // v1.8.20: Cover-Boxen müssen beim Albumwechsel immer eine neue, eindeutige
+  // v1.8.21: Cover-Boxen müssen beim Albumwechsel immer eine neue, eindeutige
   // DOM-Box bekommen. Besonders wichtig bei #tagCoverPreview: Wenn die ID beim
   // ersten Cover verloren geht, kann die Vorschau bei Albumwechseln nicht mehr
   // ersetzt werden und Safari zeigt das zuletzt sichtbare Cover weiter an.
@@ -858,7 +858,7 @@ function jsArg(v){return JSON.stringify(String(v??''));}
 function renderPathRow(x){
   const path=String(x?.path||'');
   if(!path) return '';
-  // v1.8.20: Auf der Duplikatseite keine Pfad-Buttons mehr.
+  // v1.8.21: Auf der Duplikatseite keine Pfad-Buttons mehr.
   // Direktes Öffnen/Kopieren war im Browser/NAS-Setup nicht zuverlässig genug
   // und hat die Seite unnötig überladen. Der Pfad bleibt nur als Hinweis sichtbar.
   return `<div class="checkPathRow"><div class="checkPath">${escHtml(path)}</div></div>`;
@@ -1357,7 +1357,7 @@ function clearTagForm(){
 async function loadTagsPage(){
   const body=document.getElementById('tagTracks'); const hint=document.getElementById('tagHint');
   if(!body||!hint)return;
-  // v1.8.20: Beim Albumwechsel sofort die alte Vorschau entfernen.
+  // v1.8.21: Beim Albumwechsel sofort die alte Vorschau entfernen.
   // Sonst bleibt bei langsamer/fehlender Cover-Antwort das zuletzt gesehene Cover stehen.
   tagCoverPlaceholder('Cover wird geladen…');
   if(!selectedAlbum && selectedTagFolder===null){
@@ -1482,7 +1482,7 @@ async function uploadTagCover(){
   const first=paths[0] || '';
   const firstFolder=parentFolderFromPath(first||'');
 
-  // v1.8.20: Die sichtbaren Track-Pfade werden direkt ans Backend geschickt.
+  // v1.8.21: Die sichtbaren Track-Pfade werden direkt ans Backend geschickt.
   // Der Ordner ist nur noch Fallback/Hinweis. Damit landet das Cover nicht
   // im falschen Album, wenn Albumname und Ordnername auseinanderlaufen.
   if(firstFolder) folder=firstFolder;
@@ -1575,17 +1575,20 @@ function renderTagScraperResults(data){
     </div>`;
   }).join('');
   window.__tagScraperProposals=proposals;
-  if(panel) panel.scrollIntoView({behavior:'smooth', block:'nearest'});
+  if(panel) panel.scrollIntoView({behavior:'smooth', block:'center'});
 }
 async function searchTagScraper(){
+  const btn=document.getElementById('btnTagScraper');
+  if(btn){btn.disabled=true; btn.textContent='Suche…';}
   const paths=currentTagPaths();
   const panel=document.getElementById('tagScraperPanel');
   const box=document.getElementById('tagScraperResults');
   const st=document.getElementById('tagScraperStatus');
-  if(panel){panel.classList.remove('hidden'); panel.scrollIntoView({behavior:'smooth', block:'nearest'});}
+  if(panel){panel.classList.remove('hidden'); panel.scrollIntoView({behavior:'smooth', block:'center'});}
   if(!paths.length){
     if(st)st.textContent='Kein Album ausgewählt';
     if(box)box.innerHTML='<div class="empty">Bitte links zuerst ein Album auswählen. Danach erscheinen hier die Online-Treffer.</div>';
+    if(btn){btn.disabled=false; btn.textContent='Tags scrapen…';}
     return;
   }
   if(box)box.innerHTML='<div class="empty">Suche Online-Tags…</div>';
@@ -1602,6 +1605,8 @@ async function searchTagScraper(){
   }catch(e){
     if(st)st.textContent='Suche fehlgeschlagen';
     if(box)box.innerHTML=`<div class="empty">Tag-Scraper fehlgeschlagen: ${escHtml(e.message||e)}</div>`;
+  } finally {
+    if(btn){btn.disabled=false; btn.textContent='Tags scrapen…';}
   }
 }
 async function applyTagScraperProposal(index){

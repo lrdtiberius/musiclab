@@ -2280,7 +2280,7 @@ def _folder_matches(row, folder: str, artist: Optional[str] = None):
 # Online Tag Scraper (MusicBrainz)
 # -----------------------------
 MB_BASE = "https://musicbrainz.org/ws/2"
-MB_UA = "MusicLab/1.8.20 (local tag repair tool)"
+MB_UA = "MusicLab/1.8.21 (local tag repair tool)"
 
 
 def _norm_match(value: str) -> str:
@@ -2610,7 +2610,7 @@ def api_tag_issues(q: str = "", kind: str = "all"):
 def get_tag_albums(q: str = "", artist: Optional[str] = None, genre: Optional[str] = None, year: Optional[str] = None):
     """Album list for the tag editor.
 
-    v1.8.20: Sampler/compilations that share one album tag but have several
+    v1.8.21: Sampler/compilations that share one album tag but have several
     artists/folders are shown as ONE virtual album again. Normal single-folder
     albums stay physical, so broken folder/tag cases remain repairable.
     """
