@@ -2280,7 +2280,7 @@ def _folder_matches(row, folder: str, artist: Optional[str] = None):
 # Online Tag Scraper (MusicBrainz)
 # -----------------------------
 MB_BASE = "https://musicbrainz.org/ws/2"
-MB_UA = "MusicLab/1.8.21 (local tag repair tool)"
+MB_UA = "MusicLab/1.8.22 (local tag repair tool)"
 
 
 def _norm_match(value: str) -> str:
@@ -2380,6 +2380,7 @@ def _release_to_proposal(release: dict, wanted_artist: str, wanted_album: str, w
         "id": rid,
         "source": "MusicBrainz",
         "source_url": f"https://musicbrainz.org/release/{rid}" if rid else "",
+        "cover_url": f"https://coverartarchive.org/release/{rid}/front-250" if rid else "",
         "artist": artist,
         "album": title,
         "date": date,
@@ -2444,48 +2445,145 @@ def api_tag_scraper_search(payload: dict):
         raise HTTPException(status_code=502, detail=f"MusicBrainz-Suche fehlgeschlagen: {e}")
 
 
+def _download_cover_art(release_id: str):
+    rid = str(release_id or "").strip()
+    if not rid:
+        raise HTTPException(status_code=400, detail="Kein MusicBrainz-Release für Cover übergeben")
+    url = f"https://coverartarchive.org/release/{quote(rid)}/front"
+    req = UrlRequest(url, headers={"User-Agent": MB_UA, "Accept": "image/jpeg,image/png,image/*;q=0.8,*/*;q=0.1"})
+    try:
+        with urlopen(req, timeout=18) as resp:
+            raw = resp.read(20 * 1024 * 1024)
+            ctype = (resp.headers.get("Content-Type") or "").lower()
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"Cover konnte nicht vom Cover Art Archive geladen werden: {e}")
+    if not raw:
+        raise HTTPException(status_code=404, detail="Cover Art Archive lieferte keine Bilddaten")
+    if "png" in ctype or raw.startswith(b"\x89PNG"):
+        return raw, "image/png"
+    if "jpeg" in ctype or "jpg" in ctype or raw.startswith(b"\xff\xd8"):
+        return raw, "image/jpeg"
+    raise HTTPException(status_code=415, detail=f"Cover-Format nicht unterstützt: {ctype or 'unbekannt'}")
+
+
+def _embed_cover_bytes(files, raw: bytes, mime: str):
+    mp4_format = MP4Cover.FORMAT_PNG if mime == "image/png" else MP4Cover.FORMAT_JPEG
+    root = get_music_root().resolve()
+    updated = 0
+    skipped = 0
+    verified = 0
+    errors = []
+    for p in _unique_paths(files):
+        try:
+            rel = str(p.relative_to(root))
+        except Exception:
+            rel = str(p)
+        ext = p.suffix.lower()
+        try:
+            if ext == ".mp3":
+                try:
+                    tags = ID3(str(p))
+                except ID3NoHeaderError:
+                    tags = ID3()
+                tags.delall("APIC")
+                tags.add(APIC(encoding=3, mime=mime, type=3, desc="Cover", data=raw))
+                tags.save(str(p), v2_version=3)
+                updated += 1
+            elif ext in {".m4a", ".mp4", ".aac"}:
+                audio = MP4(str(p))
+                if audio.tags is None:
+                    audio.add_tags()
+                audio.tags["covr"] = [MP4Cover(raw, imageformat=mp4_format)]
+                audio.save()
+                updated += 1
+            elif ext == ".flac":
+                audio = FLAC(str(p))
+                audio.clear_pictures()
+                pic = Picture()
+                pic.type = 3
+                pic.mime = mime
+                pic.desc = "Cover"
+                pic.data = raw
+                audio.add_picture(pic)
+                audio.save()
+                updated += 1
+            elif ext == ".ogg" and OggVorbis is not None:
+                import base64
+                audio = OggVorbis(str(p))
+                pic = Picture()
+                pic.type = 3
+                pic.mime = mime
+                pic.desc = "Cover"
+                pic.data = raw
+                audio["metadata_block_picture"] = [base64.b64encode(pic.write()).decode("ascii")]
+                audio.save()
+                updated += 1
+            else:
+                skipped += 1
+                continue
+            if _embedded_cover_from_file(p):
+                verified += 1
+            elif len(errors) < 30:
+                errors.append(f"{rel}: Cover geschrieben, aber nicht wieder lesbar")
+        except Exception as e:
+            if len(errors) < 30:
+                errors.append(f"{rel}: {e}")
+    folder_files, folder_file_errors = _write_folder_cover_files(_cover_folder_candidates(files), raw, mime)
+    errors.extend(folder_file_errors[: max(0, 30 - len(errors))])
+    return {"updated": updated, "verified": verified, "skipped": skipped, "folder_files": folder_files, "errors": errors}
+
+
 @app.post("/api/tag_scraper/apply")
 def api_tag_scraper_apply(payload: dict):
+    """Apply only safe parts of an online tag proposal.
+
+    v1.8.22: The scraper no longer overwrites titles, track numbers,
+    disc numbers, artist or album. It can apply only year, only cover, or both.
+    """
     rows = _folder_tracks_from_payload(payload or {})
     proposal = (payload or {}).get("proposal") or {}
-    sort_files = bool((payload or {}).get("sort_files"))
+    mode = str((payload or {}).get("mode") or "year_cover").strip().lower()
+    if mode not in {"year", "cover", "year_cover"}:
+        raise HTTPException(status_code=400, detail="Ungültiger Scraper-Modus")
     if not rows:
         raise HTTPException(status_code=400, detail="Keine Titel ausgewählt")
-    if not isinstance(proposal, dict) or not proposal.get("tracks"):
+    if not isinstance(proposal, dict):
         raise HTTPException(status_code=400, detail="Kein Scraper-Vorschlag übergeben")
-    tracks = proposal.get("tracks") or []
-    album_artist = str(proposal.get("artist") or rows[0].get("artist") or "").strip()
-    album = str(proposal.get("album") or rows[0].get("album") or "").strip()
-    year = str(proposal.get("year") or "").strip()
-    medium_count = max([int(t.get("disc_number") or 1) for t in tracks] or [1])
-    totals_by_disc = {}
-    for t in tracks:
-        d = int(t.get("disc_number") or 1)
-        totals_by_disc[d] = totals_by_disc.get(d, 0) + 1
-    updates = []
-    for i, row in enumerate(rows):
-        if i >= len(tracks):
-            break
-        tr = tracks[i]
-        d = int(tr.get("disc_number") or 1)
-        pos = int(tr.get("position") or (i + 1))
-        total = totals_by_disc.get(d) or len(tracks)
-        update = {
-            "path": row.get("path"),
-            "artist": album_artist,
-            "album": album,
-            "title": str(tr.get("title") or row.get("title") or "").strip(),
-            "tracknumber": f"{pos}/{total}" if total else str(pos),
-            "discnumber": f"{d}/{medium_count}" if medium_count and medium_count > 1 else "",
-        }
-        if year:
-            update["year"] = year
-        updates.append(update)
-    if len(updates) != len(rows):
-        add_log(f"Tag-Scraper: Trackanzahl abweichend, schreibe {len(updates)}/{len(rows)} Dateien", True)
-    res = update_tags({"updates": updates, "sort_files": sort_files})
-    add_log(f"Tag-Scraper übernommen: {album_artist} - {album} ({len(updates)} Dateien)", False)
-    return {"applied": len(updates), "total": len(rows), "proposal": {"artist": album_artist, "album": album, "year": year}, "result": res}
+
+    paths = [r.get("path") for r in rows if r.get("path")]
+    result = {"errors": []}
+    year_applied = 0
+    year = str(proposal.get("year") or (str(proposal.get("date") or "")[:4] if proposal.get("date") else "")).strip()
+    if mode in {"year", "year_cover"}:
+        if not re.match(r"^\d{4}$", year or ""):
+            raise HTTPException(status_code=400, detail="Der gewählte Treffer enthält kein verwertbares Jahr")
+        updates = [{"path": path, "year": year} for path in paths]
+        result = update_tags({"updates": updates, "sort_files": False})
+        year_applied = max(0, len(updates) - len(result.get("errors") or []))
+
+    cover_result = {"updated": 0, "verified": 0, "skipped": 0, "folder_files": [], "errors": []}
+    if mode in {"cover", "year_cover"}:
+        files = []
+        for rel in paths:
+            fp = _safe_audio_path_from_rel(rel)
+            if fp is not None:
+                files.append(fp)
+        raw, mime = _download_cover_art(str(proposal.get("id") or ""))
+        cover_result = _embed_cover_bytes(files, raw, mime)
+
+    add_log(
+        f"Tag-Scraper übernommen ({mode}): {proposal.get('artist','')} - {proposal.get('album','')} ({len(rows)} Dateien, Jahr {year_applied}, Cover {cover_result.get('updated',0)})",
+        bool((result.get("errors") or []) or (cover_result.get("errors") or [])),
+    )
+    return {
+        "applied": year_applied + int(cover_result.get("updated") or 0),
+        "year_applied": year_applied,
+        "total": len(rows),
+        "mode": mode,
+        "proposal": {"artist": proposal.get("artist"), "album": proposal.get("album"), "year": year, "id": proposal.get("id")},
+        "result": result,
+        "cover": cover_result,
+    }
 
 
 @app.get("/api/tag_issues")
@@ -2610,7 +2708,7 @@ def api_tag_issues(q: str = "", kind: str = "all"):
 def get_tag_albums(q: str = "", artist: Optional[str] = None, genre: Optional[str] = None, year: Optional[str] = None):
     """Album list for the tag editor.
 
-    v1.8.21: Sampler/compilations that share one album tag but have several
+    v1.8.22: Sampler/compilations that share one album tag but have several
     artists/folders are shown as ONE virtual album again. Normal single-folder
     albums stay physical, so broken folder/tag cases remain repairable.
     """
