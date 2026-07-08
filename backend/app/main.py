@@ -51,7 +51,7 @@ def local_log_time() -> str:
         pass
     return time.strftime("%H:%M:%S")
 
-app = FastAPI(title="MusicLab API", version="1.8.16")
+app = FastAPI(title="MusicLab API", version="1.8.17")
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
 
 stop_event = threading.Event()
@@ -1305,6 +1305,64 @@ def batch_preview_items(items: list) -> list:
     return out
 
 
+def all_album_items_for_normalize() -> list:
+    """Alle eindeutigen Interpret/Album-Gruppen als Batch-Auswahl.
+    Bewusst nach artist+album gruppiert, damit gleichnamige Alben verschiedener
+    Interpreten nicht vermischt werden.
+    """
+    with db() as con:
+        rows = con.execute(
+            """
+            SELECT artist, album, COUNT(*) tracks
+            FROM tracks
+            WHERE COALESCE(TRIM(album),'') <> ''
+            GROUP BY artist, album
+            ORDER BY artist COLLATE NOCASE, album COLLATE NOCASE
+            """
+        ).fetchall()
+        return [{"artist": r["artist"], "album": r["album"]} for r in rows]
+
+
+def all_normalize_preview() -> dict:
+    settings = get_settings()
+    items = all_album_items_for_normalize()
+    preview = batch_preview_items(items) if items else []
+    normalizable = [p for p in preview if p.get("can_normalize")]
+    skipped_reference = [p for p in preview if p.get("skip_reference")]
+    blocked = [p for p in preview if (not p.get("can_normalize") and not p.get("skip_reference"))]
+    return {
+        "items": preview,
+        "normalizable": normalizable,
+        "blocked": blocked,
+        "skipped_reference": skipped_reference,
+        "count_albums_total": len(preview),
+        "count_albums": len(normalizable),
+        "count_blocked": len(blocked),
+        "count_skipped_reference": len(skipped_reference),
+        "count_tracks": sum(int(p.get("tracks") or 0) for p in normalizable),
+        "target_lufs": settings.get("target_lufs"),
+        "true_peak": settings.get("true_peak"),
+        "lra": settings.get("lra"),
+        "backup_mode": settings.get("backup_mode", "on"),
+        "can_normalize": bool(normalizable),
+    }
+
+
+def normalize_all_worker(backup_mode: Optional[str] = None):
+    init_db()
+    pv = all_normalize_preview()
+    items = [{"artist": p.get("artist"), "album": p.get("album")} for p in pv.get("normalizable", [])]
+    if not items:
+        state.update({"running": False, "mode": "idle", "done": 0, "total": 0, "current": "", "message": "Keine vollständig analysierten Alben zu normalisieren", "errors": 0, "recent_errors": []})
+        add_log("Alles normalisieren: keine vollständig analysierten Alben gefunden", True)
+        return
+    if pv.get("count_blocked"):
+        add_log(f"Alles normalisieren: {pv.get('count_blocked')} Album/Alben übersprungen, weil sie noch nicht vollständig analysiert sind")
+    if pv.get("count_skipped_reference"):
+        add_log(f"Alles normalisieren: {pv.get('count_skipped_reference')} Referenzalbum/Alben übersprungen")
+    normalize_batch_worker(items, backup_mode)
+
+
 def analyze_batch_worker(items: list):
     init_db()
     albums = []
@@ -1962,6 +2020,20 @@ def normalize_batch(data: dict):
         raise HTTPException(status_code=400, detail="Keine Alben übergeben")
     if not state["running"]:
         threading.Thread(target=normalize_batch_worker, args=(items, backup), daemon=True).start()
+    return state
+
+
+@app.get("/api/normalize_preview_all")
+def normalize_preview_all():
+    return all_normalize_preview()
+
+
+@app.post("/api/normalize_all")
+def normalize_all(data: dict = None):
+    data = data or {}
+    backup = data.get("backup") if isinstance(data, dict) else None
+    if not state["running"]:
+        threading.Thread(target=normalize_all_worker, args=(backup,), daemon=True).start()
     return state
 
 

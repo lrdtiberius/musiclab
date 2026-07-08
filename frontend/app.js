@@ -1,5 +1,5 @@
 const API='http://'+location.hostname+':8091/api';
-const APP_VERSION='1.8.15';
+const APP_VERSION='1.8.17';
 let coverCacheBust=Date.now();
 let selectedArtist=null, selectedAlbum=null, selectedTagFolder=null;
 let selectedTagGenre=null, selectedTagYear=null;
@@ -26,7 +26,7 @@ function coverBox(src, large=false, opts={}){
   const extra=opts.extraClass ? ' '+opts.extraClass : '';
   const cls=(large?'mediaCoverBox large':'mediaCoverBox')+extra;
   const loading=opts.eager ? 'eager' : 'lazy';
-  // v1.8.16: Cover-Boxen müssen beim Albumwechsel immer eine neue, eindeutige
+  // v1.8.17: Cover-Boxen müssen beim Albumwechsel immer eine neue, eindeutige
   // DOM-Box bekommen. Besonders wichtig bei #tagCoverPreview: Wenn die ID beim
   // ersten Cover verloren geht, kann die Vorschau bei Albumwechseln nicht mehr
   // ersetzt werden und Safari zeigt das zuletzt sichtbare Cover weiter an.
@@ -709,6 +709,32 @@ async function analyzeAll(){
     console.error(e);
   }
 }
+
+async function normalizeAll(){
+  try{
+    const pv=await j(API+'/normalize_preview_all');
+    if(!pv.can_normalize){
+      alert('Alles normalisieren ist aktuell nicht möglich:\n\nEs gibt keine vollständig analysierten Alben, die normalisiert werden können.');
+      return;
+    }
+    const backupText = backupMode.value==='off' ? 'kein Backup' : (backupMode.value==='sidecar' ? '.bak neben der Datei' : 'Backup unter /data/backups');
+    const examples=(pv.normalizable||[]).slice(0,10).map(x=>`- ${x.label}: ${x.current_lufs} → ${x.target_lufs} LUFS`).join('\n');
+    const more=(pv.count_albums||0)>10 ? `\n... und ${(pv.count_albums||0)-10} weitere` : '';
+    const skipped=[];
+    if(pv.count_blocked) skipped.push(`${pv.count_blocked} Album/Alben werden übersprungen, weil sie noch nicht vollständig analysiert sind`);
+    if(pv.count_skipped_reference) skipped.push(`${pv.count_skipped_reference} Referenzalbum/Alben werden übersprungen`);
+    const msg=`Alles normalisieren?\n\n${pv.count_albums} Album/Alben · ${pv.count_tracks} Titel\nZiel: ${pv.target_lufs} LUFS · TP ${pv.true_peak} · LRA ${pv.lra}\nBackup: ${backupText}\n\n${examples}${more}${skipped.length?'\n\n'+skipped.join('\n'):''}\n\nDateien werden überschrieben.`;
+    if(!confirm(msg)) return;
+    lastRunning=true;
+    status.textContent='Alles-Normalisierung wird gestartet...';
+    await j(API+'/normalize_all',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({backup:backupMode.value})});
+    await poll();
+  }catch(e){
+    status.textContent='Alles-Normalisierung-Fehler';
+    alert('Alles normalisieren konnte nicht gestartet werden:\n'+e.message);
+  }
+}
+
 async function analyzeAlbum(){if(selectedAlbum){lastRunning=true;let url=API+'/analyze?album='+encodeURIComponent(selectedAlbum);if(selectedArtist)url+='&artist='+encodeURIComponent(selectedArtist);await j(url,{method:'POST'});poll()}}
 async function normalizeAlbum(){
   if(!selectedAlbum)return;
@@ -830,7 +856,7 @@ function jsArg(v){return JSON.stringify(String(v??''));}
 function renderPathRow(x){
   const path=String(x?.path||'');
   if(!path) return '';
-  // v1.8.16: Auf der Duplikatseite keine Pfad-Buttons mehr.
+  // v1.8.17: Auf der Duplikatseite keine Pfad-Buttons mehr.
   // Direktes Öffnen/Kopieren war im Browser/NAS-Setup nicht zuverlässig genug
   // und hat die Seite unnötig überladen. Der Pfad bleibt nur als Hinweis sichtbar.
   return `<div class="checkPathRow"><div class="checkPath">${escHtml(path)}</div></div>`;
@@ -1323,7 +1349,7 @@ async function getTagTrackUrl(){
 async function loadTagsPage(){
   const body=document.getElementById('tagTracks'); const hint=document.getElementById('tagHint');
   if(!body||!hint)return;
-  // v1.8.16: Beim Albumwechsel sofort die alte Vorschau entfernen.
+  // v1.8.17: Beim Albumwechsel sofort die alte Vorschau entfernen.
   // Sonst bleibt bei langsamer/fehlender Cover-Antwort das zuletzt gesehene Cover stehen.
   tagCoverPlaceholder('Cover wird geladen…');
   if(!selectedAlbum && selectedTagFolder===null){
@@ -1446,7 +1472,7 @@ async function uploadTagCover(){
   const first=paths[0] || '';
   const firstFolder=parentFolderFromPath(first||'');
 
-  // v1.8.16: Die sichtbaren Track-Pfade werden direkt ans Backend geschickt.
+  // v1.8.17: Die sichtbaren Track-Pfade werden direkt ans Backend geschickt.
   // Der Ordner ist nur noch Fallback/Hinweis. Damit landet das Cover nicht
   // im falschen Album, wenn Albumname und Ordnername auseinanderlaufen.
   if(firstFolder) folder=firstFolder;
