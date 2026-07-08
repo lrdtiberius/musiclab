@@ -1,5 +1,5 @@
 const API='http://'+location.hostname+':8091/api';
-const APP_VERSION='1.8.17';
+const APP_VERSION='1.8.18';
 let coverCacheBust=Date.now();
 let selectedArtist=null, selectedAlbum=null, selectedTagFolder=null;
 let selectedTagGenre=null, selectedTagYear=null;
@@ -26,7 +26,7 @@ function coverBox(src, large=false, opts={}){
   const extra=opts.extraClass ? ' '+opts.extraClass : '';
   const cls=(large?'mediaCoverBox large':'mediaCoverBox')+extra;
   const loading=opts.eager ? 'eager' : 'lazy';
-  // v1.8.17: Cover-Boxen müssen beim Albumwechsel immer eine neue, eindeutige
+  // v1.8.18: Cover-Boxen müssen beim Albumwechsel immer eine neue, eindeutige
   // DOM-Box bekommen. Besonders wichtig bei #tagCoverPreview: Wenn die ID beim
   // ersten Cover verloren geht, kann die Vorschau bei Albumwechseln nicht mehr
   // ersetzt werden und Safari zeigt das zuletzt sichtbare Cover weiter an.
@@ -856,7 +856,7 @@ function jsArg(v){return JSON.stringify(String(v??''));}
 function renderPathRow(x){
   const path=String(x?.path||'');
   if(!path) return '';
-  // v1.8.17: Auf der Duplikatseite keine Pfad-Buttons mehr.
+  // v1.8.18: Auf der Duplikatseite keine Pfad-Buttons mehr.
   // Direktes Öffnen/Kopieren war im Browser/NAS-Setup nicht zuverlässig genug
   // und hat die Seite unnötig überladen. Der Pfad bleibt nur als Hinweis sichtbar.
   return `<div class="checkPathRow"><div class="checkPath">${escHtml(path)}</div></div>`;
@@ -1349,7 +1349,7 @@ async function getTagTrackUrl(){
 async function loadTagsPage(){
   const body=document.getElementById('tagTracks'); const hint=document.getElementById('tagHint');
   if(!body||!hint)return;
-  // v1.8.17: Beim Albumwechsel sofort die alte Vorschau entfernen.
+  // v1.8.18: Beim Albumwechsel sofort die alte Vorschau entfernen.
   // Sonst bleibt bei langsamer/fehlender Cover-Antwort das zuletzt gesehene Cover stehen.
   tagCoverPlaceholder('Cover wird geladen…');
   if(!selectedAlbum && selectedTagFolder===null){
@@ -1367,6 +1367,7 @@ async function loadTagsPage(){
     hint.textContent=`${byFolder?'Ordner · ':''}${useArtist?useArtist+' · ':''}${selectedAlbum} · ${rows.length} Titel`;
     tagDiscTotals={};
     if(rows.length){
+      const bs=document.getElementById('btnTagScraper'); if(bs) bs.disabled=false;
       const first=rows[0];
       const cp=document.getElementById('tagCoverPreview'); const ci=document.getElementById('tagCoverInfo');
       if(cp){ cp.outerHTML = tagCoverBox(coverUrlPath(first.path||'')); }
@@ -1418,7 +1419,7 @@ async function loadTagsPage(){
     bindTagDirtyHandlers();
     setupCoverDrop();
     setTagsDirty(false);
-  }catch(e){hint.textContent='Tags konnten nicht geladen werden: '+e.message; body.innerHTML=''; tagCoverPlaceholder('Cover konnte nicht geladen werden.'); setTagsDirty(false);}
+  }catch(e){hint.textContent='Tags konnten nicht geladen werden: '+e.message; body.innerHTML=''; tagCoverPlaceholder('Cover konnte nicht geladen werden.'); const bs=document.getElementById('btnTagScraper'); if(bs) bs.disabled=true; setTagsDirty(false);}
 }
 function escAttr(s){return String(s ?? '').replaceAll('&','&amp;').replaceAll('"','&quot;').replaceAll('<','&lt;').replaceAll('>','&gt;')}
 function renderDiscTotalsEditor(discs){
@@ -1472,7 +1473,7 @@ async function uploadTagCover(){
   const first=paths[0] || '';
   const firstFolder=parentFolderFromPath(first||'');
 
-  // v1.8.17: Die sichtbaren Track-Pfade werden direkt ans Backend geschickt.
+  // v1.8.18: Die sichtbaren Track-Pfade werden direkt ans Backend geschickt.
   // Der Ordner ist nur noch Fallback/Hinweis. Damit landet das Cover nicht
   // im falschen Album, wenn Albumname und Ordnername auseinanderlaufen.
   if(firstFolder) folder=firstFolder;
@@ -1516,6 +1517,106 @@ async function uploadTagCover(){
   finally{
     if(previewUrl) setTimeout(()=>URL.revokeObjectURL(previewUrl), 15000);
     if(inp) inp.value='';
+  }
+}
+
+
+function currentTagRows(){
+  return [...document.querySelectorAll('#tagTracks tr[data-path]')];
+}
+function currentTagPaths(){
+  return currentTagRows().map(r=>r.dataset.path).filter(Boolean);
+}
+function closeTagScraper(){
+  const p=document.getElementById('tagScraperPanel'); if(p)p.classList.add('hidden');
+}
+function scraperTrackPreview(tracks){
+  const shown=(tracks||[]).slice(0,12).map(t=>{
+    const d=Number(t.disc_number||1);
+    const pos=t.position||t.number||'';
+    return `<div class="scraperTrack"><span>${d>1?'CD '+d+' · ':''}${escHtml(pos)}</span><b>${escHtml(t.title||'')}</b></div>`;
+  }).join('');
+  const more=(tracks||[]).length>12?`<div class="small muted">… ${(tracks||[]).length-12} weitere Titel</div>`:'';
+  return shown+more;
+}
+function renderTagScraperResults(data){
+  const panel=document.getElementById('tagScraperPanel');
+  const box=document.getElementById('tagScraperResults');
+  const st=document.getElementById('tagScraperStatus');
+  if(panel)panel.classList.remove('hidden');
+  const proposals=data.proposals||[];
+  if(st)st.textContent=`${proposals.length} Treffer für ${data.query?.artist||'-'} — ${data.query?.album||'-'}`;
+  if(!box)return;
+  if(!proposals.length){
+    box.innerHTML='<div class="empty">Keine passenden Online-Tags gefunden.</div>';
+    return;
+  }
+  box.innerHTML=proposals.map((p,i)=>{
+    const score=Number(p.score||0);
+    const scoreClass=score>=85?'good':(score>=65?'warn':'bad');
+    const year=p.year||((p.date||'').slice(0,4));
+    return `<div class="scraperCard">
+      <div class="scraperCardHead">
+        <div><h3>${escHtml(p.artist||'Unbekannt')} — ${escHtml(p.album||'Unbekanntes Album')}</h3>
+        <div class="small muted">${escHtml(year||'ohne Jahr')}${p.country?' · '+escHtml(p.country):''}${p.status?' · '+escHtml(p.status):''} · ${p.track_count||0} Titel${p.medium_count>1?' · '+p.medium_count+' Discs':''}</div></div>
+        <div class="scraperScore ${scoreClass}">${score}%</div>
+      </div>
+      <div class="scraperTracks">${scraperTrackPreview(p.tracks||[])}</div>
+      <div class="toolbar scraperActions"><button onclick="applyTagScraperProposal(${i})">Diesen Vorschlag übernehmen</button>${p.source_url?`<button class="ghost" onclick="window.open('${escAttr(p.source_url)}','_blank')">MusicBrainz öffnen</button>`:''}</div>
+    </div>`;
+  }).join('');
+  window.__tagScraperProposals=proposals;
+}
+async function searchTagScraper(){
+  const paths=currentTagPaths();
+  if(!paths.length){alert('Bitte zuerst ein Album auf der Tags-Seite auswählen.');return;}
+  const panel=document.getElementById('tagScraperPanel');
+  const box=document.getElementById('tagScraperResults');
+  const st=document.getElementById('tagScraperStatus');
+  if(panel)panel.classList.remove('hidden');
+  if(box)box.innerHTML='<div class="empty">Suche Online-Tags…</div>';
+  if(st)st.textContent='Suche läuft…';
+  const payload={
+    folder:selectedTagFolder,
+    paths,
+    artist:document.getElementById('tagAlbumArtist')?.value||'',
+    album:document.getElementById('tagAlbumName')?.value||''
+  };
+  try{
+    const data=await j(API+'/tag_scraper/search',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
+    renderTagScraperResults(data);
+  }catch(e){
+    if(st)st.textContent='Suche fehlgeschlagen';
+    if(box)box.innerHTML=`<div class="empty">Tag-Scraper fehlgeschlagen: ${escHtml(e.message||e)}</div>`;
+  }
+}
+async function applyTagScraperProposal(index){
+  const proposals=window.__tagScraperProposals||[];
+  const proposal=proposals[index];
+  const paths=currentTagPaths();
+  if(!proposal || !paths.length)return;
+  const sortFiles=(document.getElementById('sortAfterTags')?.value==='on'||document.getElementById('sortAfterTagsPage')?.value==='on');
+  const trackInfo=`${proposal.track_count||0} Online-Titel für ${paths.length} sichtbare Dateien`;
+  if(!confirm(`Tags übernehmen?\n\n${proposal.artist} — ${proposal.album}\n${proposal.year||''}\n${trackInfo}\n\nDie Tags werden erst nach dieser Bestätigung in die Dateien geschrieben.${sortFiles?'\nDanach wird gemäß Einstellung auch sortiert/verschoben.':''}`))return;
+  const st=document.getElementById('tagScraperStatus');
+  if(st)st.textContent='Übernehme Tags…';
+  try{
+    const res=await j(API+'/tag_scraper/apply',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({folder:selectedTagFolder,paths,proposal,sort_files:sortFiles})});
+    const applied=res.applied||0;
+    const errors=res.result?.errors||[];
+    const moved=res.result?.moved||0;
+    const msg=`Online-Tags übernommen: ${applied}/${res.total||paths.length}`+(moved?` · verschoben: ${moved}`:'')+(errors.length?` · Fehler: ${errors.length}`:'');
+    progressText.textContent=msg; status.textContent=msg;
+    if(st)st.textContent=msg;
+    if(errors.length) alert(msg+'\n'+errors.join('\n'));
+    await loadStats();
+    await loadGenreOptions();
+    await loadBrowser();
+    await loadTagsPage();
+    setTagsDirty(false);
+  }catch(e){
+    if(st)st.textContent='Übernahme fehlgeschlagen';
+    alert('Online-Tags konnten nicht übernommen werden: '+(e.message||e));
   }
 }
 

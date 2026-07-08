@@ -10,7 +10,8 @@ import tempfile
 import zipfile
 import hashlib
 import unicodedata
-from urllib.parse import quote
+from urllib.parse import quote, urlencode
+from urllib.request import Request as UrlRequest, urlopen
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -51,7 +52,7 @@ def local_log_time() -> str:
         pass
     return time.strftime("%H:%M:%S")
 
-app = FastAPI(title="MusicLab API", version="1.8.17")
+app = FastAPI(title="MusicLab API", version="1.8.18")
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
 
 stop_event = threading.Event()
@@ -2271,6 +2272,216 @@ def _folder_matches(row, folder: str, artist: Optional[str] = None):
     return True
 
 
+
+
+
+
+# -----------------------------
+# Online Tag Scraper (MusicBrainz)
+# -----------------------------
+MB_BASE = "https://musicbrainz.org/ws/2"
+MB_UA = "MusicLab/1.8.18 (local tag repair tool)"
+
+
+def _norm_match(value: str) -> str:
+    text = unicodedata.normalize("NFD", str(value or "").lower())
+    text = "".join(ch for ch in text if unicodedata.category(ch) != "Mn")
+    text = re.sub(r"\b(remaster(ed)?|deluxe|edition|explicit|bonus|disc|cd)\b", " ", text)
+    text = re.sub(r"[^a-z0-9]+", " ", text)
+    return re.sub(r"\s+", " ", text).strip()
+
+
+def _similarity(a: str, b: str) -> int:
+    aa, bb = _norm_match(a), _norm_match(b)
+    if not aa and not bb:
+        return 100
+    if not aa or not bb:
+        return 0
+    return int(round(difflib.SequenceMatcher(None, aa, bb).ratio() * 100))
+
+
+def _mb_get(path: str, params: dict) -> dict:
+    url = f"{MB_BASE}{path}?" + urlencode(params)
+    req = UrlRequest(url, headers={"Accept": "application/json", "User-Agent": MB_UA})
+    with urlopen(req, timeout=12) as resp:
+        raw = resp.read()
+    return json.loads(raw.decode("utf-8", errors="replace"))
+
+
+def _folder_tracks_from_payload(payload: dict):
+    root = get_music_root().resolve()
+    paths = payload.get("paths") if isinstance(payload, dict) else None
+    folder = str(payload.get("folder") or "").strip().strip("/") if isinstance(payload, dict) else ""
+    rows = []
+    with db() as con:
+        if isinstance(paths, list) and paths:
+            for rel in paths[:300]:
+                rel = str(rel or "").strip().lstrip("/").replace("\\", "/")
+                if not rel:
+                    continue
+                row = con.execute("SELECT * FROM tracks WHERE path=?", (rel,)).fetchone()
+                if row:
+                    rows.append(dict(row))
+        elif folder:
+            all_rows = [dict(r) for r in con.execute("SELECT * FROM tracks ORDER BY COALESCE(disc_number,1), COALESCE(track_number,9999), path COLLATE NOCASE").fetchall()]
+            rows = [r for r in all_rows if parent_folder_key(r.get("path") or "") == folder]
+    rows.sort(key=lambda r: (int(r.get("disc_number") or 1), int(r.get("track_number") or 9999), (r.get("title") or "").lower(), (r.get("path") or "").lower()))
+    # safety: validate actual files are below music root when possible
+    safe = []
+    for r in rows:
+        try:
+            rel = str(r.get("path") or "").lstrip("/").replace("\\", "/")
+            full = (root / rel).resolve()
+            if full.is_relative_to(root):
+                safe.append(r)
+        except Exception:
+            pass
+    return safe
+
+
+def _release_to_proposal(release: dict, wanted_artist: str, wanted_album: str, wanted_count: int, wanted_titles=None) -> dict:
+    rid = release.get("id") or ""
+    title = release.get("title") or ""
+    artist_credit = release.get("artist-credit") or []
+    artist = "".join([str(x.get("name") or "") + str(x.get("joinphrase") or "") for x in artist_credit]).strip()
+    date = release.get("date") or ""
+    year = date[:4] if re.match(r"^\d{4}", date) else ""
+    media = release.get("media") or []
+    tracks = []
+    for medium in media:
+        disc_no = int(medium.get("position") or 1)
+        medium_tracks = medium.get("tracks") or []
+        for tr in medium_tracks:
+            pos = int(tr.get("position") or len(tracks)+1)
+            rec = tr.get("recording") or {}
+            tr_title = tr.get("title") or rec.get("title") or ""
+            tracks.append({
+                "title": tr_title,
+                "number": str(tr.get("number") or pos),
+                "position": pos,
+                "disc_number": disc_no,
+                "length": tr.get("length") or rec.get("length") or None,
+            })
+    artist_score = _similarity(wanted_artist, artist)
+    album_score = _similarity(wanted_album, title)
+    count_score = max(0, 100 - abs((wanted_count or 0) - len(tracks)) * 12) if wanted_count else 50
+    title_score = 50
+    if wanted_titles and tracks:
+        pairs = zip(wanted_titles[:len(tracks)], [t.get("title") or "" for t in tracks])
+        vals = [_similarity(a, b) for a, b in pairs]
+        if vals:
+            title_score = round(sum(vals) / len(vals))
+    score = round(album_score * 0.38 + artist_score * 0.28 + count_score * 0.20 + title_score * 0.14)
+    return {
+        "id": rid,
+        "source": "MusicBrainz",
+        "source_url": f"https://musicbrainz.org/release/{rid}" if rid else "",
+        "artist": artist,
+        "album": title,
+        "date": date,
+        "year": year,
+        "country": release.get("country") or "",
+        "status": release.get("status") or "",
+        "track_count": len(tracks),
+        "medium_count": len(media),
+        "score": score,
+        "tracks": tracks,
+    }
+
+
+@app.post("/api/tag_scraper/search")
+def api_tag_scraper_search(payload: dict):
+    """Search MusicBrainz for the selected physical album folder.
+
+    The endpoint returns proposals only. Nothing is written until
+    /api/tag_scraper/apply is called with one selected proposal.
+    """
+    rows = _folder_tracks_from_payload(payload or {})
+    if not rows:
+        raise HTTPException(status_code=400, detail="Keine Titel für die Tag-Suche ausgewählt")
+    artist = str((payload or {}).get("artist") or rows[0].get("artist") or "").strip()
+    album = str((payload or {}).get("album") or rows[0].get("album") or "").strip()
+    if not artist:
+        artists = [r.get("artist") for r in rows if r.get("artist")]
+        artist = artists[0] if artists else ""
+    if not album:
+        albums = [r.get("album") for r in rows if r.get("album")]
+        album = albums[0] if albums else ""
+    if not album and not artist:
+        raise HTTPException(status_code=400, detail="Zu wenig Informationen: Interpret oder Album fehlt")
+
+    wanted_titles = [r.get("title") or Path(r.get("filename") or r.get("path") or "").stem for r in rows]
+    query_parts = []
+    if artist:
+        query_parts.append(f'artist:"{artist}"')
+    if album:
+        query_parts.append(f'release:"{album}"')
+    query = " AND ".join(query_parts) or f'"{album or artist}"'
+    try:
+        search = _mb_get("/release/", {"query": query, "fmt": "json", "limit": "10"})
+        candidates = search.get("releases") or []
+        proposals = []
+        seen = set()
+        for cand in candidates[:10]:
+            rid = cand.get("id")
+            if not rid or rid in seen:
+                continue
+            seen.add(rid)
+            try:
+                release = _mb_get(f"/release/{rid}", {"inc": "recordings+artist-credits+media", "fmt": "json"})
+                proposals.append(_release_to_proposal(release, artist, album, len(rows), wanted_titles))
+                time.sleep(0.12)
+            except Exception as e:
+                # keep search usable even if one release fails
+                add_log(f"Tag-Scraper: Release {rid} konnte nicht geladen werden: {e}", True)
+        proposals.sort(key=lambda x: (-int(x.get("score") or 0), abs((x.get("track_count") or 0) - len(rows)), (x.get("artist") or "").lower(), (x.get("album") or "").lower()))
+        return {"query": {"artist": artist, "album": album, "track_count": len(rows)}, "count": len(proposals), "proposals": proposals[:8]}
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"MusicBrainz-Suche fehlgeschlagen: {e}")
+
+
+@app.post("/api/tag_scraper/apply")
+def api_tag_scraper_apply(payload: dict):
+    rows = _folder_tracks_from_payload(payload or {})
+    proposal = (payload or {}).get("proposal") or {}
+    sort_files = bool((payload or {}).get("sort_files"))
+    if not rows:
+        raise HTTPException(status_code=400, detail="Keine Titel ausgewählt")
+    if not isinstance(proposal, dict) or not proposal.get("tracks"):
+        raise HTTPException(status_code=400, detail="Kein Scraper-Vorschlag übergeben")
+    tracks = proposal.get("tracks") or []
+    album_artist = str(proposal.get("artist") or rows[0].get("artist") or "").strip()
+    album = str(proposal.get("album") or rows[0].get("album") or "").strip()
+    year = str(proposal.get("year") or "").strip()
+    medium_count = max([int(t.get("disc_number") or 1) for t in tracks] or [1])
+    totals_by_disc = {}
+    for t in tracks:
+        d = int(t.get("disc_number") or 1)
+        totals_by_disc[d] = totals_by_disc.get(d, 0) + 1
+    updates = []
+    for i, row in enumerate(rows):
+        if i >= len(tracks):
+            break
+        tr = tracks[i]
+        d = int(tr.get("disc_number") or 1)
+        pos = int(tr.get("position") or (i + 1))
+        total = totals_by_disc.get(d) or len(tracks)
+        update = {
+            "path": row.get("path"),
+            "artist": album_artist,
+            "album": album,
+            "title": str(tr.get("title") or row.get("title") or "").strip(),
+            "tracknumber": f"{pos}/{total}" if total else str(pos),
+            "discnumber": f"{d}/{medium_count}" if medium_count and medium_count > 1 else "",
+        }
+        if year:
+            update["year"] = year
+        updates.append(update)
+    if len(updates) != len(rows):
+        add_log(f"Tag-Scraper: Trackanzahl abweichend, schreibe {len(updates)}/{len(rows)} Dateien", True)
+    res = update_tags({"updates": updates, "sort_files": sort_files})
+    add_log(f"Tag-Scraper übernommen: {album_artist} - {album} ({len(updates)} Dateien)", False)
+    return {"applied": len(updates), "total": len(rows), "proposal": {"artist": album_artist, "album": album, "year": year}, "result": res}
 
 
 @app.get("/api/tag_issues")
