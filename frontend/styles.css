@@ -1188,7 +1188,7 @@ body.checkMode #checkView .checkList{min-height:0!important;max-height:none!impo
 .refClearBtn{width:24px;height:24px;border-radius:999px;padding:0;line-height:1;background:var(--danger,#7a2f2f);color:#fff;font-weight:900;box-shadow:none}
 .refClearBtn:hover{filter:brightness(1.1)}
 
-/* v1.9.0 Workbench-Redesign: dunkles Studio-Dashboard, klarere Arbeitsbereiche */
+/* v1.9.1 Workbench-Redesign: dunkles Studio-Dashboard, klarere Arbeitsbereiche */
 body.studioRedesign{
   background:
     radial-gradient(circle at 18% 0%, rgba(88,166,255,.16), transparent 32%),
@@ -1344,4 +1344,63 @@ body.studioRedesign .footerCredit{
   body.studioRedesign .workbenchLayout{grid-template-columns:1fr;}
   body.studioRedesign .albums{grid-template-columns:repeat(auto-fill,minmax(230px,1fr));}
   body.studioRedesign .checkGrid{grid-template-columns:1fr;}
+}
+
+
+/* v1.9.1: Credit dauerhaft lesbar + Auswahlumrandung nicht abgeschnitten */
+body.studioRedesign .footerCredit,
+.footerCredit{
+  position:fixed!important;
+  right:18px!important;
+  bottom:12px!important;
+  z-index:9999!important;
+  margin:0!important;
+  padding:7px 11px!important;
+  border:1px solid rgba(143,202,255,.22)!important;
+  border-radius:999px!important;
+  background:rgba(7,11,18,.86)!important;
+  color:#d7e8ff!important;
+  text-shadow:0 1px 2px rgba(0,0,0,.85)!important;
+  box-shadow:0 10px 30px rgba(0,0,0,.38)!important;
+  opacity:1!important;
+  font-size:12px!important;
+  line-height:16px!important;
+  pointer-events:none!important;
+  backdrop-filter:blur(12px)!important;
+}
+body.studioRedesign main,
+main{
+  padding-bottom:42px!important;
+}
+body.studioRedesign .albums{
+  padding:8px 10px 14px 8px!important;
+}
+body.studioRedesign .album,
+body.studioRedesign .row{
+  outline:none!important;
+  box-sizing:border-box!important;
+}
+body.studioRedesign .album.sel,
+body.studioRedesign .row.sel{
+  outline:none!important;
+  border-color:rgba(143,202,255,.98)!important;
+  box-shadow:
+    0 0 0 2px rgba(143,202,255,.90),
+    0 0 0 6px rgba(88,166,255,.16),
+    inset 0 0 0 1px rgba(255,255,255,.07)!important;
+}
+body.studioRedesign .album.ref.sel{
+  border-color:rgba(255,217,138,.98)!important;
+  box-shadow:
+    0 0 0 2px rgba(255,217,138,.92),
+    0 0 0 6px rgba(255,204,102,.14),
+    inset 0 0 0 1px rgba(255,255,255,.07)!important;
+}
+@media(max-width:760px){
+  body.studioRedesign .footerCredit,
+  .footerCredit{
+    right:10px!important;
+    bottom:8px!important;
+    max-width:calc(100vw - 20px)!important;
+  }
 }

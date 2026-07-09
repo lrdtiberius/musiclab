@@ -1,4 +1,4 @@
-# MusicLab v1.9.0
+# MusicLab v1.9.1
 
 Redesign-/Workbench-Version auf Basis von v1.8.28.
 
@@ -13,7 +13,7 @@ Redesign-/Workbench-Version auf Basis von v1.8.28.
   - Es kann optisch nur noch ein Album aktiv sein.
   - Beim Wechsel werden alte Markierungen sofort entfernt.
   - Schnelle Klickwechsel und verspätete Ladeantworten markieren keine alten Alben mehr erneut.
-- Cache-Buster auf `1.9.0` gesetzt.
+- Cache-Buster auf `1.9.1` gesetzt.
 
 ## Start
 
