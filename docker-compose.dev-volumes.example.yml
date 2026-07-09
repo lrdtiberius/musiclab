@@ -1,6 +1,6 @@
 # Optionales DEV-Override.
 # NICHT für normale Nutzung aktivieren.
-# Diese Mounts überschreiben sonst die Dateien im Docker-Image.
+# Diese Mounts überschreiben sonst Dateien im Docker-Image.
 
 services:
   musiclab-backend:

@@ -3,44 +3,66 @@ set -e
 
 cd "$(dirname "$0")"
 
-echo "== MusicLab Update / Rebuild =="
+echo "== MusicLab v1.9.11 Update / Rebuild =="
 echo "Arbeitsordner: $(pwd)"
 echo
 
-echo "== Prüfe wichtige Dateien =="
-ls -lah docker-compose.yml frontend/Dockerfile frontend/index.html frontend/app.js frontend/styles.css frontend/nginx.conf
+echo "== Prüfe NAS-Musikpfad =="
+if [ ! -d /volume1/DS420/Musik ]; then
+  echo "WARNUNG: /volume1/DS420/Musik wurde auf der NAS nicht gefunden."
+else
+  echo "OK: /volume1/DS420/Musik vorhanden"
+  ls -lah /volume1/DS420/Musik | head
+fi
 echo
 
-echo "== Version in frontend/index.html =="
+echo "== Versionen in den Quelldateien =="
 grep -R "MusicLab v" -n frontend/index.html || true
+grep -R "APP_VERSION" -n frontend/app.js | head || true
+grep -R "APP_VERSION" -n backend/app/main.py | head || true
 echo
 
-echo "== Docker Compose config: Frontend darf KEIN volumes: nach /usr/share/nginx/html haben =="
+echo "== Compose-Konfiguration =="
+sudo docker compose config | grep -A35 -B8 "musiclab-backend" || true
 sudo docker compose config | grep -A25 -B5 "musiclab-frontend" || true
 echo
 
-echo "== Container stoppen =="
-sudo docker compose down --remove-orphans
+echo "== Alte MusicLab-Container entfernen =="
+sudo docker rm -f musiclab-frontend musiclab-backend 2>/dev/null || true
 echo
 
-echo "== Images ohne Cache neu bauen =="
+echo "== Alte MusicLab-Images entfernen =="
+sudo docker image rm musiclab-musiclab-frontend musiclab-musiclab-backend 2>/dev/null || true
+echo
+
+echo "== Ohne Cache neu bauen =="
 sudo docker compose build --no-cache
 echo
 
-echo "== Container neu starten =="
+echo "== Neu starten =="
 sudo docker compose up -d --force-recreate
 echo
 
-echo "== Container-Dateien prüfen =="
+echo "== Frontend prüfen =="
 sudo docker exec musiclab-frontend ls -lah /usr/share/nginx/html
-echo
-
-echo "== Version im laufenden Container =="
 sudo docker exec musiclab-frontend grep -R "MusicLab v" -n /usr/share/nginx/html/index.html || true
-echo
-
-echo "== HTTP-Test Port 8092 =="
 curl -s http://localhost:8092 | grep -i "MusicLab v" || true
 echo
 
-echo "Fertig. Im Browser öffnen: http://192.168.188.34:8092"
+echo "== Backend prüfen =="
+sudo docker exec musiclab-backend python - <<'PY'
+from app.main import APP_VERSION, check_music_root, get_music_root, get_settings
+print("Backend APP_VERSION:", APP_VERSION)
+print("Backend music_root:", get_music_root())
+print("Backend settings:", get_settings())
+print("Backend check_music_root:", check_music_root(str(get_music_root())))
+PY
+echo
+
+echo "== Backend HTTP Pfadcheck =="
+curl -s "http://localhost:8091/api/settings/check_music_root?path=/music" || true
+echo
+curl -s "http://localhost:8091/api/version" || true
+echo
+
+echo "Fertig. Browser-Adresse: http://192.168.188.34:8092"

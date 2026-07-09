@@ -42,6 +42,7 @@ LOG_PATH = LOG_DIR / "musiclab.log"
 LOG_MAX_BYTES = int(os.getenv("LOG_MAX_BYTES", str(10 * 1024 * 1024)))
 EXTS = {".mp3", ".m4a", ".aac", ".flac", ".ogg"}
 SCHEMA_VERSION = 24
+APP_VERSION = "1.9.11"
 LOG_TZ = os.getenv("TZ") or os.getenv("LOG_TZ") or "Europe/Berlin"
 
 def local_log_time() -> str:
@@ -256,7 +257,7 @@ def init_db():
             )
             """
         )
-        defaults = {"target_lufs": "-16", "true_peak": "-1.5", "lra": "11", "backup_mode": "on", "parallel_analysis": "2", "parallel_normalize": "2", "music_root": str(DEFAULT_MUSIC_ROOT), "watch_mode": "off", "sort_after_tags": "off", "smb_base_url": "smb://DS923/Musik"}
+        defaults = default_settings_dict()
         for k, v in defaults.items():
             con.execute("INSERT OR IGNORE INTO settings(key,value) VALUES(?,?)", (k, v))
         con.execute("INSERT OR REPLACE INTO meta(key,value) VALUES('schema_version', ?)", (str(SCHEMA_VERSION),))
@@ -264,9 +265,17 @@ def init_db():
 
 
 def get_settings():
+    settings = default_settings_dict()
     with db() as con:
         rows = con.execute("SELECT key,value FROM settings").fetchall()
-        return {r["key"]: r["value"] for r in rows}
+        for r in rows:
+            if r["value"] is not None and str(r["value"]).strip() != "":
+                settings[r["key"]] = r["value"]
+        # Bestehende DBs aus älteren Versionen erhalten neue Defaults nachgetragen.
+        for k, v in settings.items():
+            con.execute("INSERT OR IGNORE INTO settings(key,value) VALUES(?,?)", (k, v))
+        con.commit()
+        return settings
 
 
 def save_settings(data: dict):
@@ -276,6 +285,21 @@ def save_settings(data: dict):
                 con.execute("INSERT OR REPLACE INTO settings(key,value) VALUES(?,?)", (k, str(data[k])))
         con.commit()
 
+
+
+def default_settings_dict():
+    return {
+        "target_lufs": "-16",
+        "true_peak": "-1.5",
+        "lra": "11",
+        "backup_mode": "on",
+        "parallel_analysis": "2",
+        "parallel_normalize": "2",
+        "music_root": str(DEFAULT_MUSIC_ROOT),
+        "watch_mode": "off",
+        "sort_after_tags": "off",
+        "smb_base_url": "smb://DS923/Musik",
+    }
 
 
 def get_music_root() -> Path:
@@ -2151,6 +2175,32 @@ def api_save_settings(data: dict):
 @app.get("/api/settings/check_music_root")
 def api_check_music_root(path: Optional[str] = None):
     return check_music_root(path)
+
+
+
+@app.get("/api/settings/check_music_root/")
+def api_check_music_root_slash(path: Optional[str] = None):
+    return check_music_root(path)
+
+
+@app.get("/api/check_music_root")
+def api_check_music_root_alias(path: Optional[str] = None):
+    return check_music_root(path)
+
+
+@app.get("/api/music_root/check")
+def api_music_root_check_alias(path: Optional[str] = None):
+    return check_music_root(path)
+
+
+@app.get("/api/version")
+def api_version():
+    return {
+        "version": APP_VERSION if "APP_VERSION" in globals() else "1.9.11",
+        "music_root": str(get_music_root()),
+        "music_root_check": check_music_root(str(get_music_root())),
+        "settings": get_settings(),
+    }
 
 
 @app.get("/api/status")

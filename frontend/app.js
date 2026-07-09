@@ -1,8 +1,8 @@
 const API='http://'+location.hostname+':8091/api';
-const APP_VERSION='1.9.8';
+const APP_VERSION='1.9.11';
 let coverCacheBust=Date.now();
 let selectedArtist=null, selectedAlbum=null, selectedTagFolder=null;
-let selectedUiKey=null; // v1.9.8: eindeutige visuelle Einzelauswahl für Listen und Album-Kacheln
+let selectedUiKey=null; // v1.9.11: eindeutige visuelle Einzelauswahl für Listen und Album-Kacheln
 let selectedTagGenre=null, selectedTagYear=null;
 let browserMode='artist';
 let lastRunning=false;
@@ -28,7 +28,7 @@ function coverBox(src, large=false, opts={}){
   const extra=opts.extraClass ? ' '+opts.extraClass : '';
   const cls=(large?'mediaCoverBox large':'mediaCoverBox')+extra;
   const loading=opts.eager ? 'eager' : 'lazy';
-  // v1.9.8: Cover-Boxen müssen beim Albumwechsel immer eine neue, eindeutige
+  // v1.9.11: Cover-Boxen müssen beim Albumwechsel immer eine neue, eindeutige
   // DOM-Box bekommen. Besonders wichtig bei #tagCoverPreview: Wenn die ID beim
   // ersten Cover verloren geht, kann die Vorschau bei Albumwechseln nicht mehr
   // ersetzt werden und Safari zeigt das zuletzt sichtbare Cover weiter an.
@@ -110,7 +110,7 @@ function rowAlbumMatches(el, album, artist){
   return true;
 }
 function syncSingleSelectionUI(){
-  // v1.9.8: Die UI-Markierung ist an einen eindeutigen Schlüssel gebunden.
+  // v1.9.11: Die UI-Markierung ist an einen eindeutigen Schlüssel gebunden.
   // Dadurch können beim Wechsel nicht mehr mehrere Interpreten/Alben markiert bleiben,
   // auch wenn Albumtitel mehrfach vorkommen oder alte async-Ladevorgänge zurückkommen.
   document.querySelectorAll('#browserList .row.sel').forEach(el=>el.classList.remove('sel'));
@@ -292,7 +292,7 @@ async function setSelectedBatchReference(){
     reference=ref;
     selectedArtist=item.artist || selectedArtist;
     selectedAlbum=item.album;
-    await loadSettings();
+    await loadSettings(); checkApiVersion();
     await loadReference();
     await loadBrowser();
     await loadAlbums();
@@ -314,22 +314,23 @@ function selectVisibleAlbums(){
 }
 
 async function loadSettings(){
-  let s=await j(API+'/settings');
-  targetLufs.value=s.target_lufs;
-  truePeak.value=s.true_peak;
-  lra.value=s.lra;
-  if(s.backup_mode) backupMode.value=s.backup_mode;
-  if(s.parallel_analysis) parallelAnalysis.value=s.parallel_analysis;
-  if(typeof parallelNormalize!=='undefined' && s.parallel_normalize) parallelNormalize.value=s.parallel_normalize;
-  if(typeof musicRoot!=='undefined' && s.music_root) musicRoot.value=s.music_root;
-  if(typeof watchMode!=='undefined' && s.watch_mode) watchMode.value=s.watch_mode;
-  if(typeof sortAfterTags!=='undefined' && s.sort_after_tags) sortAfterTags.value=s.sort_after_tags;
-  if(typeof sortAfterTagsPage!=='undefined' && s.sort_after_tags) sortAfterTagsPage.value=s.sort_after_tags;
-  if(typeof smbBaseUrl!=='undefined' && s.smb_base_url) smbBaseUrl.value=s.smb_base_url;
-  if(typeof smbBaseUrlPage!=='undefined' && s.smb_base_url) smbBaseUrlPage.value=s.smb_base_url;
+  let s={};
+  try{ s=await j(API+'/settings'); }catch(e){ console.warn('Settings konnten nicht geladen werden:', e); }
+  targetLufs.value=s.target_lufs || '-16';
+  truePeak.value=s.true_peak || '-1.5';
+  lra.value=s.lra || '11';
+  backupMode.value=s.backup_mode || 'on';
+  parallelAnalysis.value=s.parallel_analysis || '2';
+  if(typeof parallelNormalize!=='undefined') parallelNormalize.value=s.parallel_normalize || '2';
+  if(typeof musicRoot!=='undefined') musicRoot.value=s.music_root || '/music';
+  if(typeof watchMode!=='undefined') watchMode.value=s.watch_mode || 'off';
+  if(typeof sortAfterTags!=='undefined') sortAfterTags.value=s.sort_after_tags || 'off';
+  if(typeof sortAfterTagsPage!=='undefined') sortAfterTagsPage.value=s.sort_after_tags || 'off';
+  if(typeof smbBaseUrl!=='undefined') smbBaseUrl.value=s.smb_base_url || 'smb://DS923/Musik';
+  if(typeof smbBaseUrlPage!=='undefined') smbBaseUrlPage.value=s.smb_base_url || 'smb://DS923/Musik';
   updateTargetInfo();
-  if(typeof syncSettingsPageFromMain==='function') syncSettingsPageFromMain();
 }
+
 
 function updateTargetInfo(){
   const bm={on:'/data/backups',sidecar:'.bak',off:'kein Backup'}[backupMode.value]||backupMode.value;
@@ -352,24 +353,52 @@ async function saveSettings(){
 
 
 async function checkMusicRoot(){
+  const path=(musicRoot.value||'/music').trim() || '/music';
+  const endpoints=[
+    API+'/settings/check_music_root?path='+encodeURIComponent(path),
+    API+'/settings/check_music_root/?path='+encodeURIComponent(path),
+    API+'/check_music_root?path='+encodeURIComponent(path),
+    API+'/music_root/check?path='+encodeURIComponent(path)
+  ];
+  let lastErr=null;
+  for(const url of endpoints){
+    try{
+      const res=await j(url);
+      if(musicRootStatus){
+        if(res.ok){
+          const suffix=res.sample_audio_files>0 ? ` · ${res.sample_audio_files}+ Audiodatei(en) gefunden` : ' · erreichbar, aber im Stichprobentest keine Audiodateien';
+          musicRootStatus.textContent=`✓ Pfad erreichbar: ${res.path || path}${suffix}`;
+          musicRootStatus.className='small okText';
+        }else{
+          const why=res.exists ? (res.is_dir ? 'nicht lesbar' : 'kein Ordner') : 'nicht gefunden';
+          musicRootStatus.textContent=`⚠ Pfad nicht nutzbar: ${res.path || path} · ${why}`;
+          musicRootStatus.className='small warnText';
+        }
+      }
+      return;
+    }catch(e){
+      lastErr=e;
+      // 404 heißt fast immer: Backend ist noch alt oder wurde nicht neu gebaut.
+      if(!String(e.message||'').includes('404')) break;
+    }
+  }
+  if(musicRootStatus){
+    musicRootStatus.textContent='⚠ Prüfung fehlgeschlagen: Backend-Endpunkt fehlt oder Backend ist nicht aktuell. Backend neu bauen. Details: '+(lastErr?.message||'unbekannt');
+    musicRootStatus.className='small warnText';
+  }
+}
+
+async function checkApiVersion(){
   try{
-    const path=(musicRoot.value||'/music').trim();
-    const res=await j(API+'/settings/check_music_root?path='+encodeURIComponent(path));
-    if(musicRootStatus){
-      if(res.ok){
-        const suffix=res.sample_audio_files>0 ? ` · Audiodateien gefunden` : ' · keine Audiodateien im Stichprobentest';
-        musicRootStatus.textContent=`✓ Pfad erreichbar${suffix}`;
-        musicRootStatus.className='small okText';
-      }else{
-        musicRootStatus.textContent=`⚠ Pfad nicht nutzbar: ${res.exists?'kein lesbarer Ordner':'nicht gefunden'}`;
-        musicRootStatus.className='small warnText';
+    const v=await j(API+'/version');
+    if(v && v.version && v.version!==APP_VERSION){
+      console.warn('Frontend/Backend-Version unterschiedlich:', APP_VERSION, v.version);
+      if(typeof settingsLine!=='undefined'){
+        settingsLine.textContent += ` · Backend ${v.version}`;
       }
     }
   }catch(e){
-    if(musicRootStatus){
-      musicRootStatus.textContent='⚠ Prüfung fehlgeschlagen: '+e.message;
-      musicRootStatus.className='small warnText';
-    }
+    console.warn('Backend-Version konnte nicht geprüft werden:', e);
   }
 }
 
@@ -1039,7 +1068,7 @@ function jsArg(v){return JSON.stringify(String(v??''));}
 function renderPathRow(x){
   const path=String(x?.path||'');
   if(!path) return '';
-  // v1.9.8: Auf der Duplikatseite keine Pfad-Buttons mehr.
+  // v1.9.11: Auf der Duplikatseite keine Pfad-Buttons mehr.
   // Direktes Öffnen/Kopieren war im Browser/NAS-Setup nicht zuverlässig genug
   // und hat die Seite unnötig überladen. Der Pfad bleibt nur als Hinweis sichtbar.
   return `<div class="checkPathRow"><div class="checkPath">${escHtml(path)}</div></div>`;
@@ -1539,7 +1568,7 @@ function clearTagForm(){
 async function loadTagsPage(){
   const body=document.getElementById('tagTracks'); const hint=document.getElementById('tagHint');
   if(!body||!hint)return;
-  // v1.9.8: Beim Albumwechsel sofort die alte Vorschau entfernen.
+  // v1.9.11: Beim Albumwechsel sofort die alte Vorschau entfernen.
   // Sonst bleibt bei langsamer/fehlender Cover-Antwort das zuletzt gesehene Cover stehen.
   tagCoverPlaceholder('Cover wird geladen…');
   if(!selectedAlbum && selectedTagFolder===null){
@@ -1664,7 +1693,7 @@ async function uploadTagCover(){
   const first=paths[0] || '';
   const firstFolder=parentFolderFromPath(first||'');
 
-  // v1.9.8: Die sichtbaren Track-Pfade werden direkt ans Backend geschickt.
+  // v1.9.11: Die sichtbaren Track-Pfade werden direkt ans Backend geschickt.
   // Der Ordner ist nur noch Fallback/Hinweis. Damit landet das Cover nicht
   // im falschen Album, wenn Albumname und Ordnername auseinanderlaufen.
   if(firstFolder) folder=firstFolder;
@@ -2224,7 +2253,7 @@ document.addEventListener('DOMContentLoaded',()=>{
 });
 
 
-/* MusicLab v1.9.8 safe UI helper - never blocks app startup */
+/* MusicLab v1.9.11 safe UI helper - never blocks app startup */
 (function(){
   function safe(fn){
     try{ fn(); }catch(e){ console.warn('MusicLab safe UI helper skipped:', e); }

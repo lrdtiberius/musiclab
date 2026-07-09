@@ -1,19 +1,29 @@
-# MusicLab v1.9.8 Fixed Full
+# MusicLab v1.9.11 Flat Install
 
-Diese ZIP ist eine bereinigte Komplettversion.
+Diese ZIP ist absichtlich **flach** gebaut. Beim Entpacken direkt nach:
 
-Wichtig:
-- Inhalt der ZIP direkt nach `/volume1/docker/musiclab` entpacken.
-- Vorhandene Dateien ersetzen.
-- `docker-compose.yml` enthält keine Frontend-/Backend-Code-Bind-Mounts mehr.
-- `frontend/Dockerfile` kopiert `index.html`, `app.js`, `styles.css`, `assets/` und `nginx.conf` ins Nginx-Image.
+```text
+/volume1/docker/musiclab
+```
 
-## Update auf der NAS
+müssen direkt diese Dateien/Ordner dort liegen:
+
+```text
+docker-compose.yml
+install_musiclab_ssh.sh
+frontend/
+backend/
+data/
+```
+
+Nicht in einem Unterordner.
+
+## Installation
 
 ```bash
 cd /volume1/docker/musiclab
-chmod +x update_musiclab.sh
-./update_musiclab.sh
+chmod +x install_musiclab_ssh.sh
+./install_musiclab_ssh.sh
 ```
 
 Danach öffnen:
@@ -22,14 +32,4 @@ Danach öffnen:
 http://192.168.188.34:8092
 ```
 
-Nicht nur `http://192.168.188.34`.
-
-## Manuelle Prüfung
-
-```bash
-sudo docker exec musiclab-frontend ls -lah /usr/share/nginx/html
-sudo docker exec musiclab-frontend grep -R "MusicLab v" -n /usr/share/nginx/html/index.html
-curl -s http://localhost:8092 | grep -i "MusicLab v"
-```
-
-Erwartet: `MusicLab v1.9.8`.
+Erwartet: MusicLab v1.9.11.
