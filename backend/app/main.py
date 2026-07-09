@@ -1263,8 +1263,32 @@ def normalize_tracks_worker(paths: list, backup_mode: Optional[str] = None):
         finish_job("Titel-Normalisierung fertig")
 
 
-def batch_preview_items(items: list) -> list:
+def settings_for_normalize_source(target_source: str = "settings") -> dict:
+    """Return normalization settings, optionally using the current reference album LUFS as a temporary target.
+    This does not write the target back into settings.
+    """
     settings = get_settings()
+    source = (target_source or "settings").strip().lower()
+    settings["target_source"] = "settings"
+    if source == "reference":
+        with db() as con:
+            ref = get_reference_tuple(con)
+            if not ref:
+                raise HTTPException(status_code=400, detail="Kein Referenzalbum gesetzt")
+            ref_artist, ref_album = ref
+            summary = album_summary(con, ref_artist, ref_album)
+            if summary.get("avg_lufs") is None:
+                raise HTTPException(status_code=400, detail="Referenzalbum hat keinen LUFS-Wert")
+            settings["target_lufs"] = str(summary["avg_lufs"])
+            settings["target_source"] = "reference"
+            settings["target_source_label"] = f"Referenzalbum: {ref_artist or 'Verschiedene Interpreten'} - {ref_album}"
+    else:
+        settings["target_source_label"] = "Werte aus Einstellungen"
+    return settings
+
+
+def batch_preview_items(items: list, settings_override: Optional[dict] = None) -> list:
+    settings = dict(settings_override or get_settings())
     try:
         target = float(settings.get("target_lufs", "-16"))
     except Exception:
@@ -1324,10 +1348,10 @@ def all_album_items_for_normalize() -> list:
         return [{"artist": r["artist"], "album": r["album"]} for r in rows]
 
 
-def all_normalize_preview() -> dict:
-    settings = get_settings()
+def all_normalize_preview(target_source: str = "settings") -> dict:
+    settings = settings_for_normalize_source(target_source)
     items = all_album_items_for_normalize()
-    preview = batch_preview_items(items) if items else []
+    preview = batch_preview_items(items, settings) if items else []
     normalizable = [p for p in preview if p.get("can_normalize")]
     skipped_reference = [p for p in preview if p.get("skip_reference")]
     blocked = [p for p in preview if (not p.get("can_normalize") and not p.get("skip_reference"))]
@@ -1345,13 +1369,15 @@ def all_normalize_preview() -> dict:
         "true_peak": settings.get("true_peak"),
         "lra": settings.get("lra"),
         "backup_mode": settings.get("backup_mode", "on"),
+        "target_source": settings.get("target_source", "settings"),
+        "target_source_label": settings.get("target_source_label", "Werte aus Einstellungen"),
         "can_normalize": bool(normalizable),
     }
 
 
-def normalize_all_worker(backup_mode: Optional[str] = None):
+def normalize_all_worker(backup_mode: Optional[str] = None, target_source: str = "settings"):
     init_db()
-    pv = all_normalize_preview()
+    pv = all_normalize_preview(target_source)
     items = [{"artist": p.get("artist"), "album": p.get("album")} for p in pv.get("normalizable", [])]
     if not items:
         state.update({"running": False, "mode": "idle", "done": 0, "total": 0, "current": "", "message": "Keine vollständig analysierten Alben zu normalisieren", "errors": 0, "recent_errors": []})
@@ -1361,7 +1387,8 @@ def normalize_all_worker(backup_mode: Optional[str] = None):
         add_log(f"Alles normalisieren: {pv.get('count_blocked')} Album/Alben übersprungen, weil sie noch nicht vollständig analysiert sind")
     if pv.get("count_skipped_reference"):
         add_log(f"Alles normalisieren: {pv.get('count_skipped_reference')} Referenzalbum/Alben übersprungen")
-    normalize_batch_worker(items, backup_mode)
+    settings = settings_for_normalize_source(target_source)
+    normalize_batch_worker(items, backup_mode, settings)
 
 
 def analyze_batch_worker(items: list):
@@ -1415,12 +1442,12 @@ def analyze_batch_worker(items: list):
         finish_job("Batch-Analyse fertig")
 
 
-def normalize_batch_worker(items: list, backup_mode: Optional[str] = None):
+def normalize_batch_worker(items: list, backup_mode: Optional[str] = None, settings_override: Optional[dict] = None):
     init_db()
-    settings = get_settings()
+    settings = dict(settings_override or get_settings())
     if backup_mode is not None:
         settings["backup_mode"] = backup_mode
-    previews = batch_preview_items(items)
+    previews = batch_preview_items(items, settings)
     skipped_ref = [p for p in previews if p.get("skip_reference")]
     blocked = [p for p in previews if (not p.get("can_normalize") and not p.get("skip_reference"))]
     if blocked:
@@ -2025,16 +2052,17 @@ def normalize_batch(data: dict):
 
 
 @app.get("/api/normalize_preview_all")
-def normalize_preview_all():
-    return all_normalize_preview()
+def normalize_preview_all(target_source: str = "settings"):
+    return all_normalize_preview(target_source)
 
 
 @app.post("/api/normalize_all")
 def normalize_all(data: dict = None):
     data = data or {}
     backup = data.get("backup") if isinstance(data, dict) else None
+    target_source = data.get("target_source", "settings") if isinstance(data, dict) else "settings"
     if not state["running"]:
-        threading.Thread(target=normalize_all_worker, args=(backup,), daemon=True).start()
+        threading.Thread(target=normalize_all_worker, args=(backup, target_source), daemon=True).start()
     return state
 
 
@@ -3715,6 +3743,15 @@ def api_set_reference(data: dict):
     label = artist or "Verschiedene Interpreten"
     add_log(f"Referenzalbum gesetzt: {label} - {album} ({summary.get('avg_lufs')} LUFS)")
     return {"is_set": True, "artist": artist, "artist_label": label, "album": album, **summary}
+
+
+@app.delete("/api/reference")
+def api_clear_reference():
+    with db() as con:
+        con.execute("DELETE FROM settings WHERE key IN ('reference_artist','reference_album')")
+        con.commit()
+    add_log("Referenzalbum entfernt")
+    return {"is_set": False}
 
 
 @app.get("/api/album_analysis")

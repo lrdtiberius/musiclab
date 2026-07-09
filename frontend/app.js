@@ -26,7 +26,7 @@ function coverBox(src, large=false, opts={}){
   const extra=opts.extraClass ? ' '+opts.extraClass : '';
   const cls=(large?'mediaCoverBox large':'mediaCoverBox')+extra;
   const loading=opts.eager ? 'eager' : 'lazy';
-  // v1.8.25: Cover-Boxen müssen beim Albumwechsel immer eine neue, eindeutige
+  // v1.8.26: Cover-Boxen müssen beim Albumwechsel immer eine neue, eindeutige
   // DOM-Box bekommen. Besonders wichtig bei #tagCoverPreview: Wenn die ID beim
   // ersten Cover verloren geht, kann die Vorschau bei Albumwechseln nicht mehr
   // ersetzt werden und Safari zeigt das zuletzt sichtbare Cover weiter an.
@@ -272,8 +272,8 @@ async function loadReference(){
   try{
     reference=await j(API+'/reference');
     if(reference && reference.is_set){
-      referenceBox.className='small';
-      referenceBox.innerHTML=`<span class="refpill">${escHtml(reference.artist_label || reference.artist || 'Verschiedene Interpreten')} – ${escHtml(reference.album)} · Ø ${reference.avg_lufs ?? '-'} LUFS · TP ${reference.max_true_peak ?? '-'} · LRA ${reference.avg_lra ?? '-'}</span>`;
+      referenceBox.className='small refWithClear';
+      referenceBox.innerHTML=`<span class="refpill">${escHtml(reference.artist_label || reference.artist || 'Verschiedene Interpreten')} – ${escHtml(reference.album)} · Ø ${reference.avg_lufs ?? '-'} LUFS · TP ${reference.max_true_peak ?? '-'} · LRA ${reference.avg_lra ?? '-'}</span><button class="refClearBtn" onclick="clearReferenceAlbum()" title="Referenzalbum entfernen" aria-label="Referenzalbum entfernen">×</button>`;
       btnUseRef.disabled = reference.avg_lufs === null || reference.avg_lufs === undefined;
       const dref=document.getElementById('dashboardReference');
       if(dref){ dref.className='small'; dref.innerHTML=`${escHtml(reference.artist_label || reference.artist || 'Verschiedene Interpreten')} – ${escHtml(reference.album)}<br>LUFS ${reference.avg_lufs ?? '-'} · TP ${reference.max_true_peak ?? '-'} · LRA ${reference.avg_lra ?? '-'}`; }
@@ -312,6 +312,19 @@ async function setReference(){
   }catch(e){
     status.textContent='Referenz-Fehler';
     alert('Referenz konnte nicht gesetzt werden:\n'+e.message+'\n\nHinweis: Das Album muss zuerst analysiert sein.');
+  }
+}
+
+async function clearReferenceAlbum(){
+  try{
+    if(!confirm('Referenzalbum entfernen?\n\nDeine Ziel-LUFS in den Einstellungen bleiben unverändert.')) return;
+    await j(API+'/reference',{method:'DELETE'});
+    reference={is_set:false};
+    await loadReference();
+    if(selectedArtist) await selectArtist(selectedArtist,true);
+    status.textContent='Referenzalbum entfernt';
+  }catch(e){
+    alert('Referenzalbum konnte nicht entfernt werden:\n'+e.message);
   }
 }
 
@@ -712,24 +725,37 @@ async function analyzeAll(){
   }
 }
 
+async function chooseNormalizeTargetSource(){
+  if(reference && reference.is_set && reference.avg_lufs!==null && reference.avg_lufs!==undefined){
+    const label=`${reference.artist_label || reference.artist || 'Verschiedene Interpreten'} – ${reference.album} (${reference.avg_lufs} LUFS)`;
+    const answer=prompt(`Welche Zielwerte für „Alles normalisieren“ verwenden?\n\n1 = Werte aus Einstellungen (${targetLufs.value || '?'} LUFS)\n2 = Referenzalbum (${label})\n\nBitte 1 oder 2 eingeben.`, '1');
+    if(answer===null) return null;
+    return String(answer).trim()==='2' ? 'reference' : 'settings';
+  }
+  return 'settings';
+}
+
 async function normalizeAll(){
   try{
-    const pv=await j(API+'/normalize_preview_all');
+    const targetSource=await chooseNormalizeTargetSource();
+    if(!targetSource) return;
+    const pv=await j(API+'/normalize_preview_all?target_source='+encodeURIComponent(targetSource));
     if(!pv.can_normalize){
       alert('Alles normalisieren ist aktuell nicht möglich:\n\nEs gibt keine vollständig analysierten Alben, die normalisiert werden können.');
       return;
     }
     const backupText = backupMode.value==='off' ? 'kein Backup' : (backupMode.value==='sidecar' ? '.bak neben der Datei' : 'Backup unter /data/backups');
+    const sourceText = pv.target_source==='reference' ? (pv.target_source_label || 'Referenzalbum') : 'Werte aus Einstellungen';
     const examples=(pv.normalizable||[]).slice(0,10).map(x=>`- ${x.label}: ${x.current_lufs} → ${x.target_lufs} LUFS`).join('\n');
     const more=(pv.count_albums||0)>10 ? `\n... und ${(pv.count_albums||0)-10} weitere` : '';
     const skipped=[];
     if(pv.count_blocked) skipped.push(`${pv.count_blocked} Album/Alben werden übersprungen, weil sie noch nicht vollständig analysiert sind`);
     if(pv.count_skipped_reference) skipped.push(`${pv.count_skipped_reference} Referenzalbum/Alben werden übersprungen`);
-    const msg=`Alles normalisieren?\n\n${pv.count_albums} Album/Alben · ${pv.count_tracks} Titel\nZiel: ${pv.target_lufs} LUFS · TP ${pv.true_peak} · LRA ${pv.lra}\nBackup: ${backupText}\n\n${examples}${more}${skipped.length?'\n\n'+skipped.join('\n'):''}\n\nDateien werden überschrieben.`;
+    const msg=`Alles normalisieren?\n\nQuelle: ${sourceText}\n${pv.count_albums} Album/Alben · ${pv.count_tracks} Titel\nZiel: ${pv.target_lufs} LUFS · TP ${pv.true_peak} · LRA ${pv.lra}\nBackup: ${backupText}\n\n${examples}${more}${skipped.length?'\n\n'+skipped.join('\n'):''}\n\nDateien werden überschrieben.`;
     if(!confirm(msg)) return;
     lastRunning=true;
     status.textContent='Alles-Normalisierung wird gestartet...';
-    await j(API+'/normalize_all',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({backup:backupMode.value})});
+    await j(API+'/normalize_all',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({backup:backupMode.value,target_source:targetSource})});
     await poll();
   }catch(e){
     status.textContent='Alles-Normalisierung-Fehler';
@@ -858,7 +884,7 @@ function jsArg(v){return JSON.stringify(String(v??''));}
 function renderPathRow(x){
   const path=String(x?.path||'');
   if(!path) return '';
-  // v1.8.25: Auf der Duplikatseite keine Pfad-Buttons mehr.
+  // v1.8.26: Auf der Duplikatseite keine Pfad-Buttons mehr.
   // Direktes Öffnen/Kopieren war im Browser/NAS-Setup nicht zuverlässig genug
   // und hat die Seite unnötig überladen. Der Pfad bleibt nur als Hinweis sichtbar.
   return `<div class="checkPathRow"><div class="checkPath">${escHtml(path)}</div></div>`;
@@ -1357,7 +1383,7 @@ function clearTagForm(){
 async function loadTagsPage(){
   const body=document.getElementById('tagTracks'); const hint=document.getElementById('tagHint');
   if(!body||!hint)return;
-  // v1.8.25: Beim Albumwechsel sofort die alte Vorschau entfernen.
+  // v1.8.26: Beim Albumwechsel sofort die alte Vorschau entfernen.
   // Sonst bleibt bei langsamer/fehlender Cover-Antwort das zuletzt gesehene Cover stehen.
   tagCoverPlaceholder('Cover wird geladen…');
   if(!selectedAlbum && selectedTagFolder===null){
@@ -1482,7 +1508,7 @@ async function uploadTagCover(){
   const first=paths[0] || '';
   const firstFolder=parentFolderFromPath(first||'');
 
-  // v1.8.25: Die sichtbaren Track-Pfade werden direkt ans Backend geschickt.
+  // v1.8.26: Die sichtbaren Track-Pfade werden direkt ans Backend geschickt.
   // Der Ordner ist nur noch Fallback/Hinweis. Damit landet das Cover nicht
   // im falschen Album, wenn Albumname und Ordnername auseinanderlaufen.
   if(firstFolder) folder=firstFolder;
