@@ -1,8 +1,8 @@
 const API='http://'+location.hostname+':8091/api';
-const APP_VERSION='1.9.1';
+const APP_VERSION='1.9.2';
 let coverCacheBust=Date.now();
 let selectedArtist=null, selectedAlbum=null, selectedTagFolder=null;
-let selectedUiKey=null; // v1.9.1: eindeutige visuelle Einzelauswahl für Listen und Album-Kacheln
+let selectedUiKey=null; // v1.9.2: eindeutige visuelle Einzelauswahl für Listen und Album-Kacheln
 let selectedTagGenre=null, selectedTagYear=null;
 let browserMode='artist';
 let lastRunning=false;
@@ -28,7 +28,7 @@ function coverBox(src, large=false, opts={}){
   const extra=opts.extraClass ? ' '+opts.extraClass : '';
   const cls=(large?'mediaCoverBox large':'mediaCoverBox')+extra;
   const loading=opts.eager ? 'eager' : 'lazy';
-  // v1.9.1: Cover-Boxen müssen beim Albumwechsel immer eine neue, eindeutige
+  // v1.9.2: Cover-Boxen müssen beim Albumwechsel immer eine neue, eindeutige
   // DOM-Box bekommen. Besonders wichtig bei #tagCoverPreview: Wenn die ID beim
   // ersten Cover verloren geht, kann die Vorschau bei Albumwechseln nicht mehr
   // ersetzt werden und Safari zeigt das zuletzt sichtbare Cover weiter an.
@@ -110,13 +110,14 @@ function rowAlbumMatches(el, album, artist){
   return true;
 }
 function syncSingleSelectionUI(){
-  // v1.9.1: Die UI-Markierung ist an einen eindeutigen Schlüssel gebunden.
+  // v1.9.2: Die UI-Markierung ist an einen eindeutigen Schlüssel gebunden.
   // Dadurch können beim Wechsel nicht mehr mehrere Interpreten/Alben markiert bleiben,
   // auch wenn Albumtitel mehrfach vorkommen oder alte async-Ladevorgänge zurückkommen.
   document.querySelectorAll('#browserList .row.sel').forEach(el=>el.classList.remove('sel'));
   document.querySelectorAll('#albums .album.sel').forEach(el=>el.classList.remove('sel'));
   if(selectedUiKey){
     document.querySelectorAll(`[data-ui-key="${CSS.escape(selectedUiKey)}"]`).forEach(el=>el.classList.add('sel'));
+    renderSelectionHint();
     return;
   }
 
@@ -133,10 +134,57 @@ function syncSingleSelectionUI(){
     const key=selectionKey('album', selectedAlbum, selectedArtist || '');
     document.querySelectorAll(`[data-ui-key="${CSS.escape(key)}"]`).forEach(el=>el.classList.add('sel'));
   }
+  renderSelectionHint();
 }
 function clearVisibleSelectionUI(){
   document.querySelectorAll('#browserList .row.sel, #albums .album.sel').forEach(el=>el.classList.remove('sel'));
 }
+
+function activeSelectionLabel(){
+  if(currentView==='tags'){
+    if(selectedTagFolder || selectedAlbum){
+      const art = selectedArtist ? selectedArtist+' · ' : '';
+      return art + (selectedAlbum || selectedTagFolder || 'Albumordner');
+    }
+    if(selectedArtist) return 'Interpret: '+selectedArtist;
+    if(selectedTagGenre) return 'Genre: '+selectedTagGenre;
+    if(selectedTagYear) return 'Jahr: '+selectedTagYear;
+    return '';
+  }
+  if(selectedAlbum){
+    return (selectedArtist ? selectedArtist+' · ' : '') + selectedAlbum;
+  }
+  if(selectedArtist) return 'Interpret: '+selectedArtist;
+  return '';
+}
+function renderSelectionHint(){
+  const box=document.getElementById('selectionHint');
+  if(!box) return;
+  const active=activeSelectionLabel();
+  const batch=selectedBatch.size;
+  const parts=[];
+  if(active) parts.push(`<span class="selHintLine"><b>Aktiv:</b> ${escHtml(active)}</span>`);
+  if(batch) parts.push(`<span class="selHintLine"><b>Markiert:</b> ${batch} ${batch===1?'Album':'Alben'}</span>`);
+  box.classList.toggle('hidden', parts.length===0);
+  box.innerHTML=parts.join('');
+}
+function browserRowBadges(kind, album='', artist='', folder=''){
+  const badges=[];
+  if(kind==='artist'){
+    if(selectedArtist && artist && selectedArtist===artist) badges.push('<span class="sideBadge active">Aktiv</span>');
+  }else{
+    let active=false;
+    if(folder){ active = !!selectedTagFolder && selectedTagFolder===folder; }
+    else if(album){ active = !!selectedAlbum && selectedAlbum===album && (!artist || !selectedArtist || selectedArtist===artist); }
+    if(active) badges.push('<span class="sideBadge active">Aktiv</span>');
+    if(album){
+      const key=batchKey(artist || null, album);
+      if(selectedBatch.has(key)) badges.push('<span class="sideBadge marked">Markiert</span>');
+    }
+  }
+  return badges.length ? '<span class="sideBadges">'+badges.join('')+'</span>' : '';
+}
+
 
 function setBusy(isBusy){
   uiBusy=!!isBusy;
@@ -179,6 +227,7 @@ function renderBatchBar(){
   if(typeof btnAlbumAction !== 'undefined' && btnAlbumAction){
     btnAlbumAction.disabled = uiBusy || !(albumAction && albumAction.value);
   }
+  renderSelectionHint();
 }
 
 async function runAlbumAction(){
@@ -560,7 +609,7 @@ function bindAlbumCards(){
 async function loadArtists(){
   let q=encodeURIComponent(search.value||'');
   let a=await j(API+'/artists?q='+q);
-  browserList.innerHTML=a.map(x=>{ const uiKey=selectionKey('artist', x.artist); return `<div class="row ${selectedUiKey===uiKey?'sel':''}" data-ui-key="${escAttr(uiKey)}" data-artist="${encodeURIComponent(x.artist)}"><b>${escHtml(x.artist)}</b><br><span class="small">${x.albums} Alben · ${x.tracks} Titel</span></div>`; }).join('') || '<div class="empty">Keine Interpreten gefunden.</div>';
+  browserList.innerHTML=a.map(x=>{ const uiKey=selectionKey('artist', x.artist); return `<div class="row ${selectedUiKey===uiKey?'sel':''}" data-ui-key="${escAttr(uiKey)}" data-artist="${encodeURIComponent(x.artist)}"><b>${escHtml(x.artist)}</b>${browserRowBadges('artist','',x.artist)}<br><span class="small">${x.albums} Alben · ${x.tracks} Titel</span></div>`; }).join('') || '<div class="empty">Keine Interpreten gefunden.</div>';
   bindArtistRows();
   syncSingleSelectionUI();
 }
@@ -597,7 +646,7 @@ async function loadAlbumBrowser(){
       const tagHint = x.tag_album === 'Mehrere Album-Tags' ? ' · Tag: Mehrere Album-Tags' : folderHint;
       const uiKey=selectionKey('folder', x.folder||'');
       const active = selectedUiKey===uiKey;
-      return `<div class="row ${active?'sel':''}" data-ui-key="${escAttr(uiKey)}" data-folder="${encodeURIComponent(x.folder||'')}" data-album="${encodeURIComponent(shownAlbum)}"${artistData}><b>${escHtml(shownAlbum)}</b><br><span class="small">${escHtml(x.artist)} · ${x.tracks} Titel · ${x.analyzed}/${x.tracks} analysiert${tagHint}</span></div>`;
+      return `<div class="row ${active?'sel':''}" data-ui-key="${escAttr(uiKey)}" data-folder="${encodeURIComponent(x.folder||'')}" data-album="${encodeURIComponent(shownAlbum)}"${artistData}><b>${escHtml(shownAlbum)}</b>${browserRowBadges('album', shownAlbum, Number(x.artist_count||0)===1 ? x.artist : '', x.folder||'')}<br><span class="small">${escHtml(x.artist)} · ${x.tracks} Titel · ${x.analyzed}/${x.tracks} analysiert${tagHint}</span></div>`;
     }).join('') || '<div class="empty">Keine Albumordner gefunden.</div>';
     bindAlbumRows();
     syncSingleSelectionUI();
@@ -611,7 +660,7 @@ async function loadAlbumBrowser(){
     const uiArtist = oneArtist ? x.artist : '';
     const uiKey=selectionKey('album', x.album, uiArtist);
     const active = selectedUiKey===uiKey;
-    return `<div class="row ${active?'sel':''}" data-ui-key="${escAttr(uiKey)}" data-album="${encodeURIComponent(x.album)}"${artistData}><b>${escHtml(x.album)}</b><br><span class="small">${escHtml(x.artist)} · ${x.tracks} Titel · ${x.analyzed}/${x.tracks} analysiert</span></div>`;
+    return `<div class="row ${active?'sel':''}" data-ui-key="${escAttr(uiKey)}" data-album="${encodeURIComponent(x.album)}"${artistData}><b>${escHtml(x.album)}</b>${browserRowBadges('album', x.album, uiArtist)}<br><span class="small">${escHtml(x.artist)} · ${x.tracks} Titel · ${x.analyzed}/${x.tracks} analysiert</span></div>`;
   }).join('') || '<div class="empty">Keine Alben gefunden.</div>';
   bindAlbumRows();
   syncSingleSelectionUI();
@@ -645,7 +694,7 @@ async function loadTagIssuesBrowser(){
     const issueText=(x.issues||[]).slice(0,3).join(' · ')+((x.issues||[]).length>3?' · …':'');
     const artistData = x.artist && x.artist !== 'Verschiedene Interpreten' ? ` data-artist="${encodeURIComponent(x.artist)}"` : '';
     const album = x.album || x.folder || 'Unbekanntes Album';
-    return `<div class="row ${active?'sel':''}" data-ui-key="${escAttr(uiKey)}" data-folder="${encodeURIComponent(x.folder||'')}" data-album="${encodeURIComponent(album)}"${artistData}><b>${escHtml(album)}</b><br><span class="small">${escHtml(x.artist||'')} · ${x.tracks} Titel · ${x.issue_count} Problem(e)</span><br><span class="small issueLine">${escHtml(issueText)}</span></div>`;
+    return `<div class="row ${active?'sel':''}" data-ui-key="${escAttr(uiKey)}" data-folder="${encodeURIComponent(x.folder||'')}" data-album="${encodeURIComponent(album)}"${artistData}><b>${escHtml(album)}</b>${browserRowBadges('album', album, x.artist && x.artist !== 'Verschiedene Interpreten' ? x.artist : '', x.folder||'')}<br><span class="small">${escHtml(x.artist||'')} · ${x.tracks} Titel · ${x.issue_count} Problem(e)</span><br><span class="small issueLine">${escHtml(issueText)}</span></div>`;
   }).join('') || '<div class="empty">Keine fehlenden oder fehlerhaften Tags gefunden.</div>';
   bindAlbumRows();
   syncSingleSelectionUI();
@@ -990,7 +1039,7 @@ function jsArg(v){return JSON.stringify(String(v??''));}
 function renderPathRow(x){
   const path=String(x?.path||'');
   if(!path) return '';
-  // v1.9.1: Auf der Duplikatseite keine Pfad-Buttons mehr.
+  // v1.9.2: Auf der Duplikatseite keine Pfad-Buttons mehr.
   // Direktes Öffnen/Kopieren war im Browser/NAS-Setup nicht zuverlässig genug
   // und hat die Seite unnötig überladen. Der Pfad bleibt nur als Hinweis sichtbar.
   return `<div class="checkPathRow"><div class="checkPath">${escHtml(path)}</div></div>`;
@@ -1490,7 +1539,7 @@ function clearTagForm(){
 async function loadTagsPage(){
   const body=document.getElementById('tagTracks'); const hint=document.getElementById('tagHint');
   if(!body||!hint)return;
-  // v1.9.1: Beim Albumwechsel sofort die alte Vorschau entfernen.
+  // v1.9.2: Beim Albumwechsel sofort die alte Vorschau entfernen.
   // Sonst bleibt bei langsamer/fehlender Cover-Antwort das zuletzt gesehene Cover stehen.
   tagCoverPlaceholder('Cover wird geladen…');
   if(!selectedAlbum && selectedTagFolder===null){
@@ -1615,7 +1664,7 @@ async function uploadTagCover(){
   const first=paths[0] || '';
   const firstFolder=parentFolderFromPath(first||'');
 
-  // v1.9.1: Die sichtbaren Track-Pfade werden direkt ans Backend geschickt.
+  // v1.9.2: Die sichtbaren Track-Pfade werden direkt ans Backend geschickt.
   // Der Ordner ist nur noch Fallback/Hinweis. Damit landet das Cover nicht
   // im falschen Album, wenn Albumname und Ordnername auseinanderlaufen.
   if(firstFolder) folder=firstFolder;
@@ -1965,7 +2014,7 @@ function renderMediaArtists(){
   if(inp) inp.placeholder='Suchen...';
   const q=(inp?.value||'').trim().toLowerCase();
   const list=mediaArtistsCache.filter(x=>!q || String(x.artist||'').toLowerCase().includes(q));
-  artistsBox.innerHTML=list.map(x=>`<div class="row ${x.artist===selectedMediaArtist?'sel':''}" data-artist="${escAttr(x.artist)}"><b>${escHtml(x.artist)}</b><br><span class="small">${x.albums} Alben · ${x.tracks} Titel</span></div>`).join('') || '<div class="empty">Keine Interpreten gefunden.</div>';
+  artistsBox.innerHTML=list.map(x=>`<div class="row ${x.artist===selectedMediaArtist?'sel':''}" data-artist="${escAttr(x.artist)}"><b>${escHtml(x.artist)}</b>${browserRowBadges('artist','',x.artist)}<br><span class="small">${x.albums} Alben · ${x.tracks} Titel</span></div>`).join('') || '<div class="empty">Keine Interpreten gefunden.</div>';
   artistsBox.querySelectorAll('[data-artist]').forEach(el=>{el.onclick=()=>selectMediaArtist(el.dataset.artist);});
 }
 

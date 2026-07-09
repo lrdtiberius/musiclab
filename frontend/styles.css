@@ -1188,7 +1188,7 @@ body.checkMode #checkView .checkList{min-height:0!important;max-height:none!impo
 .refClearBtn{width:24px;height:24px;border-radius:999px;padding:0;line-height:1;background:var(--danger,#7a2f2f);color:#fff;font-weight:900;box-shadow:none}
 .refClearBtn:hover{filter:brightness(1.1)}
 
-/* v1.9.1 Workbench-Redesign: dunkles Studio-Dashboard, klarere Arbeitsbereiche */
+/* v1.9.2 Workbench-Redesign: dunkles Studio-Dashboard, klarere Arbeitsbereiche */
 body.studioRedesign{
   background:
     radial-gradient(circle at 18% 0%, rgba(88,166,255,.16), transparent 32%),
@@ -1347,7 +1347,7 @@ body.studioRedesign .footerCredit{
 }
 
 
-/* v1.9.1: Credit dauerhaft lesbar + Auswahlumrandung nicht abgeschnitten */
+/* v1.9.2: Credit dauerhaft lesbar + Auswahlumrandung nicht abgeschnitten */
 body.studioRedesign .footerCredit,
 .footerCredit{
   position:fixed!important;
@@ -1404,3 +1404,30 @@ body.studioRedesign .album.ref.sel{
     max-width:calc(100vw - 20px)!important;
   }
 }
+
+
+/* v1.9.2: Auswahlhinweis links + Status-Badges in der Seitenliste */
+.selectionHint{
+  display:flex!important;
+  flex-direction:column;
+  gap:4px;
+  margin:8px 0 10px;
+  padding:9px 10px;
+  border:1px solid rgba(143,202,255,.26);
+  border-radius:12px;
+  background:rgba(88,166,255,.10);
+  color:#d7e8ff;
+  font-size:12px;
+  line-height:1.25;
+}
+.selectionHint.hidden{display:none!important}
+.selHintLine{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%}
+.sideBadges{float:right;display:inline-flex;gap:5px;margin-left:8px;align-items:center;max-width:100%}
+.sideBadge{display:inline-flex;align-items:center;border-radius:999px;padding:2px 7px;font-size:10px;font-weight:900;line-height:1.25;white-space:nowrap;vertical-align:middle}
+.sideBadge.active{background:#9ed6ff;color:#06111f;box-shadow:0 0 0 1px rgba(255,255,255,.14) inset}
+.sideBadge.marked{background:#ffca7a;color:#201002;box-shadow:0 0 0 1px rgba(255,255,255,.16) inset}
+body.studioRedesign #browserList .row{position:relative;overflow:hidden}
+body.studioRedesign #browserList .row b{display:inline;max-width:calc(100% - 82px)}
+body.studioRedesign #browserList .row .small{clear:both;display:block}
+body.studioRedesign #browserList .row.sel .sideBadge.active{background:#d7efff}
+body.studioRedesign #browserList .row:has(.sideBadge.marked){border-color:rgba(255,202,122,.32)}

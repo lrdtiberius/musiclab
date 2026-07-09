@@ -1,4 +1,4 @@
-# MusicLab v1.9.1
+# MusicLab v1.9.2
 
 Redesign-/Workbench-Version auf Basis von v1.8.28.
 
@@ -13,7 +13,7 @@ Redesign-/Workbench-Version auf Basis von v1.8.28.
   - Es kann optisch nur noch ein Album aktiv sein.
   - Beim Wechsel werden alte Markierungen sofort entfernt.
   - Schnelle Klickwechsel und verspätete Ladeantworten markieren keine alten Alben mehr erneut.
-- Cache-Buster auf `1.9.1` gesetzt.
+- Cache-Buster auf `1.9.2` gesetzt.
 
 ## Start
 
@@ -27,3 +27,9 @@ Danach Browser hart neu laden.
 ## Credits
 
 Idea & Umsetzung by Lrd.Tiberius.
+
+
+## v1.9.2
+- Linke Seitenliste zeigt jetzt klar an, welches Album/Interpret aktiv geöffnet ist.
+- Zusätzlich zeigt die linke Liste markierte Batch-Alben mit Badge „Markiert“.
+- Auswahlhinweis unter der Suche zeigt aktive Auswahl und Anzahl markierter Alben.
