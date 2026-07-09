@@ -7,7 +7,6 @@ services:
     volumes:
       - /volume1/DS420/Musik:/music
       - /volume1/docker/musiclab/data:/data
-      - /volume1/docker/musiclab/backend/app:/app/app
     environment:
       - MUSIC_ROOT=/music
       - DB_PATH=/data/musiclab.sqlite
@@ -20,8 +19,6 @@ services:
     container_name: musiclab-frontend
     ports:
       - "8092:80"
-    volumes:
-      - /volume1/docker/musiclab/frontend:/usr/share/nginx/html:ro
     depends_on:
       - musiclab-backend
     restart: unless-stopped

@@ -1,45 +1,35 @@
-# MusicLab v1.9.3
+# MusicLab v1.9.8 Fixed Full
 
-Redesign-/Workbench-Version auf Basis von v1.8.28.
+Diese ZIP ist eine bereinigte Komplettversion.
 
-## Neu / geändert
+Wichtig:
+- Inhalt der ZIP direkt nach `/volume1/docker/musiclab` entpacken.
+- Vorhandene Dateien ersetzen.
+- `docker-compose.yml` enthält keine Frontend-/Backend-Code-Bind-Mounts mehr.
+- `frontend/Dockerfile` kopiert `index.html`, `app.js`, `styles.css`, `assets/` und `nginx.conf` ins Nginx-Image.
 
-- UI-Redesign Richtung dunkles Studio-Dashboard.
-- Größere Album-Kacheln und klarere Auswahlzustände.
-- Der Tab **Duplikate** heißt jetzt **Wartung**.
-- Auf der Wartungsseite wird die linke Suche weiterhin ausgeblendet, damit die komplette Breite genutzt wird.
-- Fix für die Auswahlmarkierung:
-  - Es kann optisch nur noch ein Interpret aktiv sein.
-  - Es kann optisch nur noch ein Album aktiv sein.
-  - Beim Wechsel werden alte Markierungen sofort entfernt.
-  - Schnelle Klickwechsel und verspätete Ladeantworten markieren keine alten Alben mehr erneut.
-- Cache-Buster auf `1.9.3` gesetzt.
-
-## Start
+## Update auf der NAS
 
 ```bash
-docker compose down
-docker compose up -d --build
+cd /volume1/docker/musiclab
+chmod +x update_musiclab.sh
+./update_musiclab.sh
 ```
 
-Danach Browser hart neu laden.
+Danach öffnen:
 
-## Credits
+```text
+http://192.168.188.34:8092
+```
 
-Idea & Umsetzung by Lrd.Tiberius.
+Nicht nur `http://192.168.188.34`.
 
+## Manuelle Prüfung
 
-## v1.9.3
-- Linke Seitenliste zeigt jetzt klar an, welches Album/Interpret aktiv geöffnet ist.
-- Zusätzlich zeigt die linke Liste markierte Batch-Alben mit Badge „Markiert“.
-- Auswahlhinweis unter der Suche zeigt aktive Auswahl und Anzahl markierter Alben.
+```bash
+sudo docker exec musiclab-frontend ls -lah /usr/share/nginx/html
+sudo docker exec musiclab-frontend grep -R "MusicLab v" -n /usr/share/nginx/html/index.html
+curl -s http://localhost:8092 | grep -i "MusicLab v"
+```
 
-
-## MusicLab v1.9.3
-
-- Auswahlmarkierung stabilisiert.
-- `Aktiv` = aktuell geöffnet.
-- `Ausgewählt` = für Batch-Aktionen markiert.
-- Alle ausgewählten Elemente bekommen dauerhaft ein sichtbares `Ausgewählt`-Badge.
-- Kachelgrößen bleiben stabil, wenn Button/Badge-Zustände wechseln.
-- Footer-Credit bleibt fest sichtbar.
+Erwartet: `MusicLab v1.9.8`.

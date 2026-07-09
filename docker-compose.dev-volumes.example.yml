@@ -1,0 +1,12 @@
+# Optionales DEV-Override.
+# NICHT für normale Nutzung aktivieren.
+# Diese Mounts überschreiben sonst die Dateien im Docker-Image.
+
+services:
+  musiclab-backend:
+    volumes:
+      - /volume1/docker/musiclab/backend/app:/app/app
+
+  musiclab-frontend:
+    volumes:
+      - /volume1/docker/musiclab/frontend:/usr/share/nginx/html:ro

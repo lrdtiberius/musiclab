@@ -1,8 +1,8 @@
 const API='http://'+location.hostname+':8091/api';
-const APP_VERSION='1.9.3';
+const APP_VERSION='1.9.8';
 let coverCacheBust=Date.now();
 let selectedArtist=null, selectedAlbum=null, selectedTagFolder=null;
-let selectedUiKey=null; // v1.9.3: eindeutige visuelle Einzelauswahl für Listen und Album-Kacheln
+let selectedUiKey=null; // v1.9.8: eindeutige visuelle Einzelauswahl für Listen und Album-Kacheln
 let selectedTagGenre=null, selectedTagYear=null;
 let browserMode='artist';
 let lastRunning=false;
@@ -28,7 +28,7 @@ function coverBox(src, large=false, opts={}){
   const extra=opts.extraClass ? ' '+opts.extraClass : '';
   const cls=(large?'mediaCoverBox large':'mediaCoverBox')+extra;
   const loading=opts.eager ? 'eager' : 'lazy';
-  // v1.9.3: Cover-Boxen müssen beim Albumwechsel immer eine neue, eindeutige
+  // v1.9.8: Cover-Boxen müssen beim Albumwechsel immer eine neue, eindeutige
   // DOM-Box bekommen. Besonders wichtig bei #tagCoverPreview: Wenn die ID beim
   // ersten Cover verloren geht, kann die Vorschau bei Albumwechseln nicht mehr
   // ersetzt werden und Safari zeigt das zuletzt sichtbare Cover weiter an.
@@ -110,7 +110,7 @@ function rowAlbumMatches(el, album, artist){
   return true;
 }
 function syncSingleSelectionUI(){
-  // v1.9.3: Die UI-Markierung ist an einen eindeutigen Schlüssel gebunden.
+  // v1.9.8: Die UI-Markierung ist an einen eindeutigen Schlüssel gebunden.
   // Dadurch können beim Wechsel nicht mehr mehrere Interpreten/Alben markiert bleiben,
   // auch wenn Albumtitel mehrfach vorkommen oder alte async-Ladevorgänge zurückkommen.
   document.querySelectorAll('#browserList .row.sel').forEach(el=>el.classList.remove('sel'));
@@ -1039,7 +1039,7 @@ function jsArg(v){return JSON.stringify(String(v??''));}
 function renderPathRow(x){
   const path=String(x?.path||'');
   if(!path) return '';
-  // v1.9.3: Auf der Duplikatseite keine Pfad-Buttons mehr.
+  // v1.9.8: Auf der Duplikatseite keine Pfad-Buttons mehr.
   // Direktes Öffnen/Kopieren war im Browser/NAS-Setup nicht zuverlässig genug
   // und hat die Seite unnötig überladen. Der Pfad bleibt nur als Hinweis sichtbar.
   return `<div class="checkPathRow"><div class="checkPath">${escHtml(path)}</div></div>`;
@@ -1539,7 +1539,7 @@ function clearTagForm(){
 async function loadTagsPage(){
   const body=document.getElementById('tagTracks'); const hint=document.getElementById('tagHint');
   if(!body||!hint)return;
-  // v1.9.3: Beim Albumwechsel sofort die alte Vorschau entfernen.
+  // v1.9.8: Beim Albumwechsel sofort die alte Vorschau entfernen.
   // Sonst bleibt bei langsamer/fehlender Cover-Antwort das zuletzt gesehene Cover stehen.
   tagCoverPlaceholder('Cover wird geladen…');
   if(!selectedAlbum && selectedTagFolder===null){
@@ -1664,7 +1664,7 @@ async function uploadTagCover(){
   const first=paths[0] || '';
   const firstFolder=parentFolderFromPath(first||'');
 
-  // v1.9.3: Die sichtbaren Track-Pfade werden direkt ans Backend geschickt.
+  // v1.9.8: Die sichtbaren Track-Pfade werden direkt ans Backend geschickt.
   // Der Ordner ist nur noch Fallback/Hinweis. Damit landet das Cover nicht
   // im falschen Album, wenn Albumname und Ordnername auseinanderlaufen.
   if(firstFolder) folder=firstFolder;
@@ -2224,50 +2224,39 @@ document.addEventListener('DOMContentLoaded',()=>{
 });
 
 
-/* MusicLab v1.9.3 selection-state hardening */
+/* MusicLab v1.9.8 safe UI helper - never blocks app startup */
 (function(){
-  const selectedKeys = new Set();
-  let activeKey = '';
-  let activeLabel = '';
-
-  function cleanLabel(s){
-    return String(s||'')
-      .replace(/\b(Aktiv|Ausgewählt|Markiert)\b/g,'')
-      .replace(/\s+/g,' ')
-      .trim();
+  function safe(fn){
+    try{ fn(); }catch(e){ console.warn('MusicLab safe UI helper skipped:', e); }
   }
-  function textOf(el){ return cleanLabel(el?.innerText || el?.textContent || ''); }
-  function titleOfCard(card){
-    if(!card) return '';
-    const h = card.querySelector('h1,h2,h3,h4,b,.title,.album-title,.artist-title,[data-title]');
-    const raw = h?.getAttribute?.('data-title') || textOf(h) || textOf(card).split('·')[0].split('\n')[0];
-    return cleanLabel(raw);
+  function clean(s){
+    return String(s || '').replace(/\b(Aktiv|Ausgewählt|Markiert)\b/g,'').replace(/\s+/g,' ').trim();
   }
-  function keyOf(card){
-    if(!card) return '';
-    const d = card.dataset || {};
-    const explicit = d.key || d.path || d.albumKey || d.artistKey || d.id || d.album || d.artist;
-    if(explicit) return cleanLabel(explicit);
-    const title = titleOfCard(card);
-    const path = card.querySelector?.('[data-path]')?.dataset?.path;
-    return cleanLabel(path || title);
+  function txt(el){ return clean(el && (el.innerText || el.textContent) || ''); }
+  function cardTitle(card){
+    var h = card && card.querySelector && card.querySelector('h1,h2,h3,h4,b,.title,.album-title,.artist-title,[data-title]');
+    return clean((h && (h.getAttribute('data-title') || h.innerText || h.textContent)) || txt(card).split('·')[0]);
   }
-  function looksLikeCard(el){
+  function isSelectableCard(el){
     if(!el || el.nodeType !== 1) return false;
-    const cls = String(el.className || '');
-    if(/album|artist|card|row|item/i.test(cls) && textOf(el).length > 0) return true;
-    if(el.querySelector?.('input[type="checkbox"]') && textOf(el).length > 0) return true;
-    return false;
+    var cls = String(el.className || '');
+    var t = txt(el);
+    if(!t) return false;
+    return /album|artist|card|row|item/i.test(cls) || el.querySelector('input[type="checkbox"]');
   }
-  function findCard(el){
-    return el?.closest?.('.album-card,.artist-row,.library-card,.side-list-item,.item-card,.albumItem,.artistItem,.album,.artist,.row,.card,[data-album-key],[data-artist-key],[data-key],[data-path]');
-  }
-  function allCards(){
-    const nodes = [...document.querySelectorAll('.album-card,.artist-row,.library-card,.side-list-item,.item-card,.albumItem,.artistItem,.album,.artist,.row,.card,[data-album-key],[data-artist-key],[data-key],[data-path]')];
-    return nodes.filter(looksLikeCard);
+  function findCards(){
+    return Array.prototype.slice.call(document.querySelectorAll(
+      '.album-card,.artist-row,.library-card,.side-list-item,.item-card,.albumItem,.artistItem,.album,.artist,.row,.card,[data-album-key],[data-artist-key],[data-key],[data-path]'
+    )).filter(isSelectableCard);
   }
   function ensureBadgeRow(card){
-    let row = card.querySelector(':scope > .ml-badge-row');
+    var row = null;
+    for(var i=0;i<card.children.length;i++){
+      if(card.children[i].classList && card.children[i].classList.contains('ml-badge-row')){
+        row = card.children[i];
+        break;
+      }
+    }
     if(!row){
       row = document.createElement('div');
       row.className = 'ml-badge-row';
@@ -2276,7 +2265,7 @@ document.addEventListener('DOMContentLoaded',()=>{
     return row;
   }
   function setBadge(row, cls, label, on){
-    let b = row.querySelector('.' + cls);
+    var b = row.querySelector('.' + cls);
     if(on){
       if(!b){
         b = document.createElement('span');
@@ -2284,114 +2273,24 @@ document.addEventListener('DOMContentLoaded',()=>{
         row.appendChild(b);
       }
       b.textContent = label;
-    }else if(b){ b.remove(); }
-  }
-  function checkboxSelected(card){
-    const cb = card.querySelector('input[type="checkbox"]');
-    return !!cb?.checked;
-  }
-  function buttonSaysSelected(card){
-    return [...card.querySelectorAll('button')].some(b => /ausgewählt|abwählen/i.test(b.textContent||''));
-  }
-  function isSelected(card){
-    const k = keyOf(card);
-    return selectedKeys.has(k) || checkboxSelected(card) || buttonSaysSelected(card) || /\bAusgewählt\b|\bMarkiert\b/.test(card.innerText||'');
-  }
-  function isActive(card){
-    const k = keyOf(card);
-    return !!k && !!activeKey && k === activeKey;
-  }
-  function updateButtons(card, selected){
-    const buttons = [...card.querySelectorAll('button')].filter(b => /auswählen|ausgewählt|abwählen/i.test(b.textContent||''));
-    for(const b of buttons){
-      b.classList.add('ml-select-button');
-      b.setAttribute('aria-pressed', selected ? 'true':'false');
-      b.textContent = selected ? 'Ausgewählt' : 'Auswählen';
+    }else if(b){
+      b.parentNode.removeChild(b);
     }
   }
-  function refreshSelectionUI(){
-    let count = 0;
-    for(const card of allCards()){
-      const k = keyOf(card);
-      let selected = isSelected(card);
-      const active = isActive(card);
-
-      if(selected && k) selectedKeys.add(k);
-      selected = k ? selectedKeys.has(k) : selected;
-
-      card.classList.toggle('is-selected', selected);
-      card.classList.toggle('is-active', active);
-      card.classList.add('ml-selectable');
-
-      const row = ensureBadgeRow(card);
-      setBadge(row, 'ml-badge-active', 'Aktiv', active);
-      setBadge(row, 'ml-badge-selected', 'Ausgewählt', selected);
-      updateButtons(card, selected);
-      if(selected) count++;
+  function hasSelectedState(card){
+    var cb = card.querySelector('input[type="checkbox"]');
+    if(cb && cb.checked) return true;
+    var buttons = Array.prototype.slice.call(card.querySelectorAll('button'));
+    for(var i=0;i<buttons.length;i++){
+      if(/ausgewählt|abwählen/i.test(buttons[i].textContent || '')) return true;
     }
-
-    const summary = document.querySelector('.ml-selection-summary');
-    if(summary){
-      summary.innerHTML = '<span>Auswahl:</span> ' + count + ' markiert' + (activeLabel ? ' <span class="muted">· Aktiv: '+escapeHtml(activeLabel)+'</span>' : '');
-    }
+    return /\bAusgewählt\b|\bMarkiert\b/.test(card.innerText || '');
   }
-  function escapeHtml(s){
-    return String(s||'').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+  function hasActiveState(card){
+    return /\bAktiv\b/.test(card.innerText || '') || card.classList.contains('active') || card.classList.contains('is-active') || card.classList.contains('selected');
   }
-  function syncFromClick(card){
-    const k = keyOf(card);
-    if(!k) return;
-    const cb = card.querySelector('input[type="checkbox"]');
-    const selectedNow = cb ? cb.checked : (buttonSaysSelected(card) || selectedKeys.has(k));
-    if(selectedNow) selectedKeys.add(k); else selectedKeys.delete(k);
-  }
-
-  document.addEventListener('click', function(ev){
-    const card = findCard(ev.target);
-    if(!card) return;
-
-    const clickedButton = ev.target.closest?.('button');
-    const btnTxt = clickedButton ? (clickedButton.textContent||'') : '';
-    const k = keyOf(card);
-
-    if(/auswählen|ausgewählt|abwählen/i.test(btnTxt) || ev.target.matches?.('input[type="checkbox"]')){
-      setTimeout(() => { syncFromClick(card); refreshSelectionUI(); }, 80);
-      setTimeout(() => { syncFromClick(card); refreshSelectionUI(); }, 450);
-      return;
-    }
-
-    if(k){
-      activeKey = k;
-      activeLabel = titleOfCard(card) || k;
-    }
-    setTimeout(refreshSelectionUI, 80);
-  }, true);
-
-  document.addEventListener('change', function(ev){
-    const card = findCard(ev.target);
-    if(!card) return;
-    if(ev.target.matches?.('input[type="checkbox"]')){
-      const k = keyOf(card);
-      if(k){
-        if(ev.target.checked) selectedKeys.add(k);
-        else selectedKeys.delete(k);
-      }
-      setTimeout(refreshSelectionUI, 30);
-    }
-  }, true);
-
-  function ensureSummary(){
-    const side = document.querySelector('aside, .sidebar, .side-panel, .left-pane, #sidebar');
-    if(!side || side.querySelector('.ml-selection-summary')) return;
-    const search = side.querySelector('input, select, .search, .tabs');
-    const summary = document.createElement('div');
-    summary.className = 'ml-selection-summary';
-    summary.textContent = 'Auswahl: 0 markiert';
-    if(search) search.insertAdjacentElement('afterend', summary);
-    else side.prepend(summary);
-  }
-  function ensureCredit(){
-    let c = document.querySelector('.musiclab-credit-fixed');
+  function updateCredit(){
+    var c = document.querySelector('.musiclab-credit-fixed');
     if(!c){
       c = document.createElement('div');
       c.className = 'musiclab-credit-fixed';
@@ -2399,18 +2298,61 @@ document.addEventListener('DOMContentLoaded',()=>{
       document.body.appendChild(c);
     }
   }
-
-  const mo = new MutationObserver(() => {
-    ensureSummary();
-    ensureCredit();
-    refreshSelectionUI();
-  });
-  mo.observe(document.documentElement, {childList:true, subtree:true});
-
-  window.addEventListener('load', () => {
-    ensureSummary(); ensureCredit(); refreshSelectionUI();
-  });
-  setInterval(() => {
-    ensureSummary(); ensureCredit(); refreshSelectionUI();
-  }, 900);
+  function ensureSummary(){
+    var side = document.querySelector('aside,.sidebar,.side-panel,.left-pane,#sidebar');
+    if(!side) return null;
+    var summary = side.querySelector('.ml-selection-summary');
+    if(!summary){
+      summary = document.createElement('div');
+      summary.className = 'ml-selection-summary';
+      summary.textContent = 'Auswahl: 0 markiert';
+      var anchor = side.querySelector('input,select,.search,.tabs');
+      if(anchor && anchor.parentNode){
+        anchor.parentNode.insertBefore(summary, anchor.nextSibling);
+      }else{
+        side.insertBefore(summary, side.firstChild);
+      }
+    }
+    return summary;
+  }
+  function updateUI(){
+    safe(function(){
+      updateCredit();
+      var cards = findCards();
+      var selected = 0;
+      var activeLabel = '';
+      for(var i=0;i<cards.length;i++){
+        var card = cards[i];
+        var sel = hasSelectedState(card);
+        var act = hasActiveState(card);
+        if(sel) selected++;
+        if(act && !activeLabel) activeLabel = cardTitle(card);
+        card.classList.toggle('ml-safe-selected', sel);
+        var row = ensureBadgeRow(card);
+        setBadge(row, 'ml-badge-active', 'Aktiv', act);
+        setBadge(row, 'ml-badge-selected', 'Ausgewählt', sel);
+      }
+      var summary = ensureSummary();
+      if(summary){
+        summary.innerHTML = 'Auswahl: ' + selected + ' markiert' + (activeLabel ? ' <span class="muted">· Aktiv: ' + activeLabel.replace(/[<>&]/g,'') + '</span>' : '');
+      }
+    });
+  }
+  function start(){
+    safe(function(){
+      updateUI();
+      setInterval(updateUI, 1200);
+      document.addEventListener('click', function(){ setTimeout(updateUI, 120); setTimeout(updateUI, 700); }, true);
+      document.addEventListener('change', function(){ setTimeout(updateUI, 80); }, true);
+      if(window.MutationObserver){
+        var mo = new MutationObserver(function(){ setTimeout(updateUI, 60); });
+        mo.observe(document.body || document.documentElement, {childList:true, subtree:true});
+      }
+    });
+  }
+  if(document.readyState === 'loading'){
+    document.addEventListener('DOMContentLoaded', start);
+  }else{
+    start();
+  }
 })();
