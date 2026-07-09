@@ -1,6 +1,9 @@
-# MusicLab v1.8.27
+# MusicLab v1.8.28
 
-## Neu in v1.8.27
+## Neu in v1.8.28
+
+- Einzelauswahl-Markierung repariert: Beim Wechsel von Interpret oder Album wird die vorherige optische Markierung automatisch entfernt.
+- Schnellere Klickwechsel abgesichert: Späte Antworten alter Auswahl-Ladevorgänge überschreiben die aktuelle Auswahl nicht mehr.
 
 - Geschwindigkeit der Normalisierung verbessert.
 - Neue Einstellung **Parallel-Normalisierung** mit 1–4 parallelen ffmpeg-Jobs.

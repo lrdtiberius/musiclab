@@ -2355,7 +2355,7 @@ def _folder_matches(row, folder: str, artist: Optional[str] = None):
 # Online Tag Scraper (MusicBrainz)
 # -----------------------------
 MB_BASE = "https://musicbrainz.org/ws/2"
-MB_UA = "MusicLab/1.8.27 (local tag repair tool)"
+MB_UA = "MusicLab/1.8.28 (local tag repair tool)"
 
 
 def _norm_match(value: str) -> str:
@@ -2612,7 +2612,7 @@ def _embed_cover_bytes(files, raw: bytes, mime: str):
 def api_tag_scraper_apply(payload: dict):
     """Apply only safe parts of an online tag proposal.
 
-    v1.8.27: Safe scraper actions stay separated. Year/Cover actions never
+    v1.8.28: Safe scraper actions stay separated. Year/Cover actions never
     overwrite track names. The explicit ``titles`` mode only writes title tags
     in the currently visible/order-matched files and never changes track/disc
     numbers, artist, album or file order.
@@ -2803,7 +2803,7 @@ def api_tag_issues(q: str = "", kind: str = "all"):
 def get_tag_albums(q: str = "", artist: Optional[str] = None, genre: Optional[str] = None, year: Optional[str] = None):
     """Album list for the tag editor.
 
-    v1.8.27: Sampler/compilations that share one album tag but have several
+    v1.8.28: Sampler/compilations that share one album tag but have several
     artists/folders are shown as ONE virtual album again. Normal single-folder
     albums stay physical, so broken folder/tag cases remain repairable.
     """
