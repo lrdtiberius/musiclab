@@ -1,5 +1,5 @@
 const API='http://'+location.hostname+':8091/api';
-const APP_VERSION='1.8.25';
+const APP_VERSION='1.8.27';
 let coverCacheBust=Date.now();
 let selectedArtist=null, selectedAlbum=null, selectedTagFolder=null;
 let selectedTagGenre=null, selectedTagYear=null;
@@ -26,7 +26,7 @@ function coverBox(src, large=false, opts={}){
   const extra=opts.extraClass ? ' '+opts.extraClass : '';
   const cls=(large?'mediaCoverBox large':'mediaCoverBox')+extra;
   const loading=opts.eager ? 'eager' : 'lazy';
-  // v1.8.26: Cover-Boxen müssen beim Albumwechsel immer eine neue, eindeutige
+  // v1.8.27: Cover-Boxen müssen beim Albumwechsel immer eine neue, eindeutige
   // DOM-Box bekommen. Besonders wichtig bei #tagCoverPreview: Wenn die ID beim
   // ersten Cover verloren geht, kann die Vorschau bei Albumwechseln nicht mehr
   // ersetzt werden und Safari zeigt das zuletzt sichtbare Cover weiter an.
@@ -217,6 +217,7 @@ async function loadSettings(){
   lra.value=s.lra;
   if(s.backup_mode) backupMode.value=s.backup_mode;
   if(s.parallel_analysis) parallelAnalysis.value=s.parallel_analysis;
+  if(typeof parallelNormalize!=='undefined' && s.parallel_normalize) parallelNormalize.value=s.parallel_normalize;
   if(typeof musicRoot!=='undefined' && s.music_root) musicRoot.value=s.music_root;
   if(typeof watchMode!=='undefined' && s.watch_mode) watchMode.value=s.watch_mode;
   if(typeof sortAfterTags!=='undefined' && s.sort_after_tags) sortAfterTags.value=s.sort_after_tags;
@@ -230,17 +231,18 @@ async function loadSettings(){
 function updateTargetInfo(){
   const bm={on:'/data/backups',sidecar:'.bak',off:'kein Backup'}[backupMode.value]||backupMode.value;
   const bmShort={on:'ein',sidecar:'.bak',off:'aus'}[backupMode.value]||backupMode.value;
-  targetInfo.textContent=`Ziel ${targetLufs.value} LUFS · TP ${truePeak.value} · LRA ${lra.value} · Backup ${bm} · ${parallelAnalysis.value}×`;
+  const pn=(typeof parallelNormalize!=='undefined' && parallelNormalize.value) ? parallelNormalize.value : '2';
+  targetInfo.textContent=`Ziel ${targetLufs.value} LUFS · TP ${truePeak.value} · LRA ${lra.value} · Backup ${bm} · Analyse ${parallelAnalysis.value}× · Norm ${pn}×`;
   const mr=(typeof musicRoot!=='undefined' && musicRoot.value) ? musicRoot.value : '/music';
   const wm=(typeof watchMode!=='undefined' && watchMode.value && watchMode.value!=='off') ? ` · Watch: ${watchMode.options[watchMode.selectedIndex].text}` : '';
-  if(typeof settingsLine!=='undefined') settingsLine.textContent=`Backup: ${bmShort} · Parallel: ${parallelAnalysis.value}× · Musik: ${mr}${wm}`;
+  if(typeof settingsLine!=='undefined') settingsLine.textContent=`Backup: ${bmShort} · Analyse: ${parallelAnalysis.value}× · Norm: ${pn}× · Musik: ${mr}${wm}`;
 }
 
 async function saveSettings(){
   await j(API+'/settings',{
     method:'POST',
     headers:{'Content-Type':'application/json'},
-    body:JSON.stringify({target_lufs:targetLufs.value,true_peak:truePeak.value,lra:lra.value,backup_mode:backupMode.value,parallel_analysis:parallelAnalysis.value,music_root:musicRoot.value,watch_mode:watchMode.value,sort_after_tags:(typeof sortAfterTags!=='undefined'?sortAfterTags.value:(typeof sortAfterTagsPage!=='undefined'?sortAfterTagsPage.value:'off')),smb_base_url:(typeof smbBaseUrl!=='undefined'?smbBaseUrl.value:(typeof smbBaseUrlPage!=='undefined'?smbBaseUrlPage.value:'smb://DS923/Musik'))})
+    body:JSON.stringify({target_lufs:targetLufs.value,true_peak:truePeak.value,lra:lra.value,backup_mode:backupMode.value,parallel_analysis:parallelAnalysis.value,parallel_normalize:(typeof parallelNormalize!=='undefined'?parallelNormalize.value:'2'),music_root:musicRoot.value,watch_mode:watchMode.value,sort_after_tags:(typeof sortAfterTags!=='undefined'?sortAfterTags.value:(typeof sortAfterTagsPage!=='undefined'?sortAfterTagsPage.value:'off')),smb_base_url:(typeof smbBaseUrl!=='undefined'?smbBaseUrl.value:(typeof smbBaseUrlPage!=='undefined'?smbBaseUrlPage.value:'smb://DS923/Musik'))})
   });
   updateTargetInfo();
 }
@@ -371,7 +373,8 @@ async function loadDashboard(){
   await loadStats();
   await loadReference();
   const par=document.getElementById('parallelAnalysisPage')?.value || document.getElementById('parallelAnalysis')?.value || '-';
-  const dp=document.getElementById('dParallel'); if(dp) dp.textContent=par==='-'?'-':par+'x';
+  const norm=document.getElementById('parallelNormalizePage')?.value || document.getElementById('parallelNormalize')?.value || '-';
+  const dp=document.getElementById('dParallel'); if(dp) dp.textContent=par==='-'?'-':`Analyse ${par}x · Norm ${norm}x`;
 }
 
 function updateBrowserTabsForView(){
@@ -884,7 +887,7 @@ function jsArg(v){return JSON.stringify(String(v??''));}
 function renderPathRow(x){
   const path=String(x?.path||'');
   if(!path) return '';
-  // v1.8.26: Auf der Duplikatseite keine Pfad-Buttons mehr.
+  // v1.8.27: Auf der Duplikatseite keine Pfad-Buttons mehr.
   // Direktes Öffnen/Kopieren war im Browser/NAS-Setup nicht zuverlässig genug
   // und hat die Seite unnötig überladen. Der Pfad bleibt nur als Hinweis sichtbar.
   return `<div class="checkPathRow"><div class="checkPath">${escHtml(path)}</div></div>`;
@@ -1208,11 +1211,11 @@ function setAppView(view){
 function openSettings(){setAppView('settings')}
 function closeSettings(){document.getElementById('settingsModal')?.classList.add('hidden');setAppView(currentView==='settings'?'dashboard':currentView)}
 function syncSettingsPageFromMain(){
-  const pairs=[['targetLufs','targetLufsPage'],['truePeak','truePeakPage'],['lra','lraPage'],['backupMode','backupModePage'],['parallelAnalysis','parallelAnalysisPage'],['musicRoot','musicRootPage'],['watchMode','watchModePage'],['sortAfterTags','sortAfterTagsPage'],['smbBaseUrl','smbBaseUrlPage']];
+  const pairs=[['targetLufs','targetLufsPage'],['truePeak','truePeakPage'],['lra','lraPage'],['backupMode','backupModePage'],['parallelAnalysis','parallelAnalysisPage'],['parallelNormalize','parallelNormalizePage'],['musicRoot','musicRootPage'],['watchMode','watchModePage'],['sortAfterTags','sortAfterTagsPage'],['smbBaseUrl','smbBaseUrlPage']];
   for(const [a,b] of pairs){const x=document.getElementById(a), y=document.getElementById(b); if(x&&y)y.value=x.value;}
 }
 function syncSettingsMainFromPage(){
-  const pairs=[['targetLufs','targetLufsPage'],['truePeak','truePeakPage'],['lra','lraPage'],['backupMode','backupModePage'],['parallelAnalysis','parallelAnalysisPage'],['musicRoot','musicRootPage'],['watchMode','watchModePage'],['sortAfterTags','sortAfterTagsPage'],['smbBaseUrl','smbBaseUrlPage']];
+  const pairs=[['targetLufs','targetLufsPage'],['truePeak','truePeakPage'],['lra','lraPage'],['backupMode','backupModePage'],['parallelAnalysis','parallelAnalysisPage'],['parallelNormalize','parallelNormalizePage'],['musicRoot','musicRootPage'],['watchMode','watchModePage'],['sortAfterTags','sortAfterTagsPage'],['smbBaseUrl','smbBaseUrlPage']];
   for(const [a,b] of pairs){const x=document.getElementById(a), y=document.getElementById(b); if(x&&y)x.value=y.value;}
 }
 function downloadSortPreviewExport(){
@@ -1383,7 +1386,7 @@ function clearTagForm(){
 async function loadTagsPage(){
   const body=document.getElementById('tagTracks'); const hint=document.getElementById('tagHint');
   if(!body||!hint)return;
-  // v1.8.26: Beim Albumwechsel sofort die alte Vorschau entfernen.
+  // v1.8.27: Beim Albumwechsel sofort die alte Vorschau entfernen.
   // Sonst bleibt bei langsamer/fehlender Cover-Antwort das zuletzt gesehene Cover stehen.
   tagCoverPlaceholder('Cover wird geladen…');
   if(!selectedAlbum && selectedTagFolder===null){
@@ -1508,7 +1511,7 @@ async function uploadTagCover(){
   const first=paths[0] || '';
   const firstFolder=parentFolderFromPath(first||'');
 
-  // v1.8.26: Die sichtbaren Track-Pfade werden direkt ans Backend geschickt.
+  // v1.8.27: Die sichtbaren Track-Pfade werden direkt ans Backend geschickt.
   // Der Ordner ist nur noch Fallback/Hinweis. Damit landet das Cover nicht
   // im falschen Album, wenn Albumname und Ordnername auseinanderlaufen.
   if(firstFolder) folder=firstFolder;

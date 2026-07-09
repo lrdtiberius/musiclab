@@ -256,7 +256,7 @@ def init_db():
             )
             """
         )
-        defaults = {"target_lufs": "-16", "true_peak": "-1.5", "lra": "11", "backup_mode": "on", "parallel_analysis": "2", "music_root": str(DEFAULT_MUSIC_ROOT), "watch_mode": "off", "sort_after_tags": "off", "smb_base_url": "smb://DS923/Musik"}
+        defaults = {"target_lufs": "-16", "true_peak": "-1.5", "lra": "11", "backup_mode": "on", "parallel_analysis": "2", "parallel_normalize": "2", "music_root": str(DEFAULT_MUSIC_ROOT), "watch_mode": "off", "sort_after_tags": "off", "smb_base_url": "smb://DS923/Musik"}
         for k, v in defaults.items():
             con.execute("INSERT OR IGNORE INTO settings(key,value) VALUES(?,?)", (k, v))
         con.execute("INSERT OR REPLACE INTO meta(key,value) VALUES('schema_version', ?)", (str(SCHEMA_VERSION),))
@@ -271,7 +271,7 @@ def get_settings():
 
 def save_settings(data: dict):
     with db() as con:
-        for k in ["target_lufs", "true_peak", "lra", "backup_mode", "parallel_analysis", "music_root", "watch_mode", "sort_after_tags", "smb_base_url"]:
+        for k in ["target_lufs", "true_peak", "lra", "backup_mode", "parallel_analysis", "parallel_normalize", "music_root", "watch_mode", "sort_after_tags", "smb_base_url"]:
             if k in data:
                 con.execute("INSERT OR REPLACE INTO settings(key,value) VALUES(?,?)", (k, str(data[k])))
         con.commit()
@@ -1037,7 +1037,7 @@ def backup_file(file: Path, rel_path: str, mode: str) -> Optional[str]:
     return str(dest)
 
 
-def normalize_file(rel_path: str, settings: dict, backup_mode: Optional[str] = None) -> bool:
+def normalize_file(rel_path: str, settings: dict, backup_mode: Optional[str] = None, measured: Optional[dict] = None) -> bool:
     file = get_music_root() / rel_path
     if not file.exists():
         raise RuntimeError("Datei nicht gefunden")
@@ -1053,7 +1053,9 @@ def normalize_file(rel_path: str, settings: dict, backup_mode: Optional[str] = N
     if backup_path:
         add_log(f"Backup erstellt: {rel_path}")
 
-    first = analyze_track_file(file)
+    # Wenn der Titel direkt vorher analysiert wurde, können die gespeicherten Loudnorm-Messwerte
+    # wiederverwendet werden. Das spart pro Datei einen kompletten ffmpeg-Analyse-Durchlauf.
+    first = measured if measured else analyze_track_file(file)
     suffix = file.suffix.lower()
     cmd = ["ffmpeg", "-y", "-hide_banner", "-i", str(file), "-af", loudnorm_filter(first, settings), "-map", "0", "-map_metadata", "0", "-c:v", "copy"]
     if suffix == ".mp3":
@@ -1102,6 +1104,35 @@ def analyze_and_store(con, track_id: int, rel_path: str) -> dict:
     upsert_analysis(con, track_id, result)
     return result
 
+
+def cached_analysis_for_row(con, track_id: int) -> Optional[dict]:
+    a = con.execute(
+        "SELECT input_i,input_tp,input_lra,input_thresh,target_offset,status FROM analysis WHERE track_id=?",
+        (track_id,),
+    ).fetchone()
+    if not a or a["status"] != "ok":
+        return None
+    try:
+        return {
+            "input_i": float(a["input_i"]),
+            "input_tp": float(a["input_tp"]),
+            "input_lra": float(a["input_lra"]),
+            "input_thresh": float(a["input_thresh"]),
+            "target_offset": float(a["target_offset"]),
+        }
+    except Exception:
+        return None
+
+
+def normalize_row_fast(row: dict, settings: dict) -> dict:
+    rel = row["path"]
+    before = row.get("_before")
+    if not before:
+        before = analyze_track_file(get_music_root() / rel)
+    backup_path = normalize_file(rel, settings, settings.get("backup_mode", "on"), measured=before)
+    after = analyze_track_file(get_music_root() / rel)
+    return {"row": row, "before": before, "after": after, "backup_path": backup_path}
+
 def normalize_worker(artist: Optional[str] = None, album: Optional[str] = None, backup_mode: Optional[str] = None):
     init_db()
     settings = get_settings()
@@ -1122,26 +1153,32 @@ def normalize_worker(artist: Optional[str] = None, album: Optional[str] = None, 
         return
 
     job_id = history_job_id()
-    begin_job("normalize", len(rows), f"Normalisiere auf {settings.get('target_lufs')} LUFS")
-    add_log(f"Normalisierung gestartet: {len(rows)} Titel auf {settings.get('target_lufs')} LUFS, Backup: {settings.get('backup_mode','on')}")
+    workers = normalize_parallelism()
+    begin_job("normalize", len(rows), f"Normalisiere auf {settings.get('target_lufs')} LUFS ({workers} parallel)")
+    add_log(f"Normalisierung gestartet: {len(rows)} Titel auf {settings.get('target_lufs')} LUFS, Backup: {settings.get('backup_mode','on')}, parallel: {workers}")
     with db() as con:
         for row in rows:
-            if stop_requested():
-                add_log("Normalisierung abgebrochen")
-                break
-            state["current"] = row["path"]
-            try:
-                before = analyze_track_file(get_music_root() / row["path"])
-                backup_path = normalize_file(row["path"], settings, settings.get("backup_mode", "on"))
-                result = analyze_and_store(con, row["id"], row["path"])
-                insert_history(con, job_id, row, artist, album or row["album"], backup_path, settings.get("backup_mode", "on"), settings, before, result)
-                add_log(f"Normalisiert: {row['path']}")
-            except Exception as e:
-                state["errors"] += 1
-                upsert_analysis(con, row["id"], None, str(e))
-                add_log(f"Normalisierungsfehler: {row['path']} - {e}", True)
-            state["done"] += 1
-            con.commit()
+            row["_before"] = cached_analysis_for_row(con, row["id"])
+        with ThreadPoolExecutor(max_workers=workers) as pool:
+            futures = {pool.submit(normalize_row_fast, row, dict(settings)): row for row in rows}
+            for fut in as_completed(futures):
+                row = futures[fut]
+                if stop_requested():
+                    add_log("Normalisierung abgebrochen")
+                    break
+                state["current"] = row["path"]
+                try:
+                    out = fut.result()
+                    result = out["after"]
+                    upsert_analysis(con, row["id"], result)
+                    insert_history(con, job_id, row, artist, album or row["album"], out.get("backup_path"), settings.get("backup_mode", "on"), settings, out.get("before"), result)
+                    add_log(f"Normalisiert: {row['path']}")
+                except Exception as e:
+                    state["errors"] += 1
+                    upsert_analysis(con, row["id"], None, str(e))
+                    add_log(f"Normalisierungsfehler: {row['path']} - {e}", True)
+                state["done"] += 1
+                con.commit()
     if stop_requested():
         add_log(f"Normalisierung abgebrochen: {state['done']}/{state['total']} Titel, Fehler {state['errors']}", True)
         finish_job("Normalisierung abgebrochen", True)
@@ -1235,26 +1272,32 @@ def normalize_tracks_worker(paths: list, backup_mode: Optional[str] = None):
         add_log(f"Titel-Normalisierung abgebrochen: {names}", True)
         return
     job_id = history_job_id()
-    begin_job("track_normalize", len(rows), f"Titel-Normalisierung auf {settings.get('target_lufs')} LUFS")
-    add_log(f"Titel-Normalisierung gestartet: {len(rows)} Titel auf {settings.get('target_lufs')} LUFS, Backup: {settings.get('backup_mode','on')}")
+    workers = normalize_parallelism()
+    begin_job("track_normalize", len(rows), f"Titel-Normalisierung auf {settings.get('target_lufs')} LUFS ({workers} parallel)")
+    add_log(f"Titel-Normalisierung gestartet: {len(rows)} Titel auf {settings.get('target_lufs')} LUFS, Backup: {settings.get('backup_mode','on')}, parallel: {workers}")
     with db() as con:
         for row in rows:
-            if stop_requested():
-                add_log("Titel-Normalisierung abgebrochen")
-                break
-            state["current"] = row["path"]
-            try:
-                before = analyze_track_file(get_music_root() / row["path"])
-                backup_path = normalize_file(row["path"], settings, settings.get("backup_mode", "on"))
-                result = analyze_and_store(con, row["id"], row["path"])
-                insert_history(con, job_id, row, row.get("artist"), row.get("album"), backup_path, settings.get("backup_mode", "on"), settings, before, result)
-                add_log(f"Titel normalisiert: {row['path']}")
-            except Exception as e:
-                state["errors"] += 1
-                upsert_analysis(con, row["id"], None, str(e))
-                add_log(f"Titel-Normalisierungsfehler: {row['path']} - {e}", True)
-            state["done"] += 1
-            con.commit()
+            row["_before"] = cached_analysis_for_row(con, row["id"])
+        with ThreadPoolExecutor(max_workers=workers) as pool:
+            futures = {pool.submit(normalize_row_fast, row, dict(settings)): row for row in rows}
+            for fut in as_completed(futures):
+                row = futures[fut]
+                if stop_requested():
+                    add_log("Titel-Normalisierung abgebrochen")
+                    break
+                state["current"] = row["path"]
+                try:
+                    out = fut.result()
+                    result = out["after"]
+                    upsert_analysis(con, row["id"], result)
+                    insert_history(con, job_id, row, row.get("artist"), row.get("album"), out.get("backup_path"), settings.get("backup_mode", "on"), settings, out.get("before"), result)
+                    add_log(f"Titel normalisiert: {row['path']}")
+                except Exception as e:
+                    state["errors"] += 1
+                    upsert_analysis(con, row["id"], None, str(e))
+                    add_log(f"Titel-Normalisierungsfehler: {row['path']} - {e}", True)
+                state["done"] += 1
+                con.commit()
     if stop_requested():
         add_log(f"Titel-Normalisierung abgebrochen: {state['done']}/{state['total']} Titel, Fehler {state['errors']}", True)
         finish_job("Titel-Normalisierung abgebrochen", True)
@@ -1468,28 +1511,32 @@ def normalize_batch_worker(items: list, backup_mode: Optional[str] = None, setti
             row["_album_label"] = album_label(item.get("artist"), item.get("album"))
         all_rows.extend(rows)
     job_id = history_job_id()
-    begin_job("batch_normalize", len(all_rows), f"Batch-Normalisierung auf {settings.get('target_lufs')} LUFS")
-    add_log(f"Batch-Normalisierung gestartet: {len(albums)} Album/Alben, {len(all_rows)} Titel auf {settings.get('target_lufs')} LUFS, Backup: {settings.get('backup_mode','on')}")
+    workers = normalize_parallelism()
+    begin_job("batch_normalize", len(all_rows), f"Batch-Normalisierung auf {settings.get('target_lufs')} LUFS ({workers} parallel)")
+    add_log(f"Batch-Normalisierung gestartet: {len(albums)} Album/Alben, {len(all_rows)} Titel auf {settings.get('target_lufs')} LUFS, Backup: {settings.get('backup_mode','on')}, parallel: {workers}")
     with db() as con:
         for row in all_rows:
-            if stop_requested():
-                add_log("Batch-Normalisierung abgebrochen")
-                break
-            state["current"] = f"{row.get('_album_label','')} / {row['path']}".strip(" /")
-            try:
-                before = analyze_track_file(get_music_root() / row["path"])
-                backup_path = normalize_file(row["path"], settings, settings.get("backup_mode", "on"))
-                # Direkt nach jedem normalisierten Titel neu analysieren, damit Albumkarte
-                # und Titelliste nach Abschluss aktuelle Werte zeigen.
-                result = analyze_and_store(con, row["id"], row["path"])
-                insert_history(con, job_id, row, row.get("artist"), row.get("album"), backup_path, settings.get("backup_mode", "on"), settings, before, result)
-                add_log(f"Normalisiert: {row['path']}")
-            except Exception as e:
-                state["errors"] += 1
-                upsert_analysis(con, row["id"], None, str(e))
-                add_log(f"Normalisierungsfehler: {row['path']} - {e}", True)
-            state["done"] += 1
-            con.commit()
+            row["_before"] = cached_analysis_for_row(con, row["id"])
+        with ThreadPoolExecutor(max_workers=workers) as pool:
+            futures = {pool.submit(normalize_row_fast, row, dict(settings)): row for row in all_rows}
+            for fut in as_completed(futures):
+                row = futures[fut]
+                if stop_requested():
+                    add_log("Batch-Normalisierung abgebrochen")
+                    break
+                state["current"] = f"{row.get('_album_label','')} / {row['path']}".strip(" /")
+                try:
+                    out = fut.result()
+                    result = out["after"]
+                    upsert_analysis(con, row["id"], result)
+                    insert_history(con, job_id, row, row.get("artist"), row.get("album"), out.get("backup_path"), settings.get("backup_mode", "on"), settings, out.get("before"), result)
+                    add_log(f"Normalisiert: {row['path']}")
+                except Exception as e:
+                    state["errors"] += 1
+                    upsert_analysis(con, row["id"], None, str(e))
+                    add_log(f"Normalisierungsfehler: {row['path']} - {e}", True)
+                state["done"] += 1
+                con.commit()
     if stop_requested():
         add_log(f"Batch-Normalisierung abgebrochen: {state['done']}/{state['total']} Titel, Fehler {state['errors']}", True)
         finish_job("Batch-Normalisierung abgebrochen", True)
@@ -2308,7 +2355,7 @@ def _folder_matches(row, folder: str, artist: Optional[str] = None):
 # Online Tag Scraper (MusicBrainz)
 # -----------------------------
 MB_BASE = "https://musicbrainz.org/ws/2"
-MB_UA = "MusicLab/1.8.25 (local tag repair tool)"
+MB_UA = "MusicLab/1.8.27 (local tag repair tool)"
 
 
 def _norm_match(value: str) -> str:
@@ -2565,7 +2612,7 @@ def _embed_cover_bytes(files, raw: bytes, mime: str):
 def api_tag_scraper_apply(payload: dict):
     """Apply only safe parts of an online tag proposal.
 
-    v1.8.25: Safe scraper actions stay separated. Year/Cover actions never
+    v1.8.27: Safe scraper actions stay separated. Year/Cover actions never
     overwrite track names. The explicit ``titles`` mode only writes title tags
     in the currently visible/order-matched files and never changes track/disc
     numbers, artist, album or file order.
@@ -2756,7 +2803,7 @@ def api_tag_issues(q: str = "", kind: str = "all"):
 def get_tag_albums(q: str = "", artist: Optional[str] = None, genre: Optional[str] = None, year: Optional[str] = None):
     """Album list for the tag editor.
 
-    v1.8.25: Sampler/compilations that share one album tag but have several
+    v1.8.27: Sampler/compilations that share one album tag but have several
     artists/folders are shown as ONE virtual album again. Normal single-folder
     albums stay physical, so broken folder/tag cases remain repairable.
     """
