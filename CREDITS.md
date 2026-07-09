@@ -1,2 +1,1 @@
-MusicLab v1.8.28
-Idea & Umsetzung by Lrd.Tiberius
+Idea & Umsetzung by Lrd.Tiberius.

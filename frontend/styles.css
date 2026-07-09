@@ -1187,3 +1187,161 @@ body.checkMode #checkView .checkList{min-height:0!important;max-height:none!impo
 .refWithClear{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
 .refClearBtn{width:24px;height:24px;border-radius:999px;padding:0;line-height:1;background:var(--danger,#7a2f2f);color:#fff;font-weight:900;box-shadow:none}
 .refClearBtn:hover{filter:brightness(1.1)}
+
+/* v1.9.0 Workbench-Redesign: dunkles Studio-Dashboard, klarere Arbeitsbereiche */
+body.studioRedesign{
+  background:
+    radial-gradient(circle at 18% 0%, rgba(88,166,255,.16), transparent 32%),
+    radial-gradient(circle at 88% 8%, rgba(126,231,135,.10), transparent 30%),
+    linear-gradient(180deg,#08101b 0%,#0b0f17 54%,#080a0f 100%) !important;
+}
+body.studioRedesign header{
+  min-height:82px;
+  border-bottom:1px solid rgba(255,255,255,.08);
+  background:rgba(8,12,19,.86);
+  backdrop-filter:blur(18px);
+  box-shadow:0 14px 40px rgba(0,0,0,.26);
+}
+body.studioRedesign header h1{
+  letter-spacing:.3px;
+}
+body.studioRedesign .viewTabs{
+  padding:5px;
+  border:1px solid rgba(255,255,255,.07);
+  border-radius:999px;
+  background:rgba(255,255,255,.035);
+}
+body.studioRedesign .viewTabs button{
+  border-radius:999px;
+  box-shadow:none;
+}
+body.studioRedesign .viewTabs button.active{
+  background:linear-gradient(180deg,rgba(143,202,255,.98),rgba(88,166,255,.9));
+  color:#05101e;
+  border-color:transparent;
+}
+body.studioRedesign .workbenchLayout{
+  grid-template-columns:330px minmax(0,1fr);
+  gap:18px;
+}
+body.studioRedesign aside.panel{
+  border-radius:24px;
+  background:linear-gradient(180deg,rgba(19,27,39,.94),rgba(13,18,27,.94));
+  box-shadow:0 20px 60px rgba(0,0,0,.28);
+}
+body.studioRedesign main{
+  padding-right:6px;
+}
+body.studioRedesign .panel{
+  border-radius:24px;
+  border-color:rgba(255,255,255,.075);
+  background:linear-gradient(180deg,rgba(23,31,44,.96),rgba(17,23,34,.96));
+  box-shadow:0 18px 50px rgba(0,0,0,.22);
+}
+body.studioRedesign .dashboardHero{
+  min-height:112px;
+  display:flex;
+  align-items:center;
+  background:
+    linear-gradient(135deg,rgba(88,166,255,.20),rgba(126,231,135,.08)),
+    linear-gradient(180deg,rgba(28,39,55,.97),rgba(17,23,34,.97));
+}
+body.studioRedesign .dashboardHero h2,
+body.studioRedesign .tagsHeader h2,
+body.studioRedesign .sectionHead h2{
+  font-size:24px;
+  letter-spacing:.2px;
+}
+body.studioRedesign .dashCard{
+  min-height:112px;
+  display:flex;
+  flex-direction:column;
+  justify-content:center;
+}
+body.studioRedesign .dashCard b{
+  font-size:34px;
+}
+body.studioRedesign .albumPanel,
+body.studioRedesign .trackPanel,
+body.studioRedesign .tagEditor,
+body.studioRedesign .tagTracksPanel{
+  min-height:0;
+}
+body.studioRedesign .albums{
+  grid-template-columns:repeat(auto-fill,minmax(290px,1fr));
+  gap:14px;
+}
+body.studioRedesign .album{
+  min-height:132px;
+  border-radius:20px;
+  padding:18px;
+  background:
+    linear-gradient(180deg,rgba(42,55,76,.82),rgba(24,32,46,.92));
+  border:1px solid rgba(255,255,255,.07);
+}
+body.studioRedesign .album b{
+  display:block;
+  font-size:17px;
+  line-height:1.25;
+  margin-bottom:8px;
+}
+body.studioRedesign .album.sel,
+body.studioRedesign .row.sel{
+  outline:2px solid rgba(118,188,255,.95)!important;
+  box-shadow:0 0 0 5px rgba(88,166,255,.14), inset 0 0 0 1px rgba(255,255,255,.05)!important;
+  background:linear-gradient(180deg,rgba(54,75,105,.94),rgba(28,39,56,.96))!important;
+}
+body.studioRedesign .row{
+  border-radius:16px;
+  margin-bottom:6px;
+}
+body.studioRedesign .row.sel::after,
+body.studioRedesign .album.sel::after{
+  content:'Ausgewählt';
+  display:inline-block;
+  margin-top:8px;
+  padding:3px 8px;
+  border-radius:999px;
+  font-size:11px;
+  font-weight:800;
+  color:#071321;
+  background:#8fcaff;
+}
+body.studioRedesign .trackScroll,
+body.studioRedesign .tagTrackScroll{
+  border-radius:18px;
+  overflow:auto;
+  border:1px solid rgba(255,255,255,.06);
+  background:rgba(0,0,0,.12);
+}
+body.studioRedesign table th{
+  background:rgba(20,27,39,.98);
+}
+body.studioRedesign .checkGrid{
+  grid-template-columns:1fr 1fr;
+  gap:16px;
+}
+body.studioRedesign.checkMode .workbenchLayout{
+  grid-template-columns:1fr!important;
+}
+body.studioRedesign.checkMode aside.panel{
+  display:none!important;
+}
+body.studioRedesign.checkMode #checkView,
+body.studioRedesign.protocolMode #protocolView,
+body.studioRedesign.settingsMode #settingsView{
+  max-width:1500px;
+  margin:0 auto;
+}
+body.studioRedesign .tagScraperPanel:not(.hidden){
+  border-radius:26px!important;
+}
+body.studioRedesign .footerCredit{
+  opacity:.72;
+  padding-top:12px;
+}
+@media(max-width:1180px){
+  body.studioRedesign .workbenchLayout{grid-template-columns:1fr;}
+  body.studioRedesign .albums{grid-template-columns:repeat(auto-fill,minmax(230px,1fr));}
+  body.studioRedesign .checkGrid{grid-template-columns:1fr;}
+}
