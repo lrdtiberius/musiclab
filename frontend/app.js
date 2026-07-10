@@ -1,8 +1,8 @@
 const API='http://'+location.hostname+':8091/api';
-const APP_VERSION='1.9.11';
+const APP_VERSION='1.9.18';
 let coverCacheBust=Date.now();
 let selectedArtist=null, selectedAlbum=null, selectedTagFolder=null;
-let selectedUiKey=null; // v1.9.11: eindeutige visuelle Einzelauswahl für Listen und Album-Kacheln
+let selectedUiKey=null; // v1.9.18: eindeutige visuelle Einzelauswahl für Listen und Album-Kacheln
 let selectedTagGenre=null, selectedTagYear=null;
 let browserMode='artist';
 let lastRunning=false;
@@ -18,6 +18,16 @@ let tagDiscTotals={};
 let tagsDirty=false;
 let selectionSerial=0;
 
+function updateViewportMetrics(){
+  const header=document.querySelector('header');
+  const h=header ? Math.ceil(header.getBoundingClientRect().height) : 76;
+  document.documentElement.style.setProperty('--musiclab-header-h', h+'px');
+  document.documentElement.style.setProperty('--musiclab-vh', window.innerHeight+'px');
+}
+window.addEventListener('resize', updateViewportMetrics, {passive:true});
+window.addEventListener('orientationchange', updateViewportMetrics, {passive:true});
+
+
 function fmt(n,d=1){return n===null||n===undefined?'':Number(n).toFixed(d)}
 function dur(s){s=Number(s||0);let h=Math.floor(s/3600),m=Math.floor((s%3600)/60);return h?`${h}h ${m}m`:`${m}m`}
 function trackNo(t){if(!t.track_number)return'';return (!t.track_total || Number(t.track_total)===0) ? String(t.track_number) : `${t.track_number}/${t.track_total}`}
@@ -28,7 +38,7 @@ function coverBox(src, large=false, opts={}){
   const extra=opts.extraClass ? ' '+opts.extraClass : '';
   const cls=(large?'mediaCoverBox large':'mediaCoverBox')+extra;
   const loading=opts.eager ? 'eager' : 'lazy';
-  // v1.9.11: Cover-Boxen müssen beim Albumwechsel immer eine neue, eindeutige
+  // v1.9.18: Cover-Boxen müssen beim Albumwechsel immer eine neue, eindeutige
   // DOM-Box bekommen. Besonders wichtig bei #tagCoverPreview: Wenn die ID beim
   // ersten Cover verloren geht, kann die Vorschau bei Albumwechseln nicht mehr
   // ersetzt werden und Safari zeigt das zuletzt sichtbare Cover weiter an.
@@ -110,7 +120,7 @@ function rowAlbumMatches(el, album, artist){
   return true;
 }
 function syncSingleSelectionUI(){
-  // v1.9.11: Die UI-Markierung ist an einen eindeutigen Schlüssel gebunden.
+  // v1.9.18: Die UI-Markierung ist an einen eindeutigen Schlüssel gebunden.
   // Dadurch können beim Wechsel nicht mehr mehrere Interpreten/Alben markiert bleiben,
   // auch wenn Albumtitel mehrfach vorkommen oder alte async-Ladevorgänge zurückkommen.
   document.querySelectorAll('#browserList .row.sel').forEach(el=>el.classList.remove('sel'));
@@ -224,20 +234,31 @@ function renderBatchBar(){
     if(count!==1 && albumAction.value==='reference') albumAction.value='';
     if(count===0 && ['reference','analyze','normalize'].includes(albumAction.value)) albumAction.value='';
   }
-  if(typeof btnAlbumAction !== 'undefined' && btnAlbumAction){
-    btnAlbumAction.disabled = uiBusy || !(albumAction && albumAction.value);
-  }
+  updateAlbumActionButton();
   renderSelectionHint();
 }
 
+function updateAlbumActionButton(){
+  if(typeof btnAlbumAction === 'undefined' || !btnAlbumAction) return;
+  const hasSelection = selectedBatch && selectedBatch.size > 0;
+  const action = albumAction ? albumAction.value : '';
+  const isJobRunning = false; // Job-Zustand wird in poll() separat behandelt.
+  btnAlbumAction.disabled = uiBusy || isJobRunning || !hasSelection || !action;
+}
+
 async function runAlbumAction(){
-  if(!albumAction || !albumAction.value) return;
+  if(!albumAction || !albumAction.value || selectedBatch.size===0) return;
   const action=albumAction.value;
-  if(action==='selectVisible'){ selectVisibleAlbums(); albumAction.value=''; renderBatchBar(); return; }
-  if(action==='clear'){ clearBatchSelection(); albumAction.value=''; renderBatchBar(); return; }
-  if(action==='reference'){ await setSelectedBatchReference(); albumAction.value=''; renderBatchBar(); return; }
-  if(action==='analyze'){ await analyzeSelectedAlbums(); albumAction.value=''; renderBatchBar(); return; }
-  if(action==='normalize'){ await normalizeSelectedAlbums(); albumAction.value=''; renderBatchBar(); return; }
+  if(btnAlbumAction) btnAlbumAction.disabled=true;
+  try{
+    if(action==='selectVisible'){ selectVisibleAlbums(); albumAction.value=''; renderBatchBar(); return; }
+    if(action==='clear'){ clearBatchSelection(); albumAction.value=''; renderBatchBar(); return; }
+    if(action==='reference'){ await setSelectedBatchReference(); albumAction.value=''; renderBatchBar(); return; }
+    if(action==='analyze'){ await analyzeSelectedAlbums(); albumAction.value=''; renderBatchBar(); return; }
+    if(action==='normalize'){ await normalizeSelectedAlbums(); albumAction.value=''; renderBatchBar(); return; }
+  }finally{
+    updateAlbumActionButton();
+  }
 }
 
 function clearTrackSelection(){
@@ -910,40 +931,52 @@ async function analyzeAll(){
 }
 
 async function chooseNormalizeTargetSource(){
-  if(reference && reference.is_set && reference.avg_lufs!==null && reference.avg_lufs!==undefined){
-    const label=`${reference.artist_label || reference.artist || 'Verschiedene Interpreten'} – ${reference.album} (${reference.avg_lufs} LUFS)`;
-    const answer=prompt(`Welche Zielwerte für „Alles normalisieren“ verwenden?\n\n1 = Werte aus Einstellungen (${targetLufs.value || '?'} LUFS)\n2 = Referenzalbum (${label})\n\nBitte 1 oder 2 eingeben.`, '1');
-    if(answer===null) return null;
-    return String(answer).trim()==='2' ? 'reference' : 'settings';
-  }
+  // v1.9.18: Kein Browser-Prompt mehr.
+  // „Alles normalisieren“ verwendet immer die Werte aus den Einstellungen.
+  // Soll ein Referenzalbum als Ziel dienen, vorher bewusst „Ziel-LUFS übernehmen“ klicken.
   return 'settings';
 }
 
 async function normalizeAll(){
   try{
-    const targetSource=await chooseNormalizeTargetSource();
-    if(!targetSource) return;
-    const pv=await j(API+'/normalize_preview_all?target_source='+encodeURIComponent(targetSource));
+    const targetSource='settings';
+    lastRunning=true;
+    status.textContent='Alles-Normalisierung: Vorschau wird erstellt...';
+    if(progressText) progressText.textContent='Normalisierung vorbereiten...';
+
+    const pv=await j(API+'/normalize_preview_all?target_source=settings');
     if(!pv.can_normalize){
+      status.textContent='Alles-Normalisierung nicht möglich';
       alert('Alles normalisieren ist aktuell nicht möglich:\n\nEs gibt keine vollständig analysierten Alben, die normalisiert werden können.');
+      await poll();
       return;
     }
+
     const backupText = backupMode.value==='off' ? 'kein Backup' : (backupMode.value==='sidecar' ? '.bak neben der Datei' : 'Backup unter /data/backups');
-    const sourceText = pv.target_source==='reference' ? (pv.target_source_label || 'Referenzalbum') : 'Werte aus Einstellungen';
-    const examples=(pv.normalizable||[]).slice(0,10).map(x=>`- ${x.label}: ${x.current_lufs} → ${x.target_lufs} LUFS`).join('\n');
-    const more=(pv.count_albums||0)>10 ? `\n... und ${(pv.count_albums||0)-10} weitere` : '';
+    const sourceText = 'Werte aus Einstellungen';
+    const examples=(pv.normalizable||[]).slice(0,8).map(x=>`- ${x.label}: ${x.current_lufs} → ${x.target_lufs} LUFS`).join('\n');
+    const more=(pv.count_albums||0)>8 ? `\n... und ${(pv.count_albums||0)-8} weitere` : '';
     const skipped=[];
     if(pv.count_blocked) skipped.push(`${pv.count_blocked} Album/Alben werden übersprungen, weil sie noch nicht vollständig analysiert sind`);
     if(pv.count_skipped_reference) skipped.push(`${pv.count_skipped_reference} Referenzalbum/Alben werden übersprungen`);
-    const msg=`Alles normalisieren?\n\nQuelle: ${sourceText}\n${pv.count_albums} Album/Alben · ${pv.count_tracks} Titel\nZiel: ${pv.target_lufs} LUFS · TP ${pv.true_peak} · LRA ${pv.lra}\nBackup: ${backupText}\n\n${examples}${more}${skipped.length?'\n\n'+skipped.join('\n'):''}\n\nDateien werden überschrieben.`;
-    if(!confirm(msg)) return;
-    lastRunning=true;
+    const msg=`Alles normalisieren starten?\n\n${pv.count_albums} Album/Alben · ${pv.count_tracks} Titel\nQuelle: ${sourceText}\nZiel: ${pv.target_lufs} LUFS · TP ${pv.true_peak} · LRA ${pv.lra}\nBackup: ${backupText}\n\n${examples}${more}${skipped.length?'\n\n'+skipped.join('\n'):''}\n\nDateien werden überschrieben.`;
+    if(!confirm(msg)){
+      status.textContent='Alles-Normalisierung abgebrochen';
+      await poll();
+      return;
+    }
+
     status.textContent='Alles-Normalisierung wird gestartet...';
-    await j(API+'/normalize_all',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({backup:backupMode.value,target_source:targetSource})});
-    await poll();
+    if(progressText) progressText.textContent='Normalisierung wird gestartet...';
+    await j(API+'/normalize_all',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({backup:backupMode.value,target_source:'settings'})});
+    setTimeout(poll, 250);
+    setTimeout(poll, 1000);
+    setTimeout(poll, 3000);
   }catch(e){
+    lastRunning=false;
     status.textContent='Alles-Normalisierung-Fehler';
     alert('Alles normalisieren konnte nicht gestartet werden:\n'+e.message);
+    try{ await poll(); }catch(_){}
   }
 }
 
@@ -1068,7 +1101,7 @@ function jsArg(v){return JSON.stringify(String(v??''));}
 function renderPathRow(x){
   const path=String(x?.path||'');
   if(!path) return '';
-  // v1.9.11: Auf der Duplikatseite keine Pfad-Buttons mehr.
+  // v1.9.18: Auf der Duplikatseite keine Pfad-Buttons mehr.
   // Direktes Öffnen/Kopieren war im Browser/NAS-Setup nicht zuverlässig genug
   // und hat die Seite unnötig überladen. Der Pfad bleibt nur als Hinweis sichtbar.
   return `<div class="checkPathRow"><div class="checkPath">${escHtml(path)}</div></div>`;
@@ -1348,6 +1381,7 @@ document.addEventListener('DOMContentLoaded',()=>{document.getElementById('setti
 let currentView='dashboard';
 function setAppView(view){
   currentView=view;
+  updateViewportMetrics();
   document.querySelectorAll('.appView').forEach(el=>el.classList.toggle('active', el.id===view+'View'));
   [['tabDashboard','dashboard'],['tabAudio','audio'],['tabTags','tags'],['tabMedia','media'],['tabCheck','check'],['tabProtocol','protocol'],['tabSettings','settings']].forEach(([id,v])=>{const b=document.getElementById(id); if(b)b.classList.toggle('active', view===v)});
   document.body.classList.toggle('settingsMode', view==='settings');
@@ -1568,7 +1602,7 @@ function clearTagForm(){
 async function loadTagsPage(){
   const body=document.getElementById('tagTracks'); const hint=document.getElementById('tagHint');
   if(!body||!hint)return;
-  // v1.9.11: Beim Albumwechsel sofort die alte Vorschau entfernen.
+  // v1.9.18: Beim Albumwechsel sofort die alte Vorschau entfernen.
   // Sonst bleibt bei langsamer/fehlender Cover-Antwort das zuletzt gesehene Cover stehen.
   tagCoverPlaceholder('Cover wird geladen…');
   if(!selectedAlbum && selectedTagFolder===null){
@@ -1693,7 +1727,7 @@ async function uploadTagCover(){
   const first=paths[0] || '';
   const firstFolder=parentFolderFromPath(first||'');
 
-  // v1.9.11: Die sichtbaren Track-Pfade werden direkt ans Backend geschickt.
+  // v1.9.18: Die sichtbaren Track-Pfade werden direkt ans Backend geschickt.
   // Der Ordner ist nur noch Fallback/Hinweis. Damit landet das Cover nicht
   // im falschen Album, wenn Albumname und Ordnername auseinanderlaufen.
   if(firstFolder) folder=firstFolder;
@@ -2209,10 +2243,19 @@ async function poll(){
   }
   const running=!!s.running;
   if(btnStop) btnStop.disabled=!running;
+  uiBusy = running;
   if(running){
-    btnAnalyze.disabled=true; btnNorm.disabled=true; btnRef.disabled=true; if(btnTrackNorm)btnTrackNorm.disabled=true; if(typeof btnAlbumAction !== 'undefined' && btnAlbumAction) btnAlbumAction.disabled=true;
-  }else if(selectedAlbum){
-    btnAnalyze.disabled=false; btnRef.disabled=false; updateNormalizeGuard(); updateTrackSelectionUI();
+    if(btnAnalyze) btnAnalyze.disabled=true;
+    if(btnNorm) btnNorm.disabled=true;
+    if(btnRef) btnRef.disabled=true;
+    if(btnTrackNorm) btnTrackNorm.disabled=true;
+    if(typeof btnAlbumAction !== 'undefined' && btnAlbumAction) btnAlbumAction.disabled=true;
+  }else{
+    if(btnAnalyze) btnAnalyze.disabled=!selectedAlbum;
+    if(btnRef) btnRef.disabled=!selectedAlbum;
+    updateNormalizeGuard();
+    updateTrackSelectionUI();
+    updateAlbumActionButton();
   }
 
   // Nur nach Abschluss eines Jobs neu laden. Kein permanentes Re-Rendering im Idle-Zustand,
@@ -2229,7 +2272,8 @@ async function poll(){
 }
 
 setInterval(poll,2000);
-loadSettings().then(()=>{syncSettingsPageFromMain(); loadDashboard();});
+updateViewportMetrics();
+loadSettings().then(()=>{updateViewportMetrics(); syncSettingsPageFromMain(); loadDashboard();});
 loadStats();
 loadReference();
 loadBrowser();
@@ -2253,7 +2297,7 @@ document.addEventListener('DOMContentLoaded',()=>{
 });
 
 
-/* MusicLab v1.9.11 safe UI helper - never blocks app startup */
+/* MusicLab v1.9.18 safe UI helper - never blocks app startup */
 (function(){
   function safe(fn){
     try{ fn(); }catch(e){ console.warn('MusicLab safe UI helper skipped:', e); }

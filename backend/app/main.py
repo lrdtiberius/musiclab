@@ -42,7 +42,7 @@ LOG_PATH = LOG_DIR / "musiclab.log"
 LOG_MAX_BYTES = int(os.getenv("LOG_MAX_BYTES", str(10 * 1024 * 1024)))
 EXTS = {".mp3", ".m4a", ".aac", ".flac", ".ogg"}
 SCHEMA_VERSION = 24
-APP_VERSION = "1.9.11"
+APP_VERSION = "1.9.18"
 LOG_TZ = os.getenv("TZ") or os.getenv("LOG_TZ") or "Europe/Berlin"
 
 def local_log_time() -> str:
@@ -1443,19 +1443,46 @@ def all_normalize_preview(target_source: str = "settings") -> dict:
 
 
 def normalize_all_worker(backup_mode: Optional[str] = None, target_source: str = "settings"):
+    normalize_all_parallelism_guard = get_normalize_parallelism()
     init_db()
-    pv = all_normalize_preview(target_source)
-    items = [{"artist": p.get("artist"), "album": p.get("album")} for p in pv.get("normalizable", [])]
-    if not items:
-        state.update({"running": False, "mode": "idle", "done": 0, "total": 0, "current": "", "message": "Keine vollständig analysierten Alben zu normalisieren", "errors": 0, "recent_errors": []})
-        add_log("Alles normalisieren: keine vollständig analysierten Alben gefunden", True)
-        return
-    if pv.get("count_blocked"):
-        add_log(f"Alles normalisieren: {pv.get('count_blocked')} Album/Alben übersprungen, weil sie noch nicht vollständig analysiert sind")
-    if pv.get("count_skipped_reference"):
-        add_log(f"Alles normalisieren: {pv.get('count_skipped_reference')} Referenzalbum/Alben übersprungen")
-    settings = settings_for_normalize_source(target_source)
-    normalize_batch_worker(items, backup_mode, settings)
+    try:
+        # v1.9.18: Sofort sichtbarer Status, bevor die große Album-Vorschau gebaut wird.
+        state.update({
+            "running": True,
+            "stop": False,
+            "mode": "batch_normalize_prepare",
+            "done": 0,
+            "total": 0,
+            "current": "Alles-Normalisierung wird vorbereitet",
+            "message": "Alles-Normalisierung wird vorbereitet...",
+            "errors": 0,
+            "recent_errors": [],
+        })
+        add_log(f"Alles-Normalisierung wird vorbereitet · Parallel: {get_normalize_parallelism()}")
+        pv = all_normalize_preview(target_source)
+        items = [{"artist": p.get("artist"), "album": p.get("album")} for p in pv.get("normalizable", [])]
+        if not items:
+            state.update({"running": False, "mode": "idle", "done": 0, "total": 0, "current": "", "message": "Keine vollständig analysierten Alben zu normalisieren", "errors": 0, "recent_errors": []})
+            add_log("Alles normalisieren: keine vollständig analysierten Alben gefunden", True)
+            return
+        if pv.get("count_blocked"):
+            add_log(f"Alles normalisieren: {pv.get('count_blocked')} Album/Alben übersprungen, weil sie noch nicht vollständig analysiert sind")
+        if pv.get("count_skipped_reference"):
+            add_log(f"Alles normalisieren: {pv.get('count_skipped_reference')} Referenzalbum/Alben übersprungen")
+        settings = settings_for_normalize_source(target_source)
+        normalize_batch_worker(items, backup_mode, settings)
+    except Exception as e:
+        state.update({
+            "running": False,
+            "mode": "idle",
+            "done": 0,
+            "total": 0,
+            "current": "",
+            "message": f"Alles-Normalisierung Fehler: {e}",
+            "errors": 1,
+            "recent_errors": [str(e)],
+        })
+        add_log(f"Alles-Normalisierung Fehler: {e}", True)
 
 
 def analyze_batch_worker(items: list):
@@ -1509,7 +1536,24 @@ def analyze_batch_worker(items: list):
         finish_job("Batch-Analyse fertig")
 
 
+def get_normalize_parallelism(default: int = 2) -> int:
+    """Robuster Parallelwert für Normalisierung."""
+    try:
+        settings = get_settings()
+        value = settings.get("parallel_normalize") or settings.get("normalize_parallelism") or settings.get("parallel_analysis") or default
+        n = int(value)
+    except Exception:
+        n = default
+    return max(1, min(8, n))
+
+
+def normalize_parallelism(default: int = 2) -> int:
+    """Kompatibilitätswrapper für ältere Codepfade."""
+    return get_normalize_parallelism(default)
+
+
 def normalize_batch_worker(items: list, backup_mode: Optional[str] = None, settings_override: Optional[dict] = None):
+    normalize_parallelism_value = get_normalize_parallelism()
     init_db()
     settings = dict(settings_override or get_settings())
     if backup_mode is not None:
@@ -2131,9 +2175,23 @@ def normalize_preview_all(target_source: str = "settings"):
 def normalize_all(data: dict = None):
     data = data or {}
     backup = data.get("backup") if isinstance(data, dict) else None
-    target_source = data.get("target_source", "settings") if isinstance(data, dict) else "settings"
-    if not state["running"]:
-        threading.Thread(target=normalize_all_worker, args=(backup, target_source), daemon=True).start()
+    # v1.9.18: „Alles normalisieren“ nutzt bewusst die Einstellungen.
+    # Referenzwerte werden vorher mit „Ziel-LUFS übernehmen“ in die Einstellungen kopiert.
+    target_source = "settings"
+    if state.get("running"):
+        return state
+    state.update({
+        "running": True,
+        "stop": False,
+        "mode": "batch_normalize_prepare",
+        "done": 0,
+        "total": 0,
+        "current": "Alles-Normalisierung wird vorbereitet",
+        "message": "Alles-Normalisierung wird vorbereitet...",
+        "errors": 0,
+        "recent_errors": [],
+    })
+    threading.Thread(target=normalize_all_worker, args=(backup, target_source), daemon=True).start()
     return state
 
 
@@ -2196,7 +2254,7 @@ def api_music_root_check_alias(path: Optional[str] = None):
 @app.get("/api/version")
 def api_version():
     return {
-        "version": APP_VERSION if "APP_VERSION" in globals() else "1.9.11",
+        "version": APP_VERSION if "APP_VERSION" in globals() else "1.9.18",
         "music_root": str(get_music_root()),
         "music_root_check": check_music_root(str(get_music_root())),
         "settings": get_settings(),

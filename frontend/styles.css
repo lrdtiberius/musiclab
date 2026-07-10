@@ -1188,7 +1188,7 @@ body.checkMode #checkView .checkList{min-height:0!important;max-height:none!impo
 .refClearBtn{width:24px;height:24px;border-radius:999px;padding:0;line-height:1;background:var(--danger,#7a2f2f);color:#fff;font-weight:900;box-shadow:none}
 .refClearBtn:hover{filter:brightness(1.1)}
 
-/* v1.9.11 Workbench-Redesign: dunkles Studio-Dashboard, klarere Arbeitsbereiche */
+/* v1.9.18 Workbench-Redesign: dunkles Studio-Dashboard, klarere Arbeitsbereiche */
 body.studioRedesign{
   background:
     radial-gradient(circle at 18% 0%, rgba(88,166,255,.16), transparent 32%),
@@ -1347,7 +1347,7 @@ body.studioRedesign .footerCredit{
 }
 
 
-/* v1.9.11: Credit dauerhaft lesbar + Auswahlumrandung nicht abgeschnitten */
+/* v1.9.18: Credit dauerhaft lesbar + Auswahlumrandung nicht abgeschnitten */
 body.studioRedesign .footerCredit,
 .footerCredit{
   position:fixed!important;
@@ -1406,7 +1406,7 @@ body.studioRedesign .album.ref.sel{
 }
 
 
-/* v1.9.11: Auswahlhinweis links + Status-Badges in der Seitenliste */
+/* v1.9.18: Auswahlhinweis links + Status-Badges in der Seitenliste */
 .selectionHint{
   display:flex!important;
   flex-direction:column;
@@ -1433,7 +1433,7 @@ body.studioRedesign #browserList .row.sel .sideBadge.active{background:#d7efff}
 body.studioRedesign #browserList .row:has(.sideBadge.marked){border-color:rgba(255,202,122,.32)}
 
 
-/* MusicLab v1.9.11 safe selection visibility fix */
+/* MusicLab v1.9.18 safe selection visibility fix */
 .ml-selection-summary{
   border:1px solid rgba(106,183,255,.45);
   background:rgba(106,183,255,.10);
@@ -1493,4 +1493,68 @@ body.studioRedesign #browserList .row:has(.sideBadge.marked){border-color:rgba(2
   font-weight:700!important;
   backdrop-filter:blur(10px)!important;
   pointer-events:none!important;
+}
+
+
+/* v1.9.18: dynamische Skalierung unter Header/Tabs.
+   Die Höhe wird per JS aus der echten Header-Höhe berechnet, statt mit festen 72px. */
+:root{
+  --musiclab-header-h: 76px;
+  --musiclab-vh: 100vh;
+}
+html,body{
+  min-height:100%;
+  overflow:hidden;
+}
+body.studioRedesign .layout,
+body.audioMode .layout,
+.layout{
+  height:calc(var(--musiclab-vh) - var(--musiclab-header-h))!important;
+  max-height:calc(var(--musiclab-vh) - var(--musiclab-header-h))!important;
+  min-height:0!important;
+  overflow:hidden!important;
+  box-sizing:border-box!important;
+}
+body.studioRedesign main,
+body.audioMode main,
+main{
+  min-height:0!important;
+  max-height:100%!important;
+  overflow:hidden!important;
+  box-sizing:border-box!important;
+}
+.appView.active{
+  min-height:0!important;
+  max-height:100%!important;
+  overflow:hidden!important;
+}
+header{
+  box-sizing:border-box!important;
+}
+.viewTabs{
+  min-width:0!important;
+}
+.viewTabs button{
+  white-space:nowrap!important;
+}
+.batchbar select.albumAction,
+.albumAction{
+  min-width:190px;
+}
+#btnAlbumAction:disabled{
+  opacity:.48;
+}
+#btnAlbumAction:not(:disabled){
+  opacity:1;
+  box-shadow:0 0 0 1px rgba(106,169,255,.35),0 8px 20px rgba(106,169,255,.10);
+}
+@media(max-width:900px){
+  body.studioRedesign .layout,
+  body.audioMode .layout,
+  .layout{
+    height:auto!important;
+    max-height:none!important;
+    overflow:auto!important;
+  }
+  html,body{overflow:auto!important}
 }

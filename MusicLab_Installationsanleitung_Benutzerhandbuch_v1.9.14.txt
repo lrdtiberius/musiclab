@@ -1,0 +1,713 @@
+# MusicLab – Installationsanleitung & Benutzerhandbuch
+
+**Version:** v1.9.14  
+**Idee & Umsetzung:** Lrd.Tiberius  
+**Zielsystem:** Synology NAS mit Container Manager / Docker Compose  
+**Beispielpfade:**  
+- Projektordner: `/volume1/docker/musiclab`
+- Musikordner: `/volume1/DS420/Musik`
+- Weboberfläche: `http://<NAS-IP>:8092`
+
+---
+
+## 1. Was ist MusicLab?
+
+MusicLab ist eine lokale Webanwendung zur Verwaltung, Analyse und Lautstärkeanpassung einer Musiksammlung auf einer NAS.
+
+MusicLab kann:
+
+- Musikordner einlesen
+- Alben und Titel analysieren
+- Lautstärke/LUFS-Werte anzeigen
+- einzelne Alben normalisieren
+- die komplette Musiksammlung normalisieren
+- Backups vor Änderungen anlegen
+- Tags anzeigen und bearbeiten
+- Cover und Metadaten prüfen
+- mögliche Duplikate/Wartungsfälle anzeigen
+- ein Live-Protokoll anzeigen
+
+MusicLab läuft lokal im eigenen Netzwerk.
+
+---
+
+## 2. Voraussetzungen
+
+### 2.1 Hardware
+
+Empfohlen:
+
+- Synology NAS mit Container Manager
+- ausreichend freier Speicherplatz
+- Musikbibliothek als Ordner auf der NAS
+- optional SSH-Zugriff für Wartung/Fehlersuche
+
+### 2.2 Software
+
+Auf der Synology NAS erforderlich:
+
+- Container Manager
+- Docker / Docker Compose Unterstützung
+- Netzwerkzugriff auf die NAS
+
+### 2.3 Musikordner
+
+Standardmäßig erwartet diese Version den Musikordner hier:
+
+```
+/volume1/DS420/Musik
+```
+
+Im Container wird dieser Ordner als:
+
+```
+/music
+```
+
+eingebunden.
+
+Falls der eigene Musikordner anders heißt, muss die Datei `docker-compose.yml` angepasst werden.
+
+Beispiel:
+
+```yaml
+- /volume1/DEIN_ORDNER/Musik:/music
+```
+
+---
+
+## 3. Ordnerstruktur
+
+Der MusicLab-Projektordner sollte so aussehen:
+
+```
+/volume1/docker/musiclab
+├── backend/
+├── frontend/
+├── data/
+├── docker-compose.yml
+├── install_musiclab_ssh.sh
+├── README.md
+└── CREDITS.md
+```
+
+Wichtig ist der Ordner:
+
+```
+/volume1/docker/musiclab/data
+```
+
+Darin liegt später die Datenbank:
+
+```
+/volume1/docker/musiclab/data/musiclab.sqlite
+```
+
+Diese Datenbank enthält unter anderem:
+
+- Analysewerte
+- Einstellungen
+- Statusinformationen
+- Referenzalbum
+- Protokoll-/Wartungsdaten
+
+**Den Ordner `data/` bei Updates nicht löschen**, wenn die Analysewerte erhalten bleiben sollen.
+
+---
+
+## 4. Installation über Synology Container Manager
+
+### 4.1 ZIP entpacken
+
+Die MusicLab-ZIP auf der NAS entpacken.
+
+Der Inhalt muss direkt nach:
+
+```
+/volume1/docker/musiclab
+```
+
+kopiert werden.
+
+Richtig:
+
+```
+/volume1/docker/musiclab/docker-compose.yml
+/volume1/docker/musiclab/frontend/
+/volume1/docker/musiclab/backend/
+/volume1/docker/musiclab/data/
+```
+
+Falsch:
+
+```
+/volume1/docker/musiclab/MusicLab_v1.9.14_synology_project_safe_flat/frontend/
+```
+
+Die ZIP ist flach aufgebaut. Es gibt keinen zusätzlichen Oberordner.
+
+---
+
+### 4.2 Projekt erstellen
+
+1. Synology **Container Manager** öffnen
+2. Bereich **Projekt** öffnen
+3. **Erstellen** wählen
+4. Projektname z. B.:
+
+```
+musiclab
+```
+
+5. Projektpfad auswählen:
+
+```
+/volume1/docker/musiclab
+```
+
+6. Die vorhandene `docker-compose.yml` verwenden
+7. Projekt erstellen/starten
+
+---
+
+### 4.3 Weboberfläche öffnen
+
+Im Browser öffnen:
+
+```
+http://<NAS-IP>:8092
+```
+
+Beispiel:
+
+```
+http://192.XXX.XXX.XX:8092
+```
+
+Falls nach einem Update noch eine alte Version angezeigt wird:
+
+```
+http://192.XXX.XXX.XX:8092/?v=1914
+```
+
+oder Browsercache leeren / privaten Tab verwenden.
+
+---
+
+## 5. Installation per SSH
+
+Alternativ kann MusicLab per SSH gestartet werden.
+
+### 5.1 Mit der NAS verbinden
+
+```bash
+ssh BENUTZERNAME@NAS-IP
+```
+
+Beispiel:
+
+```bash
+ssh Benutzer@192.XXX.XXX.XX
+```
+
+Dann in den MusicLab-Ordner wechseln:
+
+```bash
+cd /volume1/docker/musiclab
+```
+
+### 5.2 Installationsskript ausführen
+
+```bash
+chmod +x install_musiclab_ssh.sh
+./install_musiclab_ssh.sh
+```
+
+Das Skript prüft:
+
+- Quellversion
+- Docker Compose Konfiguration
+- Frontend-Version
+- Backend-Version
+- Musikpfad
+- Container-Mounts
+
+---
+
+## 6. Updates installieren
+
+### 6.1 Wichtig: data-Ordner behalten
+
+Bei Updates nicht den kompletten Ordner löschen.
+
+Behalten:
+
+```
+/volume1/docker/musiclab/data
+```
+
+Ersetzen:
+
+```
+frontend/
+backend/
+docker-compose.yml
+install_musiclab_ssh.sh
+README.md
+CREDITS.md
+```
+
+Empfohlener Ablauf:
+
+```bash
+cd /volume1/docker/musiclab
+
+rm -rf frontend backend
+rm -f docker-compose.yml install_musiclab_ssh.sh README.md CREDITS.md
+```
+
+Danach die neue ZIP in `/volume1/docker/musiclab` entpacken.
+
+### 6.2 Datenbank sichern
+
+Vor einem Update empfiehlt sich:
+
+```bash
+cd /volume1/docker/musiclab
+cp data/musiclab.sqlite data/musiclab.sqlite.backup
+```
+
+Falls etwas schiefgeht, kann die Datenbank wiederhergestellt werden.
+
+---
+
+## 7. Docker-Compose-Konfiguration
+
+Die mitgelieferte `docker-compose.yml` nutzt zwei Dienste.
+
+### 7.1 Backend
+
+```yaml
+musiclab-backend:
+  build: ./backend
+  container_name: musiclab-backend
+  ports:
+    - "8091:8091"
+  volumes:
+    - /volume1/DS420/Musik:/music
+    - /volume1/docker/musiclab/data:/data
+    - /volume1/docker/musiclab/backend/app:/app/app:ro
+```
+
+Das Backend verarbeitet:
+
+- Analyse
+- Normalisierung
+- Datenbankzugriff
+- Musikpfadprüfung
+- Tag-/Cover-Funktionen
+
+### 7.2 Frontend
+
+```yaml
+musiclab-frontend:
+  image: nginx:alpine
+  container_name: musiclab-frontend
+  ports:
+    - "8092:80"
+  volumes:
+    - /volume1/docker/musiclab/frontend:/usr/share/nginx/html:ro
+    - /volume1/docker/musiclab/frontend/nginx.conf:/etc/nginx/conf.d/default.conf:ro
+```
+
+Das Frontend wird direkt aus dem NAS-Ordner geladen. Dadurch funktioniert der Synology-Ablauf:
+
+```
+Projekt stoppen → bereinigen → neu erstellen
+```
+
+zuverlässiger als mit fest eingebauten Frontend-Dateien im Docker-Image.
+
+---
+
+## 8. Erste Einrichtung
+
+Nach dem ersten Start:
+
+1. Weboberfläche öffnen
+2. In **Einstellungen** gehen
+3. Musikpfad prüfen
+
+Der interne Musikpfad lautet normalerweise:
+
+```
+/music
+```
+
+Nicht den NAS-Pfad eintragen.
+
+Richtig:
+
+```
+/music
+```
+
+Falsch:
+
+```
+/volume1/DS420/Musik
+```
+
+Der NAS-Pfad wird bereits in Docker Compose auf `/music` gemountet.
+
+---
+
+## 9. Musikbibliothek einlesen und analysieren
+
+### 9.1 Analyse starten
+
+Auf der Audio-Seite:
+
+1. Musikbibliothek laden
+2. Album oder Sammlung auswählen
+3. Analyse starten
+
+Für die komplette Bibliothek:
+
+```
+Alles analysieren
+```
+
+Die Analyse kann je nach Größe der Bibliothek lange dauern.
+
+Empfehlung:
+
+```
+Parallel-Analyse: 2–4
+```
+
+---
+
+## 10. Lautstärke normalisieren
+
+MusicLab kann Titel/Alben auf Zielwerte normalisieren.
+
+Typische Zielwerte:
+
+```
+Ziel-LUFS: -10.05
+True Peak: -1.5
+LRA: 11
+Backup: an
+```
+
+Diese Werte sind Geschmackssache. Lautere Werte klingen kräftiger, können aber stärker eingreifen.
+
+---
+
+### 10.1 Einzelnes Album normalisieren
+
+1. Album auswählen
+2. Analysewerte prüfen
+3. Normalisierungsvorschau ansehen
+4. Normalisierung starten
+
+---
+
+### 10.2 Alles normalisieren
+
+Vorher prüfen:
+
+- Musikpfad OK
+- Analyse vollständig
+- Ziel-LUFS korrekt
+- Backup eingeschaltet
+- genug Speicherplatz vorhanden
+
+Dann:
+
+```
+Alles normalisieren
+```
+
+Seit v1.9.12/v1.9.14 verwendet **Alles normalisieren** immer die Werte aus den Einstellungen.
+
+Es gibt keinen Browser-Prompt mehr mit:
+
+```
+1 oder 2 eingeben
+```
+
+Wenn ein Referenzalbum als Ziel dienen soll, muss vorher bewusst:
+
+```
+Ziel-LUFS übernehmen
+```
+
+geklickt werden.
+
+---
+
+## 11. Backups
+
+Backups sind wichtig, weil Normalisierung Dateien verändert.
+
+Je nach Einstellung kann MusicLab:
+
+- keine Backups erstellen
+- Sidecar-Backups neben Dateien erstellen
+- Backups unter `/data/backups` speichern
+
+Empfehlung:
+
+```
+Backup: an
+```
+
+Vor einer großen Normalisierung sollte außerdem ein separates NAS-Backup vorhanden sein.
+
+---
+
+## 12. Referenzalbum
+
+Ein Referenzalbum kann genutzt werden, um sich an einem subjektiv gut klingenden Album zu orientieren.
+
+Ablauf:
+
+1. Album analysieren
+2. Als Referenzalbum setzen
+3. Werte prüfen
+4. Falls gewünscht: Ziel-LUFS übernehmen
+
+Ein sehr lautes Referenzalbum kann zu aggressiver Normalisierung führen. Deshalb vor dem Übernehmen immer prüfen, ob die Werte sinnvoll sind.
+
+---
+
+## 13. Tags und Cover
+
+Im Bereich **Tags** können Metadaten geprüft und bearbeitet werden.
+
+Mögliche Aufgaben:
+
+- fehlende Tags finden
+- fehlerhafte Tags finden
+- Cover prüfen
+- MusicBrainz-Daten suchen
+- Jahr übernehmen
+- Cover übernehmen
+- Titel übernehmen
+
+Beim Übernehmen von Titeln sollte geprüft werden, ob die Reihenfolge der gefundenen Tracks zur eigenen Datei-Reihenfolge passt.
+
+---
+
+## 14. Wartung / Duplikate
+
+Im Bereich **Wartung** können mögliche Duplikate angezeigt werden.
+
+Duplikate werden nur als kritisch betrachtet, wenn sie wahrscheinlich wirklich gleich sind, zum Beispiel:
+
+- gleicher Interpret
+- gleiches Album
+- sehr ähnlicher Titel
+
+Gleiche Titel auf unterschiedlichen Alben sind normalerweise keine Duplikate.
+
+---
+
+## 15. Live-Protokoll
+
+Das Live-Protokoll zeigt:
+
+- aktuelle Analyse
+- Normalisierungsstatus
+- Fehler
+- übersprungene Dateien
+- Fortschritt
+
+Wenn etwas nicht funktioniert, zuerst ins Protokoll schauen.
+
+---
+
+## 16. Häufige Probleme und Lösungen
+
+### 16.1 Weboberfläche zeigt alte Version
+
+Prüfen:
+
+```bash
+cd /volume1/docker/musiclab
+grep -R "MusicLab v" -n frontend/index.html
+sudo docker exec musiclab-frontend grep -R "MusicLab v" -n /usr/share/nginx/html/index.html
+curl -s http://localhost:8092 | grep -i "MusicLab v"
+```
+
+Wenn NAS-Datei neu ist, Container aber alt:
+
+```bash
+cd /volume1/docker/musiclab
+sudo docker compose down --remove-orphans
+sudo docker compose up -d --build --force-recreate
+```
+
+Wenn Container und `curl` neu sind, Browser aber alt:
+
+- privaten Tab öffnen
+- Browsercache leeren
+- URL mit Cache-Buster öffnen:
+
+```
+http://NAS-IP:8092/?v=1914
+```
+
+---
+
+### 16.2 Musikpfad fehlgeschlagen
+
+Prüfen:
+
+```bash
+sudo docker exec musiclab-backend ls -lah /music | head
+sudo docker inspect musiclab-backend --format '{{range .Mounts}}{{println .Source "->" .Destination}}{{end}}'
+```
+
+Erwartet:
+
+```
+/volume1/DS420/Musik -> /music
+```
+
+Falls der echte Musikordner anders liegt, `docker-compose.yml` anpassen.
+
+---
+
+### 16.3 Analyse ist nach Update weg
+
+Wahrscheinlich wurde gelöscht:
+
+```
+/volume1/docker/musiclab/data/musiclab.sqlite
+```
+
+Abhilfe:
+
+- `data/` bei Updates behalten
+- vorher Datenbank sichern:
+
+```bash
+cp data/musiclab.sqlite data/musiclab.sqlite.backup
+```
+
+---
+
+### 16.4 Alles normalisieren startet nicht
+
+Prüfen:
+
+1. Sind Alben vollständig analysiert?
+2. Ist Musikpfad `/music` erreichbar?
+3. Ist Backup-Pfad beschreibbar?
+4. Gibt es Fehler im Live-Protokoll?
+5. Läuft das Backend?
+
+Prüfbefehle:
+
+```bash
+curl -s http://localhost:8091/api/version
+curl -s "http://localhost:8091/api/settings/check_music_root?path=/music"
+```
+
+---
+
+## 17. Empfohlene Wartungsbefehle
+
+### Version prüfen
+
+```bash
+curl -s http://localhost:8092 | grep -i "MusicLab v"
+curl -s http://localhost:8091/api/version
+```
+
+### Container anzeigen
+
+```bash
+sudo docker ps --format "table {{.Names}}	{{.Image}}	{{.Ports}}"
+```
+
+### Mounts prüfen
+
+```bash
+sudo docker inspect musiclab-backend --format '{{range .Mounts}}{{println .Source "->" .Destination}}{{end}}'
+sudo docker inspect musiclab-frontend --format '{{range .Mounts}}{{println .Source "->" .Destination}}{{end}}'
+```
+
+### Projekt neu starten
+
+```bash
+cd /volume1/docker/musiclab
+sudo docker compose down --remove-orphans
+sudo docker compose up -d --build --force-recreate
+```
+
+---
+
+## 18. Sicherheitshinweise
+
+MusicLab verändert Musikdateien, wenn Normalisierung oder Tag-Bearbeitung ausgeführt wird.
+
+Vor großen Aktionen empfohlen:
+
+- Backup aktivieren
+- Datenbank sichern
+- NAS-Backup prüfen
+- erst mit wenigen Alben testen
+- danach komplette Sammlung bearbeiten
+
+---
+
+## 19. Empfohlener Arbeitsablauf
+
+Für neue Nutzer:
+
+1. MusicLab installieren
+2. Musikpfad prüfen
+3. ein einzelnes Album analysieren
+4. Werte kontrollieren
+5. ein einzelnes Album testweise normalisieren
+6. Ergebnis anhören
+7. komplette Sammlung analysieren
+8. Zielwerte einstellen
+9. Backup aktivieren
+10. komplette Sammlung normalisieren
+
+---
+
+## 20. Support-Informationen sammeln
+
+Bei Problemen diese Informationen bereitstellen:
+
+```bash
+cd /volume1/docker/musiclab
+
+grep -R "MusicLab v" -n frontend/index.html
+grep -R "APP_VERSION" -n frontend/app.js | head
+grep -R "APP_VERSION" -n backend/app/main.py | head
+
+sudo docker ps --format "table {{.Names}}	{{.Image}}	{{.Ports}}"
+
+curl -s http://localhost:8092 | grep -i "MusicLab v"
+curl -s http://localhost:8091/api/version
+
+sudo docker inspect musiclab-backend --format '{{range .Mounts}}{{println .Source "->" .Destination}}{{end}}'
+sudo docker inspect musiclab-frontend --format '{{range .Mounts}}{{println .Source "->" .Destination}}{{end}}'
+```
+
+Diese Ausgabe zeigt fast immer, ob das Problem an falschem Pfad, altem Container, Browsercache, fehlender Datenbank, falscher Compose-Datei oder fehlendem Mount liegt.
+
+---
+
+## 21. Credits
+
+```
+Idea & Umsetzung by Lrd.Tiberius
+```
