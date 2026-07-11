@@ -1,6 +1,7 @@
 from __future__ import annotations
 import json
 import mutagen
+from mutagen.mp3 import MP3
 from io import BytesIO
 import io
 import os
@@ -51,9 +52,39 @@ except Exception:
     Image = None
 
 SCHEMA_VERSION = 24
-APP_VERSION = "1.9.35"
+APP_VERSION = "1.9.36"
 
-# v1.9.35: robuster Fallback für Cover-Job.
+# v1.9.36: robuste Mutagen-Fallbacks für Apple-Cover-Job
+try:
+    MP3
+except NameError:
+    from mutagen.mp3 import MP3
+try:
+    ID3
+except NameError:
+    from mutagen.id3 import ID3
+try:
+    APIC
+except NameError:
+    from mutagen.id3 import APIC
+try:
+    MP4
+except NameError:
+    from mutagen.mp4 import MP4
+try:
+    MP4Cover
+except NameError:
+    from mutagen.mp4 import MP4Cover
+try:
+    FLAC
+except NameError:
+    from mutagen.flac import FLAC
+try:
+    Picture
+except NameError:
+    from mutagen.flac import Picture
+
+# v1.9.36: robuster Fallback für Cover-Job.
 # Einige ältere MusicLab-Stände nutzen andere Namen für die Audio-Endungen.
 try:
     AUDIO_EXTS
@@ -1468,7 +1499,7 @@ def normalize_all_worker(backup_mode: Optional[str] = None, target_source: str =
     normalize_all_parallelism_guard = get_normalize_parallelism()
     init_db()
     try:
-        # v1.9.35: Sofort sichtbarer Status, bevor die große Album-Vorschau gebaut wird.
+        # v1.9.36: Sofort sichtbarer Status, bevor die große Album-Vorschau gebaut wird.
         state.update({
             "running": True,
             "stop": False,
@@ -2197,7 +2228,7 @@ def normalize_preview_all(target_source: str = "settings"):
 def normalize_all(data: dict = None):
     data = data or {}
     backup = data.get("backup") if isinstance(data, dict) else None
-    # v1.9.35: „Alles normalisieren“ nutzt bewusst die Einstellungen.
+    # v1.9.36: „Alles normalisieren“ nutzt bewusst die Einstellungen.
     # Referenzwerte werden vorher mit „Ziel-LUFS übernehmen“ in die Einstellungen kopiert.
     target_source = "settings"
     if state.get("running"):
@@ -2572,7 +2603,7 @@ def api_cover_missing_report():
 @app.get("/api/version")
 def api_version():
     return {
-        "version": APP_VERSION if "APP_VERSION" in globals() else "1.9.35",
+        "version": APP_VERSION if "APP_VERSION" in globals() else "1.9.36",
         "music_root": str(get_music_root()),
         "music_root_check": check_music_root(str(get_music_root())),
         "settings": get_settings(),
@@ -4098,18 +4129,27 @@ def write_apple_cover_to_file(file_path, jpg_data):
     suffix = file_path.suffix.lower()
     try:
         if suffix == ".mp3":
-            audio = MP3(file_path, ID3=ID3)
-            if audio.tags is None:
-                audio.add_tags()
-            audio.tags.delall("APIC")
-            audio.tags.add(APIC(encoding=3, mime="image/jpeg", type=3, desc="Cover", data=jpg_data))
-            audio.save(v2_version=3)
-            return True
+            try:
+                audio = MP3(file_path, ID3=ID3)
+                if audio.tags is None:
+                    audio.add_tags()
+                audio.tags.delall("APIC")
+                audio.tags.add(APIC(encoding=3, mime="image/jpeg", type=3, desc="Cover", data=jpg_data))
+                audio.save(v2_version=3)
+                return True
+            except Exception:
+                tags = ID3(file_path)
+                tags.delall("APIC")
+                tags.add(APIC(encoding=3, mime="image/jpeg", type=3, desc="Cover", data=jpg_data))
+                tags.save(file_path, v2_version=3)
+                return True
+
         if suffix in (".m4a", ".mp4", ".aac", ".alac"):
             audio = MP4(file_path)
             audio["covr"] = [MP4Cover(jpg_data, imageformat=MP4Cover.FORMAT_JPEG)]
             audio.save()
             return True
+
         if suffix == ".flac":
             audio = FLAC(file_path)
             audio.clear_pictures()
@@ -4121,10 +4161,10 @@ def write_apple_cover_to_file(file_path, jpg_data):
             audio.add_picture(pic)
             audio.save()
             return True
+
         return False
     except Exception as e:
         raise RuntimeError("%s: %s" % (file_path.name, e))
-
 
 def has_embedded_cover(file_path):
     suffix = file_path.suffix.lower()
@@ -4314,7 +4354,7 @@ def group_audio_files_by_album_dir():
 async def api_tags_cover(request: Request):
     """Cover Apple-kompatibel speichern.
 
-    v1.9.35:
+    v1.9.36:
     - Eingehende JPG/PNG/WebP/etc. werden nach JPEG/RGB konvertiert.
     - Maximale Größe: ca. 1200×1200 px.
     - MP3: APIC image/jpeg, ID3v2.3.

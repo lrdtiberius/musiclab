@@ -2,7 +2,7 @@
 set -e
 cd "$(dirname "$0")"
 
-echo "== MusicLab v1.9.35 Synology-Projektmodus =="
+echo "== MusicLab v1.9.36 Synology-Projektmodus =="
 echo "Quelle: $(pwd)"
 grep -R "MusicLab v" -n frontend/index.html || true
 grep -R "APP_VERSION" -n frontend/app.js | head || true
@@ -36,4 +36,4 @@ sudo docker inspect musiclab-frontend --format '{{range .Mounts}}{{println .Sour
 sudo docker inspect musiclab-backend --format '{{range .Mounts}}{{println .Source "->" .Destination}}{{end}}' || true
 echo
 
-echo "Fertig. Öffnen: http://192.168.188.34:8092/?v=1935"
+echo "Fertig. Öffnen: http://192.168.188.34:8092/?v=1936"

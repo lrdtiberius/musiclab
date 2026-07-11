@@ -1,8 +1,8 @@
 const API='http://'+location.hostname+':8091/api';
-const APP_VERSION='1.9.35';
+const APP_VERSION='1.9.36';
 let coverCacheBust=Date.now();
 let selectedArtist=null, selectedAlbum=null, selectedTagFolder=null;
-let selectedUiKey=null; // v1.9.35: eindeutige visuelle Einzelauswahl für Listen und Album-Kacheln
+let selectedUiKey=null; // v1.9.36: eindeutige visuelle Einzelauswahl für Listen und Album-Kacheln
 let selectedTagGenre=null, selectedTagYear=null;
 let browserMode='artist';
 let lastRunning=false;
@@ -18,7 +18,7 @@ let tagDiscTotals={};
 let tagsDirty=false;
 let selectionSerial=0;
 
-/* v1.9.35 Tag-Performance */
+/* v1.9.36 Tag-Performance */
 let tagRefreshTimer=null;
 let lightRefreshTimer=null;
 function scheduleLightRefresh(delay=700){
@@ -60,7 +60,7 @@ function coverBox(src, large=false, opts={}){
   const extra=opts.extraClass ? ' '+opts.extraClass : '';
   const cls=(large?'mediaCoverBox large':'mediaCoverBox')+extra;
   const loading=opts.eager ? 'eager' : 'lazy';
-  // v1.9.35: Cover-Boxen müssen beim Albumwechsel immer eine neue, eindeutige
+  // v1.9.36: Cover-Boxen müssen beim Albumwechsel immer eine neue, eindeutige
   // DOM-Box bekommen. Besonders wichtig bei #tagCoverPreview: Wenn die ID beim
   // ersten Cover verloren geht, kann die Vorschau bei Albumwechseln nicht mehr
   // ersetzt werden und Safari zeigt das zuletzt sichtbare Cover weiter an.
@@ -142,7 +142,7 @@ function rowAlbumMatches(el, album, artist){
   return true;
 }
 function syncSingleSelectionUI(){
-  // v1.9.35: Die UI-Markierung ist an einen eindeutigen Schlüssel gebunden.
+  // v1.9.36: Die UI-Markierung ist an einen eindeutigen Schlüssel gebunden.
   // Dadurch können beim Wechsel nicht mehr mehrere Interpreten/Alben markiert bleiben,
   // auch wenn Albumtitel mehrfach vorkommen oder alte async-Ladevorgänge zurückkommen.
   document.querySelectorAll('#browserList .row.sel').forEach(el=>el.classList.remove('sel'));
@@ -953,7 +953,7 @@ async function analyzeAll(){
 }
 
 async function chooseNormalizeTargetSource(){
-  // v1.9.35: Kein Browser-Prompt mehr.
+  // v1.9.36: Kein Browser-Prompt mehr.
   // „Alles normalisieren“ verwendet immer die Werte aus den Einstellungen.
   // Soll ein Referenzalbum als Ziel dienen, vorher bewusst „Ziel-LUFS übernehmen“ klicken.
   return 'settings';
@@ -1123,7 +1123,7 @@ function jsArg(v){return JSON.stringify(String(v??''));}
 function renderPathRow(x){
   const path=String(x?.path||'');
   if(!path) return '';
-  // v1.9.35: Auf der Duplikatseite keine Pfad-Buttons mehr.
+  // v1.9.36: Auf der Duplikatseite keine Pfad-Buttons mehr.
   // Direktes Öffnen/Kopieren war im Browser/NAS-Setup nicht zuverlässig genug
   // und hat die Seite unnötig überladen. Der Pfad bleibt nur als Hinweis sichtbar.
   return `<div class="checkPathRow"><div class="checkPath">${escHtml(path)}</div></div>`;
@@ -1624,7 +1624,7 @@ function clearTagForm(){
 async function loadTagsPage(){
   const body=document.getElementById('tagTracks'); const hint=document.getElementById('tagHint');
   if(!body||!hint)return;
-  // v1.9.35: Beim Albumwechsel sofort die alte Vorschau entfernen.
+  // v1.9.36: Beim Albumwechsel sofort die alte Vorschau entfernen.
   // Sonst bleibt bei langsamer/fehlender Cover-Antwort das zuletzt gesehene Cover stehen.
   tagCoverPlaceholder('Cover wird geladen…');
   if(!selectedAlbum && selectedTagFolder===null){
@@ -2028,7 +2028,7 @@ async function saveTagUpdates(updates, okMsg, opts={}){
     if(opts.album) selectedAlbum=opts.album;
     setTagsDirty(false);
 
-    // v1.9.35: Statistik/Genres werden verzögert aktualisiert, nicht blockierend.
+    // v1.9.36: Statistik/Genres werden verzögert aktualisiert, nicht blockierend.
     scheduleLightRefresh(900);
 
     if(sortFiles){
@@ -2325,7 +2325,7 @@ document.addEventListener('DOMContentLoaded',()=>{
 });
 
 
-/* MusicLab v1.9.35 safe UI helper - never blocks app startup */
+/* MusicLab v1.9.36 safe UI helper - never blocks app startup */
 (function(){
   function safe(fn){
     try{ fn(); }catch(e){ console.warn('MusicLab safe UI helper skipped:', e); }
