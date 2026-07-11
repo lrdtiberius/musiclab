@@ -1,4 +1,7 @@
+from __future__ import annotations
 import json
+import mutagen
+from io import BytesIO
 import io
 import os
 import re
@@ -16,7 +19,7 @@ import threading
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
-from typing import Optional, Tuple
+from typing import Optional, Tuple, List, Dict, Any
 from datetime import datetime
 try:
     from zoneinfo import ZoneInfo
@@ -30,7 +33,7 @@ from mutagen import File as MutagenFile
 from mutagen.id3 import ID3, APIC, ID3NoHeaderError
 from mutagen.mp4 import MP4, MP4Cover
 from mutagen.flac import FLAC, Picture
-from PIL import Image
+
 try:
     from mutagen.oggvorbis import OggVorbis
 except Exception:
@@ -42,8 +45,20 @@ LOG_DIR = Path(os.getenv("LOG_DIR", str(DB_PATH.parent / "logs")))
 LOG_PATH = LOG_DIR / "musiclab.log"
 LOG_MAX_BYTES = int(os.getenv("LOG_MAX_BYTES", str(10 * 1024 * 1024)))
 EXTS = {".mp3", ".m4a", ".aac", ".flac", ".ogg"}
+try:
+    Image = __import__("PIL.Image", fromlist=["Image"])
+except Exception:
+    Image = None
+
 SCHEMA_VERSION = 24
-APP_VERSION = "1.9.21"
+APP_VERSION = "1.9.35"
+
+# v1.9.35: robuster Fallback für Cover-Job.
+# Einige ältere MusicLab-Stände nutzen andere Namen für die Audio-Endungen.
+try:
+    AUDIO_EXTS
+except NameError:
+    AUDIO_EXTS = {".mp3", ".flac", ".m4a", ".mp4", ".aac", ".alac", ".ogg", ".oga", ".opus", ".wav", ".aiff", ".aif"}
 LOG_TZ = os.getenv("TZ") or os.getenv("LOG_TZ") or "Europe/Berlin"
 
 def local_log_time() -> str:
@@ -1453,7 +1468,7 @@ def normalize_all_worker(backup_mode: Optional[str] = None, target_source: str =
     normalize_all_parallelism_guard = get_normalize_parallelism()
     init_db()
     try:
-        # v1.9.21: Sofort sichtbarer Status, bevor die große Album-Vorschau gebaut wird.
+        # v1.9.35: Sofort sichtbarer Status, bevor die große Album-Vorschau gebaut wird.
         state.update({
             "running": True,
             "stop": False,
@@ -2182,7 +2197,7 @@ def normalize_preview_all(target_source: str = "settings"):
 def normalize_all(data: dict = None):
     data = data or {}
     backup = data.get("backup") if isinstance(data, dict) else None
-    # v1.9.21: „Alles normalisieren“ nutzt bewusst die Einstellungen.
+    # v1.9.35: „Alles normalisieren“ nutzt bewusst die Einstellungen.
     # Referenzwerte werden vorher mit „Ziel-LUFS übernehmen“ in die Einstellungen kopiert.
     target_source = "settings"
     if state.get("running"):
@@ -2258,10 +2273,306 @@ def api_music_root_check_alias(path: Optional[str] = None):
     return check_music_root(path)
 
 
+
+
+def reembed_all_covers_worker():
+    init_db()
+    state.update({
+        "running": True,
+        "stop": False,
+        "mode": "cover_reembed_all",
+        "done": 0,
+        "total": 0,
+        "current": "",
+        "message": "Apple-Cover-Neueinbettung wird vorbereitet...",
+        "errors": 0,
+        "recent_errors": [],
+    })
+    add_log("Apple-Cover-Neueinbettung gestartet")
+    try:
+        groups = group_audio_files_by_musiclab_album()
+        album_items = sorted(groups.items(), key=lambda kv: kv[0].lower())
+        state["total"] = len(album_items)
+
+        albums_with_cover = 0
+        albums_without_cover = 0
+        files_updated = 0
+        files_verified = 0
+        unsupported = 0
+        errors = []
+
+        for idx, item in enumerate(album_items, start=1):
+            rel_dir, files = item
+            if state.get("stop"):
+                add_log("Apple-Cover-Neueinbettung gestoppt")
+                break
+
+            state.update({
+                "done": idx - 1,
+                "current": rel_dir,
+                "message": "Apple-Cover werden neu eingebettet: %s/%s · %s" % (idx, len(album_items), rel_dir),
+            })
+
+            raw = find_album_cover_source(files)
+            if not raw:
+                albums_without_cover += 1
+                add_log("Cover übersprungen: kein Cover gefunden · " + rel_dir)
+                continue
+
+            albums_with_cover += 1
+            jpg = normalize_cover_for_apple(raw, 1200)
+
+            album_dir = files[0].parent
+            try:
+                (album_dir / "cover.jpg").write_bytes(jpg)
+                (album_dir / "folder.jpg").write_bytes(jpg)
+            except Exception as e:
+                errors.append("%s: Ordnercover Fehler: %s" % (rel_dir, e))
+
+            local_updated = 0
+            local_verified = 0
+            local_unsupported = 0
+
+            for fp in files:
+                try:
+                    ok = write_apple_cover_to_file(fp, jpg)
+                    if ok:
+                        local_updated += 1
+                    else:
+                        local_unsupported += 1
+                except Exception as e:
+                    msg = "%s/%s: %s" % (rel_dir, fp.name, e)
+                    errors.append(msg)
+                    add_log("Cover-Fehler: " + msg, True)
+
+            for fp in files:
+                if has_embedded_cover(fp):
+                    local_verified += 1
+
+            files_updated += local_updated
+            files_verified += local_verified
+            unsupported += local_unsupported
+
+            add_log("Cover Apple-kompatibel neu eingebettet: %s · eingebettet %s/%s · geprüft %s/%s" % (
+                rel_dir, local_updated, len(files), local_verified, len(files)
+            ))
+
+            state.update({
+                "done": idx,
+                "errors": len(errors),
+                "recent_errors": errors[-8:],
+            })
+
+        state.update({
+            "running": False,
+            "mode": "idle",
+            "done": len(album_items),
+            "total": len(album_items),
+            "current": "",
+            "message": "Apple-Cover-Neueinbettung fertig: %s Alben mit Cover, %s ohne Cover, Dateien geprüft %s" % (
+                albums_with_cover, albums_without_cover, files_verified
+            ),
+            "errors": len(errors),
+            "recent_errors": errors[-8:],
+        })
+        add_log("Apple-Cover-Neueinbettung fertig: Alben mit Cover %s, ohne Cover %s, Dateien eingebettet %s, geprüft %s, nicht unterstützt %s, Fehler %s" % (
+            albums_with_cover, albums_without_cover, files_updated, files_verified, unsupported, len(errors)
+        ), bool(errors))
+    except Exception as e:
+        state.update({
+            "running": False,
+            "mode": "idle",
+            "current": "",
+            "message": "Apple-Cover-Neueinbettung Fehler: %s" % e,
+            "errors": 1,
+            "recent_errors": [str(e)],
+        })
+        add_log("Apple-Cover-Neueinbettung Fehler: %s" % e, True)
+
+
+@app.post("/api/covers/reembed_all")
+def api_reembed_all_covers():
+    if state.get("running"):
+        return state
+    threading.Thread(target=reembed_all_covers_worker, daemon=True).start()
+    return {"ok": True, "started": True, "state": state}
+
+
+
+@app.get("/api/covers/detection_stats")
+def api_cover_detection_stats(limit: int = 50):
+    groups = group_audio_files_by_musiclab_album()
+    checked = 0
+    with_embedded = 0
+    with_folder = 0
+    examples_embedded = []
+    examples_folder = []
+    examples_missing = []
+
+    for rel, files in sorted(groups.items(), key=lambda kv: kv[0].lower()):
+        folder_cover = find_folder_cover_file(files[0].parent) if files else None
+        embedded = False
+        for fp in files:
+            if extract_existing_cover_bytes(fp):
+                embedded = True
+                break
+
+        checked += 1
+        if folder_cover:
+            with_folder += 1
+            if len(examples_folder) < 10:
+                examples_folder.append({"album": rel, "file": folder_cover.name, "tracks": len(files)})
+        if embedded:
+            with_embedded += 1
+            if len(examples_embedded) < 10:
+                examples_embedded.append({"album": rel, "tracks": len(files)})
+        if not folder_cover and not embedded and len(examples_missing) < 10:
+            examples_missing.append({"album": rel, "tracks": len(files)})
+
+        if limit and checked >= limit:
+            break
+
+    return {
+        "ok": True,
+        "checked_albums": checked,
+        "with_folder_cover": with_folder,
+        "with_embedded_cover": with_embedded,
+        "examples_folder": examples_folder,
+        "examples_embedded": examples_embedded,
+        "examples_missing": examples_missing,
+    }
+
+
+
+def group_audio_files_by_musiclab_album():
+    """Gruppiert für den Cover-Job wie MusicLabs Albumansicht/Medienlogik:
+    primär nach Albumname, nicht nach Interpret+Album.
+    Dadurch werden Sampler wie Bravo Hits/Future Trance nicht pro Track-Künstler
+    als einzelne angeblich coverlose Alben gezählt.
+    """
+    root = get_music_root()
+    groups = {}
+
+    try:
+        con = db()
+        rows = [dict(r) for r in con.execute("SELECT * FROM tracks").fetchall()]
+        con.close()
+
+        for d in rows:
+            rel = d.get("path") or d.get("relpath") or d.get("file") or d.get("filepath")
+            if not rel:
+                continue
+            fp = root / rel
+            if not fp.exists() or not fp.is_file() or not is_musiclab_audio_file(fp):
+                continue
+
+            album = (d.get("album") or d.get("album_title") or "").strip()
+            if not album:
+                # Unknown albums bleiben absichtlich nach Ordner getrennt, sonst würde alles Unbekannte zusammenfallen.
+                album = "Unbekanntes Album"
+                key = "__unknown__:" + str(fp.parent.relative_to(root))
+                display = "%s — %s" % ((d.get("artist") or fp.parent.parent.name or "Unbekannter Interpret"), album)
+            else:
+                key = album.lower()
+                display = album
+
+            g = groups.setdefault(key, {"display": display, "files": []})
+            g["files"].append(fp)
+
+        if groups:
+            out = {}
+            for key, g in groups.items():
+                files = sorted(g["files"])
+                artists = set()
+                try:
+                    for fp in files:
+                        # Aus DB-Zeilen wäre schöner, aber Anzeige reicht als Albumname.
+                        pass
+                except Exception:
+                    pass
+                out[g["display"]] = files
+            return out
+    except Exception as e:
+        try:
+            add_log("Cover-Gruppierung: DB-Fallback auf Ordner wegen %s" % e, True)
+        except Exception:
+            pass
+
+    return group_audio_files_by_album_dir()
+
+def get_cover_missing_report(limit=2000):
+    groups = group_audio_files_by_musiclab_album()
+    with_cover = 0
+    without_cover = 0
+    tracks = 0
+    examples = []
+    missing = []
+
+    for rel, files in sorted(groups.items(), key=lambda kv: kv[0].lower()):
+        tracks += len(files)
+        raw = find_album_cover_source(files)
+        item = {"album": rel, "tracks": len(files)}
+        if raw:
+            with_cover += 1
+            if len(examples) < 10:
+                examples.append(item)
+        else:
+            without_cover += 1
+            if len(missing) < limit:
+                # Zeige zusätzlich einen Beispielpfad, damit Fehlzählungen erkennbar sind.
+                sample = ""
+                try:
+                    sample = str(files[0].relative_to(get_music_root())) if files else ""
+                except Exception:
+                    sample = str(files[0]) if files else ""
+                item["sample"] = sample
+                missing.append(item)
+
+    return {
+        "ok": True,
+        "albums": len(groups),
+        "tracks": tracks,
+        "with_cover": with_cover,
+        "without_cover": without_cover,
+        "examples": examples,
+        "without_examples": missing[:10],
+        "missing": missing,
+    }
+
+@app.get("/api/covers/reembed_preview")
+def api_reembed_all_covers_preview():
+    try:
+        report = get_cover_missing_report(limit=2000)
+        # Dialog soll nicht riesig werden, komplette Liste gibt es im Export-Endpunkt.
+        report["missing_count"] = len(report.get("missing", []))
+        report["missing"] = []
+        return report
+    except Exception as e:
+        add_log("Apple-Cover Vorschau Fehler: %s" % e, True)
+        return {
+            "ok": False,
+            "error": str(e),
+            "albums": 0,
+            "tracks": 0,
+            "with_cover": 0,
+            "without_cover": 0,
+            "examples": [],
+            "without_examples": [],
+            "missing_count": 0,
+        }
+
+
+@app.get("/api/covers/missing_report")
+def api_cover_missing_report():
+    try:
+        return get_cover_missing_report(limit=5000)
+    except Exception as e:
+        return {"ok": False, "error": str(e), "missing": []}
+
 @app.get("/api/version")
 def api_version():
     return {
-        "version": APP_VERSION if "APP_VERSION" in globals() else "1.9.21",
+        "version": APP_VERSION if "APP_VERSION" in globals() else "1.9.35",
         "music_root": str(get_music_root()),
         "music_root_check": check_music_root(str(get_music_root())),
         "settings": get_settings(),
@@ -3528,11 +3839,482 @@ def _has_embedded_cover_bool(p: Path) -> bool:
     except Exception:
         return False
 
+
+def normalize_cover_for_apple(raw: bytes, max_size: int = 1200) -> bytes:
+    """Konvertiert Cover Apple-kompatibel nach JPEG/sRGB und begrenzt die Größe."""
+    try:
+        img = Image.open(BytesIO(raw))
+        img.load()
+        if img.mode not in ("RGB", "L"):
+            bg = Image.new("RGB", img.size, (255, 255, 255))
+            if img.mode in ("RGBA", "LA"):
+                alpha = img.getchannel("A")
+                bg.paste(img.convert("RGB"), mask=alpha)
+            else:
+                bg.paste(img.convert("RGB"))
+            img = bg
+        else:
+            img = img.convert("RGB")
+        if max(img.size) > max_size:
+            img.thumbnail((max_size, max_size), Image.LANCZOS)
+        out = BytesIO()
+        img.save(out, format="JPEG", quality=92, optimize=True, progressive=False)
+        return out.getvalue()
+    except Exception:
+        return raw
+
+
+def normalize_cover_for_apple(raw: bytes, max_size: int = 1200) -> bytes:
+    """Konvertiert Cover Apple-kompatibel nach JPEG/sRGB.
+    Funktioniert auch ohne installiertes Pillow: Pillow -> ffmpeg -> Rohdaten.
+    """
+    if Image is not None:
+        try:
+            img = Image.open(BytesIO(raw))
+            img.load()
+            if img.mode not in ("RGB", "L"):
+                bg = Image.new("RGB", img.size, (255, 255, 255))
+                if img.mode in ("RGBA", "LA"):
+                    alpha = img.getchannel("A")
+                    bg.paste(img.convert("RGB"), mask=alpha)
+                else:
+                    bg.paste(img.convert("RGB"))
+                img = bg
+            else:
+                img = img.convert("RGB")
+            if max(img.size) > max_size:
+                img.thumbnail((max_size, max_size), Image.LANCZOS)
+            out = BytesIO()
+            img.save(out, format="JPEG", quality=92, optimize=True, progressive=False)
+            return out.getvalue()
+        except Exception:
+            pass
+
+    try:
+        ffmpeg_bin = shutil.which("ffmpeg")
+        if ffmpeg_bin:
+            with tempfile.TemporaryDirectory() as td:
+                inp = Path(td) / "cover_input"
+                outp = Path(td) / "cover_output.jpg"
+                inp.write_bytes(raw)
+                cmd = [
+                    ffmpeg_bin, "-y", "-hide_banner", "-loglevel", "error",
+                    "-i", str(inp),
+                    "-vf", f"scale='min({max_size},iw)':'min({max_size},ih)':force_original_aspect_ratio=decrease,format=yuvj420p",
+                    "-frames:v", "1",
+                    str(outp),
+                ]
+                subprocess.run(cmd, check=True, timeout=25)
+                if outp.exists() and outp.stat().st_size > 0:
+                    return outp.read_bytes()
+    except Exception:
+        pass
+
+    return raw
+
+
+def write_apple_cover_to_file(file_path: Path, jpg_data: bytes) -> bool:
+    """Schreibt JPEG-Cover in eine Audiodatei und nutzt Apple-freundliche Tag-Formate."""
+    suffix = file_path.suffix.lower()
+    try:
+        if suffix == ".mp3":
+            audio = MP3(file_path, ID3=ID3)
+            if audio.tags is None:
+                audio.add_tags()
+            audio.tags.delall("APIC")
+            audio.tags.add(APIC(encoding=3, mime="image/jpeg", type=3, desc="Cover", data=jpg_data))
+            audio.save(v2_version=3)
+            return True
+        if suffix in (".m4a", ".mp4", ".aac", ".alac"):
+            audio = MP4(file_path)
+            audio["covr"] = [MP4Cover(jpg_data, imageformat=MP4Cover.FORMAT_JPEG)]
+            audio.save()
+            return True
+        if suffix == ".flac":
+            audio = FLAC(file_path)
+            audio.clear_pictures()
+            pic = Picture()
+            pic.type = 3
+            pic.mime = "image/jpeg"
+            pic.desc = "Cover"
+            pic.data = jpg_data
+            audio.add_picture(pic)
+            audio.save()
+            return True
+        return False
+    except Exception as e:
+        raise RuntimeError(f"{file_path.name}: {e}")
+
+
+def has_embedded_cover(file_path: Path) -> bool:
+    suffix = file_path.suffix.lower()
+    try:
+        if suffix == ".mp3":
+            audio = MP3(file_path, ID3=ID3)
+            return bool(audio.tags and audio.tags.getall("APIC"))
+        if suffix in (".m4a", ".mp4", ".aac", ".alac"):
+            audio = MP4(file_path)
+            return bool(audio.tags and audio.tags.get("covr"))
+        if suffix == ".flac":
+            audio = FLAC(file_path)
+            return bool(audio.pictures)
+        return False
+    except Exception:
+        return False
+
+
+def extract_existing_cover_bytes(file_path: Path) -> Optional[bytes]:
+    """Liest ein vorhandenes eingebettetes Cover aus einer Audiodatei."""
+    suffix = file_path.suffix.lower()
+    try:
+        if suffix == ".mp3":
+            audio = MP3(file_path, ID3=ID3)
+            if audio.tags:
+                pics = audio.tags.getall("APIC")
+                if pics:
+                    return bytes(pics[0].data)
+        if suffix in (".m4a", ".mp4", ".aac", ".alac"):
+            audio = MP4(file_path)
+            covr = audio.tags.get("covr") if audio.tags else None
+            if covr:
+                return bytes(covr[0])
+        if suffix == ".flac":
+            audio = FLAC(file_path)
+            if audio.pictures:
+                return bytes(audio.pictures[0].data)
+    except Exception:
+        return None
+    return None
+
+
+
+def find_folder_cover_file(album_dir):
+    """Findet Ordnercover robust und case-insensitive."""
+    preferred_stems = {
+        "cover", "folder", "front", "album", "albumart", "album_art",
+        "artwork", "coverart", "cover_art", "folderart", "folder_art"
+    }
+    image_exts = {".jpg", ".jpeg", ".png", ".webp"}
+    try:
+        files = [p for p in album_dir.iterdir() if p.is_file() and p.suffix.lower() in image_exts]
+    except Exception:
+        return None
+
+    # 1. bevorzugte Namen exakt nach stem
+    for p in files:
+        if p.stem.lower() in preferred_stems:
+            return p
+
+    # 2. bevorzugte Begriffe irgendwo im Namen
+    for p in files:
+        stem = p.stem.lower().replace(" ", "").replace("-", "").replace("_", "")
+        if any(key in stem for key in ("cover", "folder", "front", "albumart", "artwork")):
+            return p
+
+    # 3. wenn nur ein Bild im Albumordner liegt, dieses nehmen
+    if len(files) == 1:
+        return files[0]
+
+    return None
+
+def find_album_cover_source(album_files: List[Path]) -> Optional[bytes]:
+    """Findet Cover je Album: Ordnercover bevorzugt, sonst eingebettetes Cover aus erstem passenden Track."""
+    if not album_files:
+        return None
+    album_dir = album_files[0].parent
+    for name in ("cover.jpg", "folder.jpg", "cover.jpeg", "folder.jpeg", "cover.png", "folder.png"):
+        p = album_dir / name
+        if p.exists() and p.is_file():
+            try:
+                return p.read_bytes()
+            except Exception:
+                pass
+    for fp in album_files:
+        raw = extract_existing_cover_bytes(fp)
+        if raw:
+            return raw
+    return None
+
+
+def group_audio_files_by_album_dir() -> Dict[str, List[Path]]:
+    root = get_music_root()
+    groups: Dict[str, List[Path]] = {}
+    for fp in root.rglob("*"):
+        if fp.is_file() and is_musiclab_audio_file(fp):
+            rel_dir = str(fp.parent.relative_to(root))
+            groups.setdefault(rel_dir, []).append(fp)
+    for k in groups:
+        groups[k].sort()
+    return groups
+
+
+def normalize_cover_for_apple(raw, max_size=1200):
+    """Apple-kompatibles JPEG erzeugen. Funktioniert mit Pillow, sonst ffmpeg, sonst Rohdaten."""
+    if Image is not None:
+        try:
+            img = Image.open(BytesIO(raw))
+            img.load()
+            if img.mode not in ("RGB", "L"):
+                bg = Image.new("RGB", img.size, (255, 255, 255))
+                if img.mode in ("RGBA", "LA"):
+                    bg.paste(img.convert("RGB"), mask=img.getchannel("A"))
+                else:
+                    bg.paste(img.convert("RGB"))
+                img = bg
+            else:
+                img = img.convert("RGB")
+            if max(img.size) > max_size:
+                img.thumbnail((max_size, max_size), Image.LANCZOS)
+            out = BytesIO()
+            img.save(out, format="JPEG", quality=92, optimize=True, progressive=False)
+            return out.getvalue()
+        except Exception:
+            pass
+
+    try:
+        ffmpeg_bin = shutil.which("ffmpeg")
+        if ffmpeg_bin:
+            with tempfile.TemporaryDirectory() as td:
+                inp = Path(td) / "cover_input"
+                outp = Path(td) / "cover_output.jpg"
+                inp.write_bytes(raw)
+                cmd = [
+                    ffmpeg_bin, "-y", "-hide_banner", "-loglevel", "error",
+                    "-i", str(inp),
+                    "-vf", "scale='min(%d,iw)':'min(%d,ih)':force_original_aspect_ratio=decrease,format=yuvj420p" % (max_size, max_size),
+                    "-frames:v", "1",
+                    str(outp),
+                ]
+                subprocess.run(cmd, check=True, timeout=25)
+                if outp.exists() and outp.stat().st_size > 0:
+                    return outp.read_bytes()
+    except Exception:
+        pass
+
+    return raw
+
+
+def write_apple_cover_to_file(file_path, jpg_data):
+    suffix = file_path.suffix.lower()
+    try:
+        if suffix == ".mp3":
+            audio = MP3(file_path, ID3=ID3)
+            if audio.tags is None:
+                audio.add_tags()
+            audio.tags.delall("APIC")
+            audio.tags.add(APIC(encoding=3, mime="image/jpeg", type=3, desc="Cover", data=jpg_data))
+            audio.save(v2_version=3)
+            return True
+        if suffix in (".m4a", ".mp4", ".aac", ".alac"):
+            audio = MP4(file_path)
+            audio["covr"] = [MP4Cover(jpg_data, imageformat=MP4Cover.FORMAT_JPEG)]
+            audio.save()
+            return True
+        if suffix == ".flac":
+            audio = FLAC(file_path)
+            audio.clear_pictures()
+            pic = Picture()
+            pic.type = 3
+            pic.mime = "image/jpeg"
+            pic.desc = "Cover"
+            pic.data = jpg_data
+            audio.add_picture(pic)
+            audio.save()
+            return True
+        return False
+    except Exception as e:
+        raise RuntimeError("%s: %s" % (file_path.name, e))
+
+
+def has_embedded_cover(file_path):
+    suffix = file_path.suffix.lower()
+    try:
+        if suffix == ".mp3":
+            audio = MP3(file_path, ID3=ID3)
+            return bool(audio.tags and audio.tags.getall("APIC"))
+        if suffix in (".m4a", ".mp4", ".aac", ".alac"):
+            audio = MP4(file_path)
+            return bool(audio.tags and audio.tags.get("covr"))
+        if suffix == ".flac":
+            audio = FLAC(file_path)
+            return bool(audio.pictures)
+        return False
+    except Exception:
+        return False
+
+
+def extract_existing_cover_bytes(file_path):
+    """Liest vorhandene eingebettete Cover sehr robust.
+    Wichtig für Mp3tag: MP3/APIC aus ID3v2.3/v2.4, alte PIC-Frames, M4A covr, FLAC pictures.
+    """
+    suffix = file_path.suffix.lower()
+
+    # 1) MP3/ID3: Mp3tag schreibt normalerweise APIC-Frames.
+    try:
+        if suffix == ".mp3":
+            try:
+                audio = MP3(file_path, ID3=ID3)
+                if audio.tags:
+                    pics = []
+                    try:
+                        pics.extend(audio.tags.getall("APIC"))
+                    except Exception:
+                        pass
+                    try:
+                        pics.extend(audio.tags.getall("PIC"))
+                    except Exception:
+                        pass
+                    if not pics:
+                        for key, frame in audio.tags.items():
+                            if str(key).upper().startswith(("APIC", "PIC")) and hasattr(frame, "data"):
+                                pics.append(frame)
+                    for pic in pics:
+                        data = getattr(pic, "data", None)
+                        if data:
+                            return bytes(data)
+            except Exception:
+                pass
+
+            # Zweiter Versuch: ID3 direkt lesen, manchmal robuster als MP3(...)
+            try:
+                tags = ID3(file_path)
+                for frame in list(tags.values()):
+                    if hasattr(frame, "data") and frame.__class__.__name__.upper() in ("APIC", "PIC"):
+                        if frame.data:
+                            return bytes(frame.data)
+                for key, frame in tags.items():
+                    if str(key).upper().startswith(("APIC", "PIC")) and hasattr(frame, "data") and frame.data:
+                        return bytes(frame.data)
+            except Exception:
+                pass
+    except Exception:
+        pass
+
+    # 2) M4A/MP4/ALAC: covr-Atom
+    try:
+        if suffix in (".m4a", ".mp4", ".aac", ".alac"):
+            audio = MP4(file_path)
+            covr = audio.tags.get("covr") if audio.tags else None
+            if covr:
+                return bytes(covr[0])
+    except Exception:
+        pass
+
+    # 3) FLAC
+    try:
+        if suffix == ".flac":
+            audio = FLAC(file_path)
+            if audio.pictures:
+                return bytes(audio.pictures[0].data)
+    except Exception:
+        pass
+
+    # 4) Generischer Mutagen-Fallback
+    try:
+        audio = mutagen.File(file_path, easy=False)
+        if audio:
+            # FLAC-artige Objekte
+            pics = getattr(audio, "pictures", None)
+            if pics:
+                return bytes(pics[0].data)
+
+            tags = getattr(audio, "tags", None)
+            if tags:
+                # MP4 covr
+                try:
+                    covr = tags.get("covr")
+                    if covr:
+                        return bytes(covr[0])
+                except Exception:
+                    pass
+
+                # ID3 APIC/PIC
+                try:
+                    values = tags.values() if hasattr(tags, "values") else []
+                    for frame in values:
+                        if hasattr(frame, "data") and frame.__class__.__name__.upper() in ("APIC", "PIC"):
+                            if frame.data:
+                                return bytes(frame.data)
+                except Exception:
+                    pass
+
+                try:
+                    items = tags.items() if hasattr(tags, "items") else []
+                    for key, frame in items:
+                        if str(key).upper().startswith(("APIC", "PIC")) and hasattr(frame, "data") and frame.data:
+                            return bytes(frame.data)
+                except Exception:
+                    pass
+    except Exception:
+        pass
+
+    return None
+
+def find_album_cover_source(album_files):
+    """Findet Cover je Album mit derselben Logik wie die sichtbaren MusicLab-Cover.
+    1) Ordnerbild case-insensitive
+    2) _embedded_cover_from_file(), also die bewährte MusicLab-Cover-Lesefunktion
+    3) alter Extract-Fallback
+    """
+    if not album_files:
+        return None
+
+    album_dir = album_files[0].parent
+
+    folder_cover = find_folder_cover_file(album_dir)
+    if folder_cover:
+        try:
+            return folder_cover.read_bytes()
+        except Exception:
+            pass
+
+    for fp in album_files:
+        try:
+            hit = _embedded_cover_from_file(fp)
+            if hit:
+                _mime, data = hit
+                if data:
+                    return bytes(data)
+        except Exception:
+            pass
+
+    for fp in album_files:
+        try:
+            raw = extract_existing_cover_bytes(fp)
+            if raw:
+                return raw
+        except Exception:
+            pass
+
+    return None
+
+def is_musiclab_audio_file(path):
+    try:
+        ext = path.suffix.lower()
+        exts = globals().get("AUDIO_EXTS") or globals().get("AUDIO_EXTENSIONS") or globals().get("AUDIO_SUFFIXES")
+        if not exts:
+            exts = {".mp3", ".flac", ".m4a", ".mp4", ".aac", ".alac", ".ogg", ".oga", ".opus", ".wav", ".aiff", ".aif"}
+        return ext in set(exts)
+    except Exception:
+        return False
+
+def group_audio_files_by_album_dir():
+    root = get_music_root()
+    groups = {}
+    for fp in root.rglob("*"):
+        if fp.is_file() and is_musiclab_audio_file(fp):
+            rel_dir = str(fp.parent.relative_to(root))
+            groups.setdefault(rel_dir, []).append(fp)
+    for k in groups:
+        groups[k].sort()
+    return groups
+
+
 @app.post("/api/tags/cover")
 async def api_tags_cover(request: Request):
     """Cover Apple-kompatibel speichern.
 
-    v1.9.21:
+    v1.9.35:
     - Eingehende JPG/PNG/WebP/etc. werden nach JPEG/RGB konvertiert.
     - Maximale Größe: ca. 1200×1200 px.
     - MP3: APIC image/jpeg, ID3v2.3.

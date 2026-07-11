@@ -1188,7 +1188,7 @@ body.checkMode #checkView .checkList{min-height:0!important;max-height:none!impo
 .refClearBtn{width:24px;height:24px;border-radius:999px;padding:0;line-height:1;background:var(--danger,#7a2f2f);color:#fff;font-weight:900;box-shadow:none}
 .refClearBtn:hover{filter:brightness(1.1)}
 
-/* v1.9.21 Workbench-Redesign: dunkles Studio-Dashboard, klarere Arbeitsbereiche */
+/* v1.9.35 Workbench-Redesign: dunkles Studio-Dashboard, klarere Arbeitsbereiche */
 body.studioRedesign{
   background:
     radial-gradient(circle at 18% 0%, rgba(88,166,255,.16), transparent 32%),
@@ -1347,7 +1347,7 @@ body.studioRedesign .footerCredit{
 }
 
 
-/* v1.9.21: Credit dauerhaft lesbar + Auswahlumrandung nicht abgeschnitten */
+/* v1.9.35: Credit dauerhaft lesbar + Auswahlumrandung nicht abgeschnitten */
 body.studioRedesign .footerCredit,
 .footerCredit{
   position:fixed!important;
@@ -1406,7 +1406,7 @@ body.studioRedesign .album.ref.sel{
 }
 
 
-/* v1.9.21: Auswahlhinweis links + Status-Badges in der Seitenliste */
+/* v1.9.35: Auswahlhinweis links + Status-Badges in der Seitenliste */
 .selectionHint{
   display:flex!important;
   flex-direction:column;
@@ -1433,7 +1433,7 @@ body.studioRedesign #browserList .row.sel .sideBadge.active{background:#d7efff}
 body.studioRedesign #browserList .row:has(.sideBadge.marked){border-color:rgba(255,202,122,.32)}
 
 
-/* MusicLab v1.9.21 safe selection visibility fix */
+/* MusicLab v1.9.35 safe selection visibility fix */
 .ml-selection-summary{
   border:1px solid rgba(106,183,255,.45);
   background:rgba(106,183,255,.10);
@@ -1496,7 +1496,7 @@ body.studioRedesign #browserList .row:has(.sideBadge.marked){border-color:rgba(2
 }
 
 
-/* v1.9.21: dynamische Skalierung unter Header/Tabs.
+/* v1.9.35: dynamische Skalierung unter Header/Tabs.
    Die Höhe wird per JS aus der echten Header-Höhe berechnet, statt mit festen 72px. */
 :root{
   --musiclab-header-h: 76px;
@@ -1560,7 +1560,7 @@ header{
 }
 
 
-/* v1.9.21: bessere Responsiveness bei Tag-Pflege */
+/* v1.9.35: bessere Responsiveness bei Tag-Pflege */
 body.tagBusy{
   cursor:progress;
 }
@@ -1577,4 +1577,51 @@ body.tagBusy{
 .row{
   content-visibility:auto;
   contain-intrinsic-size:56px;
+}
+
+
+.appleCoverTools{
+  display:flex;
+  gap:10px;
+  align-items:center;
+  justify-content:flex-end;
+  margin:10px 0;
+}
+.appleCoverTools button{
+  font-weight:800;
+}
+
+
+.appleCoverSettingsBlock{
+  margin-top:16px;
+  padding:14px;
+  border:1px solid rgba(106,169,255,.22);
+  border-radius:14px;
+  background:rgba(15,23,42,.42);
+}
+.appleCoverSettingsBlock h3{
+  margin:0 0 6px 0;
+}
+.appleCoverSettingsBlock button{
+  margin-top:10px;
+  font-weight:900;
+}
+
+
+/* v1.9.35: Apple-Cover-Button nur inline in Einstellungen > Tags & Sortierung */
+.appleCoverInlineBtn{
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  margin-left:8px;
+  font-weight:900;
+  white-space:nowrap;
+  background:linear-gradient(180deg,#6aa9ff,#4d8fe8);
+  color:#06111f;
+}
+
+
+.appleCoverInlineBtn.secondary{
+  background:rgba(255,255,255,.08);
+  color:var(--text);
 }
