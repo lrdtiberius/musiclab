@@ -1,8 +1,8 @@
 const API='http://'+location.hostname+':8091/api';
-const APP_VERSION='1.9.36';
+const APP_VERSION='1.9.39';
 let coverCacheBust=Date.now();
 let selectedArtist=null, selectedAlbum=null, selectedTagFolder=null;
-let selectedUiKey=null; // v1.9.36: eindeutige visuelle Einzelauswahl für Listen und Album-Kacheln
+let selectedUiKey=null; // v1.9.39: eindeutige visuelle Einzelauswahl für Listen und Album-Kacheln
 let selectedTagGenre=null, selectedTagYear=null;
 let browserMode='artist';
 let lastRunning=false;
@@ -18,7 +18,7 @@ let tagDiscTotals={};
 let tagsDirty=false;
 let selectionSerial=0;
 
-/* v1.9.36 Tag-Performance */
+/* v1.9.39 Tag-Performance */
 let tagRefreshTimer=null;
 let lightRefreshTimer=null;
 function scheduleLightRefresh(delay=700){
@@ -60,7 +60,7 @@ function coverBox(src, large=false, opts={}){
   const extra=opts.extraClass ? ' '+opts.extraClass : '';
   const cls=(large?'mediaCoverBox large':'mediaCoverBox')+extra;
   const loading=opts.eager ? 'eager' : 'lazy';
-  // v1.9.36: Cover-Boxen müssen beim Albumwechsel immer eine neue, eindeutige
+  // v1.9.39: Cover-Boxen müssen beim Albumwechsel immer eine neue, eindeutige
   // DOM-Box bekommen. Besonders wichtig bei #tagCoverPreview: Wenn die ID beim
   // ersten Cover verloren geht, kann die Vorschau bei Albumwechseln nicht mehr
   // ersetzt werden und Safari zeigt das zuletzt sichtbare Cover weiter an.
@@ -142,7 +142,7 @@ function rowAlbumMatches(el, album, artist){
   return true;
 }
 function syncSingleSelectionUI(){
-  // v1.9.36: Die UI-Markierung ist an einen eindeutigen Schlüssel gebunden.
+  // v1.9.39: Die UI-Markierung ist an einen eindeutigen Schlüssel gebunden.
   // Dadurch können beim Wechsel nicht mehr mehrere Interpreten/Alben markiert bleiben,
   // auch wenn Albumtitel mehrfach vorkommen oder alte async-Ladevorgänge zurückkommen.
   document.querySelectorAll('#browserList .row.sel').forEach(el=>el.classList.remove('sel'));
@@ -953,7 +953,7 @@ async function analyzeAll(){
 }
 
 async function chooseNormalizeTargetSource(){
-  // v1.9.36: Kein Browser-Prompt mehr.
+  // v1.9.39: Kein Browser-Prompt mehr.
   // „Alles normalisieren“ verwendet immer die Werte aus den Einstellungen.
   // Soll ein Referenzalbum als Ziel dienen, vorher bewusst „Ziel-LUFS übernehmen“ klicken.
   return 'settings';
@@ -1123,7 +1123,7 @@ function jsArg(v){return JSON.stringify(String(v??''));}
 function renderPathRow(x){
   const path=String(x?.path||'');
   if(!path) return '';
-  // v1.9.36: Auf der Duplikatseite keine Pfad-Buttons mehr.
+  // v1.9.39: Auf der Duplikatseite keine Pfad-Buttons mehr.
   // Direktes Öffnen/Kopieren war im Browser/NAS-Setup nicht zuverlässig genug
   // und hat die Seite unnötig überladen. Der Pfad bleibt nur als Hinweis sichtbar.
   return `<div class="checkPathRow"><div class="checkPath">${escHtml(path)}</div></div>`;
@@ -1624,7 +1624,7 @@ function clearTagForm(){
 async function loadTagsPage(){
   const body=document.getElementById('tagTracks'); const hint=document.getElementById('tagHint');
   if(!body||!hint)return;
-  // v1.9.36: Beim Albumwechsel sofort die alte Vorschau entfernen.
+  // v1.9.39: Beim Albumwechsel sofort die alte Vorschau entfernen.
   // Sonst bleibt bei langsamer/fehlender Cover-Antwort das zuletzt gesehene Cover stehen.
   tagCoverPlaceholder('Cover wird geladen…');
   if(!selectedAlbum && selectedTagFolder===null){
@@ -2028,7 +2028,7 @@ async function saveTagUpdates(updates, okMsg, opts={}){
     if(opts.album) selectedAlbum=opts.album;
     setTagsDirty(false);
 
-    // v1.9.36: Statistik/Genres werden verzögert aktualisiert, nicht blockierend.
+    // v1.9.39: Statistik/Genres werden verzögert aktualisiert, nicht blockierend.
     scheduleLightRefresh(900);
 
     if(sortFiles){
@@ -2325,7 +2325,7 @@ document.addEventListener('DOMContentLoaded',()=>{
 });
 
 
-/* MusicLab v1.9.36 safe UI helper - never blocks app startup */
+/* MusicLab v1.9.39 safe UI helper - never blocks app startup */
 (function(){
   function safe(fn){
     try{ fn(); }catch(e){ console.warn('MusicLab safe UI helper skipped:', e); }
@@ -2515,4 +2515,201 @@ async function exportAppleCoverMissingReport(){
     alert('Cover-Fehlerliste konnte nicht exportiert werden:\n'+e.message);
   }
 }
+
+
+
+async function removeAllEmbeddedCovers(){
+  let previewText='Entfernt eingebettete Cover aus allen Audiodateien. cover.jpg/folder.jpg bleiben erhalten.';
+  try{
+    const pv=await j(API+'/covers/remove_embedded_preview');
+    if(pv && pv.ok!==false){
+      const examples=(pv.examples||[]).slice(0,5).map(x=>`- ${x}`).join('\n');
+      previewText=`Audiodateien gesamt: ${pv.total}\nDateien mit erkanntem eingebettetem Cover: ${pv.with_cover}\n\n${examples}${pv.with_cover>5?'\n...':''}\n\nOrdnercover wie cover.jpg/folder.jpg bleiben erhalten.`;
+    }
+  }catch(e){
+    previewText='Vorschau konnte nicht geladen werden. Der Job kann trotzdem gestartet werden.';
+  }
+
+  if(!confirm(`Eingebettete Cover wirklich aus allen Tags entfernen?\n\n${previewText}\n\nDas kann später mit "Alle Cover Apple-kompatibel neu einbetten" wiederhergestellt werden, wenn Ordnercover oder andere Quellen vorhanden sind.`)) return;
+
+  try{
+    status.textContent='Cover-Entfernung wird gestartet...';
+    if(progressText) progressText.textContent='Eingebettete Cover werden entfernt...';
+    await j(API+'/covers/remove_embedded_all',{method:'POST'});
+    setAppView('protocol');
+    setTimeout(poll, 300);
+    setTimeout(poll, 1200);
+  }catch(e){
+    alert('Cover-Entfernung konnte nicht gestartet werden:\n'+e.message);
+  }
+}
+
+
+
+async function removeCurrentTagCover(){
+  try{
+    const paths = (typeof visibleTagPaths==='function') ? visibleTagPaths() : [];
+    let folder = selectedTagFolder || '';
+    if((!folder || String(folder).startsWith('__album__:')) && paths.length && typeof parentFolderFromPath==='function'){
+      folder = parentFolderFromPath(paths[0] || '') || folder;
+    }
+
+    if(!paths.length && !folder){
+      alert('Bitte zuerst ein Album oder Titel auf der Tags-Seite auswählen.');
+      return;
+    }
+
+    const countText = paths.length ? `${paths.length} sichtbare Titel` : `Ordner ${folder}`;
+    if(!confirm(`Eingebettetes Cover aus den Tags entfernen?\n\nBetroffen: ${countText}\n\nOrdnercover wie cover.jpg/folder.jpg bleiben erhalten.`)) return;
+
+    setTagActionBusy?.(true, 'Cover wird aus Tags entfernt…');
+    const res = await j(API+'/tags/cover/remove', {
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({paths, folder})
+    });
+
+    coverCacheBust = Date.now();
+    const msg = `Cover aus Tags entfernt: ${res.changed}/${res.checked} Dateien geändert` + (res.errors?.length ? ` · Fehler: ${res.errors.length}` : '');
+    status.textContent = msg;
+    if(progressText) progressText.textContent = msg;
+
+    const cp=document.getElementById('tagCoverPreview');
+    if(cp){
+      cp.classList.add('coverRemoved');
+      const hint=cp.querySelector('.tagCoverRemovedHint');
+      if(hint) hint.textContent='Eingebettetes Cover entfernt';
+    }
+
+    if(res.errors?.length){
+      alert(msg+'\n'+res.errors.join('\n'));
+    }
+
+    setTimeout(()=>{ try{ loadTagsPage(); }catch(e){} }, 350);
+  }catch(e){
+    alert('Cover konnte nicht entfernt werden:\n'+e.message);
+  }finally{
+    try{ setTagActionBusy?.(false); }catch(_e){}
+  }
+}
+
+
+
+function enhanceTagCoverRemoveButton(){
+  const box=document.getElementById('tagCoverPreview') || document.querySelector('.tagCoverPreview, .coverDrop, .coverBox');
+  if(!box || box.querySelector('.tagCoverRemoveBtn')) return;
+  const btn=document.createElement('button');
+  btn.type='button';
+  btn.className='tagCoverRemoveBtn';
+  btn.title='Cover aus Tags entfernen';
+  btn.textContent='×';
+  btn.addEventListener('click', (ev)=>{ev.stopPropagation(); removeCurrentTagCover();});
+  box.style.position='relative';
+  box.appendChild(btn);
+}
+setInterval(()=>{try{ if(currentView==='tags') enhanceTagCoverRemoveButton(); }catch(e){}}, 1000);
+
+
+
+/* v1.9.39: robustes Cover-X für virtuelle Alben */
+function collectVisibleTagPathsForCoverRemoval(){
+  const out=new Set();
+
+  try{
+    if(typeof visibleTagPaths==='function'){
+      (visibleTagPaths()||[]).forEach(p=>{ if(p) out.add(String(p)); });
+    }
+  }catch(_e){}
+
+  try{
+    const pools=[window.visibleTagTracks, window.currentTagTracks, window.tagTracks, window.currentTracks, window.selectedTracks];
+    pools.forEach(arr=>{
+      if(Array.isArray(arr)){
+        arr.forEach(t=>{
+          const p=t && (t.path||t.file||t.filepath||t.relpath);
+          if(p) out.add(String(p));
+        });
+      }
+    });
+  }catch(_e){}
+
+  try{
+    document.querySelectorAll('#tagTracks tr, #tagTracks tbody tr, .tagTrackRow, tr').forEach(row=>{
+      const cells = row.cells ? Array.from(row.cells) : [];
+      const vals = [
+        row.dataset && row.dataset.path,
+        row.getAttribute && row.getAttribute('data-path'),
+        row.querySelector && row.querySelector('[data-path]') && row.querySelector('[data-path]').getAttribute('data-path'),
+        row.querySelector && row.querySelector('.pathCell') && row.querySelector('.pathCell').textContent,
+        row.querySelector && row.querySelector('.trackPath') && row.querySelector('.trackPath').textContent,
+        cells.length ? cells[cells.length-1].textContent : ''
+      ];
+      vals.forEach(v=>{
+        const s=String(v||'').trim();
+        if(/\.(mp3|flac|m4a|mp4|aac|alac|ogg|oga|opus|wav|aiff|aif)$/i.test(s)){
+          out.add(s);
+        }
+      });
+    });
+  }catch(_e){}
+
+  return Array.from(out);
+}
+
+removeCurrentTagCover = async function(){
+  try{
+    const paths = collectVisibleTagPathsForCoverRemoval();
+    let folder = selectedTagFolder || '';
+    if((!folder || String(folder).startsWith('__album__:')) && paths.length && typeof parentFolderFromPath==='function'){
+      folder = parentFolderFromPath(paths[0] || '') || folder;
+    }
+
+    const albumEl = document.querySelector('#tagAlbum, input[name="album"], [data-field="album"]');
+    const artistEl = document.querySelector('#tagArtist, input[name="artist"], [data-field="artist"]');
+    const album = String((albumEl && albumEl.value) || selectedAlbum || '').trim();
+    const artist = String((artistEl && artistEl.value) || selectedArtist || '').trim();
+
+    if(!paths.length && !folder && !album){
+      alert('Bitte zuerst ein Album oder Titel auf der Tags-Seite auswählen.');
+      return;
+    }
+
+    const countText = paths.length ? (paths.length + ' sichtbare Titel') : (album ? ('Album ' + album) : ('Ordner ' + folder));
+    if(!confirm('Eingebettetes Cover aus den Tags entfernen?\n\nBetroffen: ' + countText + '\n\nOrdnercover wie cover.jpg/folder.jpg bleiben erhalten.')) return;
+
+    if(typeof setTagActionBusy==='function') setTagActionBusy(true, 'Cover wird aus Tags entfernt…');
+    const res = await j(API+'/tags/cover/remove', {
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({paths:paths, folder:folder, album:album, artist:artist})
+    });
+
+    coverCacheBust = Date.now();
+    const msg = 'Cover aus Tags entfernt: ' + res.changed + '/' + res.checked + ' Dateien geändert' + ((res.errors && res.errors.length) ? (' · Fehler: ' + res.errors.length) : '');
+    status.textContent = msg;
+    if(progressText) progressText.textContent = msg;
+
+    const cp=document.getElementById('tagCoverPreview') || document.querySelector('.tagCoverPreview, .coverDrop, .coverBox');
+    if(cp){
+      cp.classList.add('coverRemoved');
+      let hint=cp.querySelector('.tagCoverRemovedHint');
+      if(!hint){
+        hint=document.createElement('div');
+        hint.className='tagCoverRemovedHint';
+        cp.appendChild(hint);
+      }
+      hint.textContent='Eingebettetes Cover entfernt';
+    }
+
+    if(res.errors && res.errors.length){
+      alert(msg + '\n' + res.errors.join('\n'));
+    }
+
+    setTimeout(()=>{ try{ loadTagsPage(); }catch(e){} }, 350);
+  }catch(e){
+    alert('Cover konnte nicht entfernt werden:\n' + e.message);
+  }finally{
+    try{ if(typeof setTagActionBusy==='function') setTagActionBusy(false); }catch(_e){}
+  }
+};
 

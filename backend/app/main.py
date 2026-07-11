@@ -52,9 +52,9 @@ except Exception:
     Image = None
 
 SCHEMA_VERSION = 24
-APP_VERSION = "1.9.36"
+APP_VERSION = "1.9.39"
 
-# v1.9.36: robuste Mutagen-Fallbacks für Apple-Cover-Job
+# v1.9.39: robuste Mutagen-Fallbacks für Apple-Cover-Job
 try:
     MP3
 except NameError:
@@ -84,7 +84,7 @@ try:
 except NameError:
     from mutagen.flac import Picture
 
-# v1.9.36: robuster Fallback für Cover-Job.
+# v1.9.39: robuster Fallback für Cover-Job.
 # Einige ältere MusicLab-Stände nutzen andere Namen für die Audio-Endungen.
 try:
     AUDIO_EXTS
@@ -1499,7 +1499,7 @@ def normalize_all_worker(backup_mode: Optional[str] = None, target_source: str =
     normalize_all_parallelism_guard = get_normalize_parallelism()
     init_db()
     try:
-        # v1.9.36: Sofort sichtbarer Status, bevor die große Album-Vorschau gebaut wird.
+        # v1.9.39: Sofort sichtbarer Status, bevor die große Album-Vorschau gebaut wird.
         state.update({
             "running": True,
             "stop": False,
@@ -2228,7 +2228,7 @@ def normalize_preview_all(target_source: str = "settings"):
 def normalize_all(data: dict = None):
     data = data or {}
     backup = data.get("backup") if isinstance(data, dict) else None
-    # v1.9.36: „Alles normalisieren“ nutzt bewusst die Einstellungen.
+    # v1.9.39: „Alles normalisieren“ nutzt bewusst die Einstellungen.
     # Referenzwerte werden vorher mit „Ziel-LUFS übernehmen“ in die Einstellungen kopiert.
     target_source = "settings"
     if state.get("running"):
@@ -2600,10 +2600,169 @@ def api_cover_missing_report():
     except Exception as e:
         return {"ok": False, "error": str(e), "missing": []}
 
+
+def remove_embedded_cover_from_file(file_path):
+    """Entfernt nur eingebettete Cover aus Audiodateien. Ordnercover bleiben erhalten."""
+    suffix = file_path.suffix.lower()
+    changed = False
+
+    if suffix == ".mp3":
+        try:
+            tags = ID3(file_path)
+            before = len(tags.keys())
+            try:
+                tags.delall("APIC")
+            except Exception:
+                pass
+            try:
+                tags.delall("PIC")
+            except Exception:
+                pass
+            # Zusätzlich alle APIC:/PIC:-Varianten entfernen
+            for key in list(tags.keys()):
+                if str(key).upper().startswith(("APIC", "PIC")):
+                    try:
+                        del tags[key]
+                    except Exception:
+                        pass
+            changed = len(tags.keys()) != before
+            if changed:
+                tags.save(file_path, v2_version=3)
+            return changed
+        except Exception:
+            # Wenn keine ID3-Tags vorhanden sind, ist nichts zu entfernen.
+            return False
+
+    if suffix in (".m4a", ".mp4", ".aac", ".alac"):
+        audio = MP4(file_path)
+        if audio.tags and "covr" in audio.tags:
+            del audio.tags["covr"]
+            audio.save()
+            return True
+        return False
+
+    if suffix == ".flac":
+        audio = FLAC(file_path)
+        if getattr(audio, "pictures", None):
+            audio.clear_pictures()
+            audio.save()
+            return True
+        return False
+
+    return False
+
+
+def remove_all_embedded_covers_worker():
+    init_db()
+    state.update({
+        "running": True,
+        "stop": False,
+        "mode": "cover_remove_all",
+        "done": 0,
+        "total": 0,
+        "current": "",
+        "message": "Eingebettete Cover werden entfernt...",
+        "errors": 0,
+        "recent_errors": [],
+    })
+    add_log("Cover-Entfernung gestartet")
+    try:
+        root = get_music_root()
+        files = []
+        for fp in root.rglob("*"):
+            if fp.is_file() and is_musiclab_audio_file(fp):
+                files.append(fp)
+        files.sort()
+        state["total"] = len(files)
+
+        removed = 0
+        checked = 0
+        errors = []
+
+        for idx, fp in enumerate(files, start=1):
+            if state.get("stop"):
+                add_log("Cover-Entfernung gestoppt")
+                break
+
+            rel = str(fp.relative_to(root))
+            state.update({
+                "done": idx - 1,
+                "current": rel,
+                "message": "Eingebettete Cover entfernen: %s/%s · %s" % (idx, len(files), rel),
+            })
+
+            try:
+                if remove_embedded_cover_from_file(fp):
+                    removed += 1
+                checked += 1
+            except Exception as e:
+                msg = "%s: %s" % (rel, e)
+                errors.append(msg)
+                add_log("Cover-Entfernung Fehler: " + msg, True)
+
+            state.update({
+                "done": idx,
+                "errors": len(errors),
+                "recent_errors": errors[-8:],
+            })
+
+        state.update({
+            "running": False,
+            "mode": "idle",
+            "done": checked,
+            "total": len(files),
+            "current": "",
+            "message": "Cover-Entfernung fertig: %s Dateien geprüft, %s Dateien geändert" % (checked, removed),
+            "errors": len(errors),
+            "recent_errors": errors[-8:],
+        })
+        add_log("Cover-Entfernung fertig: geprüft %s, geändert %s, Fehler %s" % (checked, removed, len(errors)), bool(errors))
+    except Exception as e:
+        state.update({
+            "running": False,
+            "mode": "idle",
+            "current": "",
+            "message": "Cover-Entfernung Fehler: %s" % e,
+            "errors": 1,
+            "recent_errors": [str(e)],
+        })
+        add_log("Cover-Entfernung Fehler: %s" % e, True)
+
+
+@app.post("/api/covers/remove_embedded_all")
+def api_remove_embedded_covers_all():
+    if state.get("running"):
+        return state
+    threading.Thread(target=remove_all_embedded_covers_worker, daemon=True).start()
+    return {"ok": True, "started": True, "state": state}
+
+
+@app.get("/api/covers/remove_embedded_preview")
+def api_remove_embedded_covers_preview():
+    try:
+        root = get_music_root()
+        total = 0
+        with_cover = 0
+        examples = []
+        for fp in root.rglob("*"):
+            if fp.is_file() and is_musiclab_audio_file(fp):
+                total += 1
+                try:
+                    if has_embedded_cover(fp):
+                        with_cover += 1
+                        if len(examples) < 10:
+                            examples.append(str(fp.relative_to(root)))
+                except Exception:
+                    pass
+        return {"ok": True, "total": total, "with_cover": with_cover, "examples": examples}
+    except Exception as e:
+        return {"ok": False, "error": str(e), "total": 0, "with_cover": 0, "examples": []}
+
+
 @app.get("/api/version")
 def api_version():
     return {
-        "version": APP_VERSION if "APP_VERSION" in globals() else "1.9.36",
+        "version": APP_VERSION if "APP_VERSION" in globals() else "1.9.39",
         "music_root": str(get_music_root()),
         "music_root_check": check_music_root(str(get_music_root())),
         "settings": get_settings(),
@@ -4350,11 +4509,91 @@ def group_audio_files_by_album_dir():
     return groups
 
 
+
+@app.post("/api/tags/cover/remove")
+def api_tags_cover_remove(data: dict):
+    """Entfernt eingebettete Cover aus aktuell sichtbaren/ausgewählten Titeldateien.
+    Funktioniert auch bei virtuellen Albumgruppen wie "Unbekanntes Album".
+    Ordnercover cover.jpg/folder.jpg bleiben erhalten.
+    """
+    paths = data.get("paths") or []
+    folder = data.get("folder") or ""
+    album = (data.get("album") or "").strip()
+    artist = (data.get("artist") or "").strip()
+
+    root = get_music_root()
+    files = []
+
+    if paths:
+        for p in paths:
+            try:
+                fp = safe_music_path(p)
+                if fp.exists() and fp.is_file() and is_musiclab_audio_file(fp):
+                    files.append(fp)
+            except Exception:
+                pass
+
+    if not files and folder and not str(folder).startswith("__"):
+        try:
+            folder_path = safe_music_path(folder)
+            if folder_path.exists() and folder_path.is_dir():
+                for fp in folder_path.rglob("*"):
+                    if fp.is_file() and is_musiclab_audio_file(fp):
+                        files.append(fp)
+        except Exception:
+            pass
+
+    if not files and album:
+        try:
+            con = db()
+            rows = [dict(r) for r in con.execute("SELECT * FROM tracks").fetchall()]
+            con.close()
+            album_l = album.lower()
+            artist_l = artist.lower()
+            for d in rows:
+                db_album = (d.get("album") or d.get("album_title") or "").strip() or "Unbekanntes Album"
+                if db_album.lower() != album_l:
+                    continue
+
+                if artist_l:
+                    db_artist = (d.get("albumartist") or d.get("album_artist") or d.get("artist") or "").strip().lower()
+                    if db_artist and artist_l not in ("verschiedene interpreten", "various artists") and db_artist != artist_l:
+                        continue
+
+                rel = d.get("path") or d.get("relpath") or d.get("file") or d.get("filepath")
+                if not rel:
+                    continue
+                fp = root / rel
+                if fp.exists() and fp.is_file() and is_musiclab_audio_file(fp):
+                    files.append(fp)
+        except Exception as e:
+            add_log("Cover aus Tags entfernen: DB-Fallback Fehler: %s" % e, True)
+
+    files = sorted(set(files))
+    if not files:
+        raise HTTPException(status_code=400, detail="Keine Audiodateien zum Entfernen des Covers gefunden")
+
+    changed = 0
+    checked = 0
+    errors = []
+    out_paths = []
+    for fp in files:
+        checked += 1
+        try:
+            if remove_embedded_cover_from_file(fp):
+                changed += 1
+            out_paths.append(str(fp.relative_to(root)))
+        except Exception as e:
+            errors.append("%s: %s" % (fp.name, e))
+
+    add_log("Cover aus Tags entfernt: geändert %s/%s" % (changed, checked) + (", Fehler %s" % len(errors) if errors else ""))
+    return {"ok": True, "changed": changed, "checked": checked, "total": checked, "errors": errors, "paths": out_paths}
+
 @app.post("/api/tags/cover")
 async def api_tags_cover(request: Request):
     """Cover Apple-kompatibel speichern.
 
-    v1.9.36:
+    v1.9.39:
     - Eingehende JPG/PNG/WebP/etc. werden nach JPEG/RGB konvertiert.
     - Maximale Größe: ca. 1200×1200 px.
     - MP3: APIC image/jpeg, ID3v2.3.
