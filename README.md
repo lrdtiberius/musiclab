@@ -1,4 +1,4 @@
-# MusicLab v1.9.18 Synology Project Safe
+# MusicLab v1.9.20 Synology Project Safe
 
 Diese Version ist bewusst für deinen gewohnten Synology-Ablauf gebaut:
 
@@ -78,7 +78,7 @@ http://192.168.188.34:8092/?v=1913
 `data/.keep` ist enthalten, damit der Ordner sicher mit in der ZIP landet. Eine vorhandene `data/musiclab.sqlite` auf der NAS nicht löschen, wenn Analysewerte erhalten bleiben sollen.
 
 
-## Änderungen in v1.9.18
+## Änderungen in v1.9.20
 
 - Batch-Button `Ausführen` bleibt nach Auswahl einer Aktion aktiv und wird nicht mehr vom Status-Poller grundlos ausgegraut.
 - Dropdown `Aktion wählen…` aktualisiert den Button sofort per `onchange`.
@@ -86,8 +86,17 @@ http://192.168.188.34:8092/?v=1913
 - Synology-Projektmodus bleibt erhalten.
 
 
-## Änderungen in v1.9.18
+## Änderungen in v1.9.20
 
 - Backend-Fehler `name 'normalize_parallelism' is not defined` vollständig behoben.
 - Alter Aufruf `normalize_parallelism()` bekommt einen Kompatibilitätswrapper.
 - Parallelität wird aus `parallel_normalize` gelesen und auf sichere Werte begrenzt.
+
+
+## Änderungen in v1.9.20
+
+- Tag-Speichern lädt nicht mehr jedes Mal synchron Statistik, Genres, Browser und Tagseite komplett neu.
+- Albumwechsel in der Tag-Ansicht lädt nicht mehr unnötig die Seitenleiste neu.
+- Cover-Speichern aktualisiert die Vorschau direkt statt die komplette Tagseite neu zu laden.
+- SQLite nutzt Timeout/WAL/busy_timeout gegen kurze `database is locked`-Phasen.
+- CSS-Containment verbessert Scroll-/Render-Performance großer Listen.

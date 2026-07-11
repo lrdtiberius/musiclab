@@ -42,7 +42,7 @@ LOG_PATH = LOG_DIR / "musiclab.log"
 LOG_MAX_BYTES = int(os.getenv("LOG_MAX_BYTES", str(10 * 1024 * 1024)))
 EXTS = {".mp3", ".m4a", ".aac", ".flac", ".ogg"}
 SCHEMA_VERSION = 24
-APP_VERSION = "1.9.18"
+APP_VERSION = "1.9.20"
 LOG_TZ = os.getenv("TZ") or os.getenv("LOG_TZ") or "Europe/Berlin"
 
 def local_log_time() -> str:
@@ -125,8 +125,14 @@ def read_log_text(errors_only: bool = False) -> str:
 
 def db():
     DB_PATH.parent.mkdir(parents=True, exist_ok=True)
-    con = sqlite3.connect(DB_PATH)
+    con = sqlite3.connect(DB_PATH, timeout=30)
     con.row_factory = sqlite3.Row
+    try:
+        con.execute("PRAGMA journal_mode=WAL")
+        con.execute("PRAGMA synchronous=NORMAL")
+        con.execute("PRAGMA busy_timeout=30000")
+    except Exception:
+        pass
     return con
 
 
@@ -1446,7 +1452,7 @@ def normalize_all_worker(backup_mode: Optional[str] = None, target_source: str =
     normalize_all_parallelism_guard = get_normalize_parallelism()
     init_db()
     try:
-        # v1.9.18: Sofort sichtbarer Status, bevor die große Album-Vorschau gebaut wird.
+        # v1.9.20: Sofort sichtbarer Status, bevor die große Album-Vorschau gebaut wird.
         state.update({
             "running": True,
             "stop": False,
@@ -2175,7 +2181,7 @@ def normalize_preview_all(target_source: str = "settings"):
 def normalize_all(data: dict = None):
     data = data or {}
     backup = data.get("backup") if isinstance(data, dict) else None
-    # v1.9.18: „Alles normalisieren“ nutzt bewusst die Einstellungen.
+    # v1.9.20: „Alles normalisieren“ nutzt bewusst die Einstellungen.
     # Referenzwerte werden vorher mit „Ziel-LUFS übernehmen“ in die Einstellungen kopiert.
     target_source = "settings"
     if state.get("running"):
@@ -2254,7 +2260,7 @@ def api_music_root_check_alias(path: Optional[str] = None):
 @app.get("/api/version")
 def api_version():
     return {
-        "version": APP_VERSION if "APP_VERSION" in globals() else "1.9.18",
+        "version": APP_VERSION if "APP_VERSION" in globals() else "1.9.20",
         "music_root": str(get_music_root()),
         "music_root_check": check_music_root(str(get_music_root())),
         "settings": get_settings(),

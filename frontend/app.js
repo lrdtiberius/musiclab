@@ -1,8 +1,8 @@
 const API='http://'+location.hostname+':8091/api';
-const APP_VERSION='1.9.18';
+const APP_VERSION='1.9.20';
 let coverCacheBust=Date.now();
 let selectedArtist=null, selectedAlbum=null, selectedTagFolder=null;
-let selectedUiKey=null; // v1.9.18: eindeutige visuelle Einzelauswahl für Listen und Album-Kacheln
+let selectedUiKey=null; // v1.9.20: eindeutige visuelle Einzelauswahl für Listen und Album-Kacheln
 let selectedTagGenre=null, selectedTagYear=null;
 let browserMode='artist';
 let lastRunning=false;
@@ -17,6 +17,28 @@ let mediaAlbumsCache=[];
 let tagDiscTotals={};
 let tagsDirty=false;
 let selectionSerial=0;
+
+/* v1.9.20 Tag-Performance */
+let tagRefreshTimer=null;
+let lightRefreshTimer=null;
+function scheduleLightRefresh(delay=700){
+  clearTimeout(lightRefreshTimer);
+  lightRefreshTimer=setTimeout(()=>{
+    try{ loadStats(); }catch(e){ console.warn(e); }
+    try{ loadGenreOptions(); }catch(e){ console.warn(e); }
+  }, delay);
+}
+function scheduleTagsPageRefresh(delay=250){
+  clearTimeout(tagRefreshTimer);
+  tagRefreshTimer=setTimeout(()=>{
+    try{ loadTagsPage(); }catch(e){ console.warn(e); }
+  }, delay);
+}
+function setTagActionBusy(flag, text=''){
+  document.body.classList.toggle('tagBusy', !!flag);
+  if(text && typeof status!=='undefined' && status) status.textContent=text;
+}
+
 
 function updateViewportMetrics(){
   const header=document.querySelector('header');
@@ -38,7 +60,7 @@ function coverBox(src, large=false, opts={}){
   const extra=opts.extraClass ? ' '+opts.extraClass : '';
   const cls=(large?'mediaCoverBox large':'mediaCoverBox')+extra;
   const loading=opts.eager ? 'eager' : 'lazy';
-  // v1.9.18: Cover-Boxen müssen beim Albumwechsel immer eine neue, eindeutige
+  // v1.9.20: Cover-Boxen müssen beim Albumwechsel immer eine neue, eindeutige
   // DOM-Box bekommen. Besonders wichtig bei #tagCoverPreview: Wenn die ID beim
   // ersten Cover verloren geht, kann die Vorschau bei Albumwechseln nicht mehr
   // ersetzt werden und Safari zeigt das zuletzt sichtbare Cover weiter an.
@@ -120,7 +142,7 @@ function rowAlbumMatches(el, album, artist){
   return true;
 }
 function syncSingleSelectionUI(){
-  // v1.9.18: Die UI-Markierung ist an einen eindeutigen Schlüssel gebunden.
+  // v1.9.20: Die UI-Markierung ist an einen eindeutigen Schlüssel gebunden.
   // Dadurch können beim Wechsel nicht mehr mehrere Interpreten/Alben markiert bleiben,
   // auch wenn Albumtitel mehrfach vorkommen oder alte async-Ladevorgänge zurückkommen.
   document.querySelectorAll('#browserList .row.sel').forEach(el=>el.classList.remove('sel'));
@@ -788,10 +810,10 @@ async function selectTagFolder(folder, displayAlbum, artist=null, uiKey=null){
   selectedUiKey=uiKey || selectionKey('folder', selectedTagFolder);
   syncSingleSelectionUI();
   closeTagScraper();
-  await loadBrowser();
   if(token!==selectionSerial) return;
   await loadTagsPage();
 }
+
 
 async function selectArtist(a, keepAlbum=false){
   const token=++selectionSerial;
@@ -931,7 +953,7 @@ async function analyzeAll(){
 }
 
 async function chooseNormalizeTargetSource(){
-  // v1.9.18: Kein Browser-Prompt mehr.
+  // v1.9.20: Kein Browser-Prompt mehr.
   // „Alles normalisieren“ verwendet immer die Werte aus den Einstellungen.
   // Soll ein Referenzalbum als Ziel dienen, vorher bewusst „Ziel-LUFS übernehmen“ klicken.
   return 'settings';
@@ -1101,7 +1123,7 @@ function jsArg(v){return JSON.stringify(String(v??''));}
 function renderPathRow(x){
   const path=String(x?.path||'');
   if(!path) return '';
-  // v1.9.18: Auf der Duplikatseite keine Pfad-Buttons mehr.
+  // v1.9.20: Auf der Duplikatseite keine Pfad-Buttons mehr.
   // Direktes Öffnen/Kopieren war im Browser/NAS-Setup nicht zuverlässig genug
   // und hat die Seite unnötig überladen. Der Pfad bleibt nur als Hinweis sichtbar.
   return `<div class="checkPathRow"><div class="checkPath">${escHtml(path)}</div></div>`;
@@ -1602,7 +1624,7 @@ function clearTagForm(){
 async function loadTagsPage(){
   const body=document.getElementById('tagTracks'); const hint=document.getElementById('tagHint');
   if(!body||!hint)return;
-  // v1.9.18: Beim Albumwechsel sofort die alte Vorschau entfernen.
+  // v1.9.20: Beim Albumwechsel sofort die alte Vorschau entfernen.
   // Sonst bleibt bei langsamer/fehlender Cover-Antwort das zuletzt gesehene Cover stehen.
   tagCoverPlaceholder('Cover wird geladen…');
   if(!selectedAlbum && selectedTagFolder===null){
@@ -1727,9 +1749,6 @@ async function uploadTagCover(){
   const first=paths[0] || '';
   const firstFolder=parentFolderFromPath(first||'');
 
-  // v1.9.18: Die sichtbaren Track-Pfade werden direkt ans Backend geschickt.
-  // Der Ordner ist nur noch Fallback/Hinweis. Damit landet das Cover nicht
-  // im falschen Album, wenn Albumname und Ordnername auseinanderlaufen.
   if(firstFolder) folder=firstFolder;
   if((!folder || String(folder).startsWith('__album__:')) && !paths.length){
     alert('Bitte zuerst ein konkretes Album/einen Ordner auswählen.'); return;
@@ -1737,6 +1756,7 @@ async function uploadTagCover(){
 
   const previewUrl=setTagCoverPreviewFromFile(f);
   try{
+    setTagActionBusy(true, 'Cover wird gespeichert…');
     const data=await new Promise((resolve,reject)=>{
       const r=new FileReader();
       r.onload=()=>resolve(String(r.result||''));
@@ -1756,23 +1776,23 @@ async function uploadTagCover(){
     if(res.errors?.length || verified < Number(res.updated||0)){
       alert(msg+(res.errors?.length?'\n'+res.errors.join('\n'):''));
     }
-    await loadTagsPage();
     try{
       const firstPath=(res.paths && res.paths[0]) || paths[0] || '';
       const cp=document.getElementById('tagCoverPreview');
       if(cp && firstPath){ cp.outerHTML = tagCoverBox(coverUrlPath(firstPath)); }
     }catch(_e){}
-    if(currentView==='media') await loadMediaPage();
+    if(currentView==='media') setTimeout(()=>loadMediaPage().catch(()=>{}), 300);
   }catch(e){
     coverCacheBust=Date.now();
     alert('Cover konnte nicht gespeichert werden: '+e.message);
-    await loadTagsPage().catch(()=>{});
   }
   finally{
+    setTagActionBusy(false);
     if(previewUrl) setTimeout(()=>URL.revokeObjectURL(previewUrl), 15000);
     if(inp) inp.value='';
   }
 }
+
 
 
 function currentTagRows(){
@@ -1942,9 +1962,7 @@ async function applyTagScraperProposal(index, mode='year_cover'){
     progressText.textContent=msg; status.textContent=msg;
     if(st)st.textContent=msg;
     if(errors.length) alert(msg+'\n'+errors.slice(0,10).join('\n'));
-    await loadStats();
-    await loadGenreOptions();
-    await loadBrowser();
+    scheduleLightRefresh(700);
     await loadTagsPage();
     setTagsDirty(false);
   }catch(e){
@@ -1999,33 +2017,43 @@ async function saveTagUpdates(updates, okMsg, opts={}){
   const keepFolder=selectedTagFolder;
   const keepAlbum=opts.album || selectedAlbum;
   const keepArtist=selectedArtist;
+  const sortFiles=(document.getElementById('sortAfterTags')?.value==='on'||document.getElementById('sortAfterTagsPage')?.value==='on');
   try{
-    const res=await j(API+'/tags/update',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({updates,sort_files:(document.getElementById('sortAfterTags')?.value==='on'||document.getElementById('sortAfterTagsPage')?.value==='on')})});
+    setTagActionBusy(true, 'Tags werden gespeichert…');
+    const res=await j(API+'/tags/update',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({updates,sort_files:sortFiles})});
     const msg = `${okMsg} Gespeichert: ${res.updated}/${res.total}` + (res.errors?.length ? ` · Fehler: ${res.errors.length}` : '');
     progressText.textContent = msg;
     status.textContent = msg;
     if(res.errors?.length) alert(`${okMsg}\nGespeichert: ${res.updated}/${res.total}\nFehler:\n${res.errors.join('\n')}`);
     if(opts.album) selectedAlbum=opts.album;
-    await loadStats();
-    await loadGenreOptions();
-    if(wasTags){
-      if(keepFolder!==null && keepFolder!==undefined){
-        selectedTagFolder=keepFolder;
-        selectedAlbum=keepAlbum || selectedAlbum;
-        selectedArtist=keepArtist;
-        await loadBrowser();
-        await loadTagsPage();
-      }else{
-        await loadBrowser();
-        await loadTagsPage();
-      }
-    }else{
+    setTagsDirty(false);
+
+    // v1.9.20: Statistik/Genres werden verzögert aktualisiert, nicht blockierend.
+    scheduleLightRefresh(900);
+
+    if(sortFiles){
+      // Wenn Dateien wirklich verschoben/umbenannt wurden, müssen Pfade neu geladen werden.
+      selectedTagFolder=keepFolder;
+      selectedAlbum=keepAlbum || selectedAlbum;
+      selectedArtist=keepArtist;
       await loadBrowser();
-      await loadAlbums();
-      if(selectedAlbum) await selectAlbum(selectedAlbum);
+      await loadTagsPage();
+    }else if(wasTags){
+      // Formular bleibt offen; kein kompletter Browser-Reload nach jedem Speichern.
+      selectedTagFolder=keepFolder;
+      selectedAlbum=keepAlbum || selectedAlbum;
+      selectedArtist=keepArtist;
+      syncSingleSelectionUI();
+    }else{
+      scheduleLightRefresh(300);
     }
-  }catch(e){alert('Tags konnten nicht gespeichert werden:\n'+e.message)}
+  }catch(e){
+    alert('Tags konnten nicht gespeichert werden:\n'+e.message)
+  }finally{
+    setTagActionBusy(false);
+  }
 }
+
 
 
 
@@ -2297,7 +2325,7 @@ document.addEventListener('DOMContentLoaded',()=>{
 });
 
 
-/* MusicLab v1.9.18 safe UI helper - never blocks app startup */
+/* MusicLab v1.9.20 safe UI helper - never blocks app startup */
 (function(){
   function safe(fn){
     try{ fn(); }catch(e){ console.warn('MusicLab safe UI helper skipped:', e); }
