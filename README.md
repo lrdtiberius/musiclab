@@ -1,4 +1,4 @@
-# MusicLab v1.9.20 Synology Project Safe
+# MusicLab v1.9.21 Synology Project Safe
 
 Diese Version ist bewusst für deinen gewohnten Synology-Ablauf gebaut:
 
@@ -78,7 +78,7 @@ http://192.168.188.34:8092/?v=1913
 `data/.keep` ist enthalten, damit der Ordner sicher mit in der ZIP landet. Eine vorhandene `data/musiclab.sqlite` auf der NAS nicht löschen, wenn Analysewerte erhalten bleiben sollen.
 
 
-## Änderungen in v1.9.20
+## Änderungen in v1.9.21
 
 - Batch-Button `Ausführen` bleibt nach Auswahl einer Aktion aktiv und wird nicht mehr vom Status-Poller grundlos ausgegraut.
 - Dropdown `Aktion wählen…` aktualisiert den Button sofort per `onchange`.
@@ -86,17 +86,31 @@ http://192.168.188.34:8092/?v=1913
 - Synology-Projektmodus bleibt erhalten.
 
 
-## Änderungen in v1.9.20
+## Änderungen in v1.9.21
 
 - Backend-Fehler `name 'normalize_parallelism' is not defined` vollständig behoben.
 - Alter Aufruf `normalize_parallelism()` bekommt einen Kompatibilitätswrapper.
 - Parallelität wird aus `parallel_normalize` gelesen und auf sichere Werte begrenzt.
 
 
-## Änderungen in v1.9.20
+## Änderungen in v1.9.21
 
 - Tag-Speichern lädt nicht mehr jedes Mal synchron Statistik, Genres, Browser und Tagseite komplett neu.
 - Albumwechsel in der Tag-Ansicht lädt nicht mehr unnötig die Seitenleiste neu.
 - Cover-Speichern aktualisiert die Vorschau direkt statt die komplette Tagseite neu zu laden.
 - SQLite nutzt Timeout/WAL/busy_timeout gegen kurze `database is locked`-Phasen.
 - CSS-Containment verbessert Scroll-/Render-Performance großer Listen.
+
+
+## Änderungen in v1.9.21
+
+- Cover werden vor dem Speichern Apple-kompatibel als JPEG/RGB normalisiert.
+- Maximale Covergröße ca. 1200 × 1200 px.
+- MP3-Cover werden als APIC `image/jpeg` gespeichert.
+- MP3 wird mit ID3v2.3 gespeichert, was für Apple Musik oft zuverlässiger ist.
+- M4A/ALAC/MP4-Cover werden als `covr`-Atom gespeichert.
+- FLAC-Cover werden als Picture Block gespeichert.
+- Zusätzlich werden `cover.jpg` und `folder.jpg` im Albumordner geschrieben.
+- Nach dem Speichern wird geprüft, bei wie vielen Dateien wirklich ein Cover eingebettet ist.
+
+Hinweis: Für bereits in Apple Musik importierte Dateien das Album ggf. aus der Mediathek entfernen und neu importieren, damit Apple die geänderten eingebetteten Cover neu einliest.

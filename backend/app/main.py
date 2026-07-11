@@ -30,6 +30,7 @@ from mutagen import File as MutagenFile
 from mutagen.id3 import ID3, APIC, ID3NoHeaderError
 from mutagen.mp4 import MP4, MP4Cover
 from mutagen.flac import FLAC, Picture
+from PIL import Image
 try:
     from mutagen.oggvorbis import OggVorbis
 except Exception:
@@ -42,7 +43,7 @@ LOG_PATH = LOG_DIR / "musiclab.log"
 LOG_MAX_BYTES = int(os.getenv("LOG_MAX_BYTES", str(10 * 1024 * 1024)))
 EXTS = {".mp3", ".m4a", ".aac", ".flac", ".ogg"}
 SCHEMA_VERSION = 24
-APP_VERSION = "1.9.20"
+APP_VERSION = "1.9.21"
 LOG_TZ = os.getenv("TZ") or os.getenv("LOG_TZ") or "Europe/Berlin"
 
 def local_log_time() -> str:
@@ -1452,7 +1453,7 @@ def normalize_all_worker(backup_mode: Optional[str] = None, target_source: str =
     normalize_all_parallelism_guard = get_normalize_parallelism()
     init_db()
     try:
-        # v1.9.20: Sofort sichtbarer Status, bevor die große Album-Vorschau gebaut wird.
+        # v1.9.21: Sofort sichtbarer Status, bevor die große Album-Vorschau gebaut wird.
         state.update({
             "running": True,
             "stop": False,
@@ -2181,7 +2182,7 @@ def normalize_preview_all(target_source: str = "settings"):
 def normalize_all(data: dict = None):
     data = data or {}
     backup = data.get("backup") if isinstance(data, dict) else None
-    # v1.9.20: „Alles normalisieren“ nutzt bewusst die Einstellungen.
+    # v1.9.21: „Alles normalisieren“ nutzt bewusst die Einstellungen.
     # Referenzwerte werden vorher mit „Ziel-LUFS übernehmen“ in die Einstellungen kopiert.
     target_source = "settings"
     if state.get("running"):
@@ -2260,7 +2261,7 @@ def api_music_root_check_alias(path: Optional[str] = None):
 @app.get("/api/version")
 def api_version():
     return {
-        "version": APP_VERSION if "APP_VERSION" in globals() else "1.9.20",
+        "version": APP_VERSION if "APP_VERSION" in globals() else "1.9.21",
         "music_root": str(get_music_root()),
         "music_root_check": check_music_root(str(get_music_root())),
         "settings": get_settings(),
@@ -3499,14 +3500,46 @@ def _write_folder_cover_files(folders, raw: bytes, mime: str):
     return written, errors
 
 
+
+def _apple_jpeg_cover(raw: bytes, max_size: int = 1200) -> bytes:
+    """Apple-kompatibles Cover: JPEG, RGB/sRGB-nahe, max. 1200px Kantenlänge."""
+    try:
+        img = Image.open(io.BytesIO(raw))
+        img.load()
+        if img.mode in ("RGBA", "LA") or (img.mode == "P" and "transparency" in img.info):
+            rgba = img.convert("RGBA")
+            bg = Image.new("RGBA", rgba.size, (255, 255, 255, 255))
+            bg.alpha_composite(rgba)
+            img = bg.convert("RGB")
+        else:
+            img = img.convert("RGB")
+        if max(img.size) > max_size:
+            img.thumbnail((max_size, max_size), Image.LANCZOS)
+        out = io.BytesIO()
+        img.save(out, format="JPEG", quality=92, optimize=True, progressive=False)
+        return out.getvalue()
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Cover konnte nicht nach JPEG konvertiert werden: {e}")
+
+
+def _has_embedded_cover_bool(p: Path) -> bool:
+    try:
+        return bool(_embedded_cover_from_file(p))
+    except Exception:
+        return False
+
 @app.post("/api/tags/cover")
 async def api_tags_cover(request: Request):
-    """Embed an uploaded cover into exactly the tracks currently shown in Tags.
+    """Cover Apple-kompatibel speichern.
 
-    v1.8.12: The frontend now sends the concrete visible track paths. That avoids
-    wrong albums when the UI selection is virtual, when album names exist more
-    than once, or when folder names differ from Album tags. A folder cover file is
-    also written as a compatibility fallback.
+    v1.9.21:
+    - Eingehende JPG/PNG/WebP/etc. werden nach JPEG/RGB konvertiert.
+    - Maximale Größe: ca. 1200×1200 px.
+    - MP3: APIC image/jpeg, ID3v2.3.
+    - M4A/MP4/AAC/ALAC: covr JPEG.
+    - FLAC: Picture Block image/jpeg.
+    - Zusätzlich cover.jpg und folder.jpg im Albumordner.
+    - Danach wird geprüft, wie viele Dateien wirklich ein eingebettetes Cover haben.
     """
     import base64
     try:
@@ -3516,7 +3549,6 @@ async def api_tags_cover(request: Request):
 
     folder = str(payload.get("folder") or "").strip().strip("/")
     filename = str(payload.get("filename") or "cover").lower()
-    ctype = str(payload.get("content_type") or "").lower()
     data_url = str(payload.get("data") or "")
 
     if not folder and not payload.get("paths") and not payload.get("track_paths"):
@@ -3531,16 +3563,10 @@ async def api_tags_cover(request: Request):
     if not raw:
         raise HTTPException(status_code=400, detail="Leere Datei")
 
-    if "png" in ctype or filename.endswith(".png") or raw.startswith(b"\x89PNG"):
-        mime = "image/png"
-        mp4_format = MP4Cover.FORMAT_PNG
-        flac_pic_type = 3
-    elif "jpeg" in ctype or "jpg" in ctype or filename.endswith((".jpg", ".jpeg")) or raw.startswith(b"\xff\xd8"):
-        mime = "image/jpeg"
-        mp4_format = MP4Cover.FORMAT_JPEG
-        flac_pic_type = 3
-    else:
-        raise HTTPException(status_code=400, detail="Bitte JPG oder PNG verwenden")
+    jpg = _apple_jpeg_cover(raw, 1200)
+    mime = "image/jpeg"
+    mp4_format = MP4Cover.FORMAT_JPEG
+    flac_pic_type = 3
 
     root = get_music_root().resolve()
     files = _audio_paths_from_cover_payload(payload, folder)
@@ -3549,9 +3575,9 @@ async def api_tags_cover(request: Request):
         raise HTTPException(status_code=404, detail=f"Keine passenden Audiodateien gefunden: {folder or 'Auswahl'}")
 
     try:
-        folder = str(files[0].parent.relative_to(root))
+        folder_label = str(files[0].parent.relative_to(root))
     except Exception:
-        folder = folder or "Auswahl"
+        folder_label = folder or "Auswahl"
 
     updated = 0
     skipped = 0
@@ -3568,15 +3594,16 @@ async def api_tags_cover(request: Request):
                 except ID3NoHeaderError:
                     tags = ID3()
                 tags.delall("APIC")
-                tags.add(APIC(encoding=3, mime=mime, type=3, desc="Cover", data=raw))
+                tags.add(APIC(encoding=3, mime=mime, type=3, desc="Cover", data=jpg))
+                # Apple Musik liest ID3v2.3 oft zuverlässiger als ID3v2.4.
                 tags.save(str(p), v2_version=3)
                 updated += 1
 
-            elif ext in {".m4a", ".mp4", ".aac"}:
+            elif ext in {".m4a", ".mp4", ".aac", ".alac"}:
                 audio = MP4(str(p))
                 if audio.tags is None:
                     audio.add_tags()
-                audio.tags["covr"] = [MP4Cover(raw, imageformat=mp4_format)]
+                audio.tags["covr"] = [MP4Cover(jpg, imageformat=mp4_format)]
                 audio.save()
                 updated += 1
 
@@ -3587,18 +3614,19 @@ async def api_tags_cover(request: Request):
                 pic.type = flac_pic_type
                 pic.mime = mime
                 pic.desc = "Cover"
-                pic.data = raw
+                pic.data = jpg
                 audio.add_picture(pic)
                 audio.save()
                 updated += 1
 
             elif ext == ".ogg" and OggVorbis is not None:
+                # Apple Musik importiert OGG normalerweise nicht. Trotzdem korrekt als JPEG Picture schreiben.
                 audio = OggVorbis(str(p))
                 pic = Picture()
                 pic.type = flac_pic_type
                 pic.mime = mime
                 pic.desc = "Cover"
-                pic.data = raw
+                pic.data = jpg
                 encoded = base64.b64encode(pic.write()).decode("ascii")
                 audio["metadata_block_picture"] = [encoded]
                 audio.save()
@@ -3608,7 +3636,7 @@ async def api_tags_cover(request: Request):
                 skipped += 1
                 continue
 
-            if _embedded_cover_from_file(p):
+            if _has_embedded_cover_bool(p):
                 verified += 1
             else:
                 if len(errors) < 30:
@@ -3618,24 +3646,32 @@ async def api_tags_cover(request: Request):
             if len(errors) < 30:
                 errors.append(f"{rel}: {e}")
 
-    folder_files, folder_file_errors = _write_folder_cover_files(_cover_folder_candidates(files), raw, mime)
+    # Apple-freundliche Ordnercover zusätzlich schreiben: immer JPEG.
+    folder_files, folder_file_errors = _write_folder_cover_files(_cover_folder_candidates(files), jpg, "image/jpeg")
     errors.extend(folder_file_errors[: max(0, 30 - len(errors))])
 
+    apple_ok = bool(updated > 0 and verified >= updated and not errors)
     add_log(
-        f"Cover gespeichert: {folder} ({updated}/{len(files)} eingebettet, {verified} geprüft, Folder-Dateien {len(folder_files)}, übersprungen {skipped}, Fehler {len(errors)})",
+        f"Cover Apple-kompatibel gespeichert: {folder_label} ({updated}/{len(files)} eingebettet, {verified}/{len(files)} geprüft, Folder-Dateien {len(folder_files)}, übersprungen {skipped}, Fehler {len(errors)})",
         bool(errors),
     )
     return {
         "ok": True,
-        "folder": folder,
+        "mode": "apple_compatible_jpeg",
+        "folder": folder_label,
+        "filename": filename,
         "updated": updated,
         "verified": verified,
         "total": len(files),
         "skipped": skipped,
+        "unsupported": skipped,
         "folder_files": folder_files,
         "errors": errors,
         "paths": [str(p.relative_to(root)) for p in files],
+        "apple_compatible": apple_ok,
+        "jpeg_bytes": len(jpg),
     }
+
 
 @app.get("/api/media/cover_by_path")
 def api_media_cover_by_path(path: str):
