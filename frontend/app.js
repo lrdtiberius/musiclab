@@ -1,5 +1,5 @@
 const API='http://'+location.hostname+':8091/api';
-const APP_VERSION='1.9.39';
+const APP_VERSION='2.0.0';
 let coverCacheBust=Date.now();
 let selectedArtist=null, selectedAlbum=null, selectedTagFolder=null;
 let selectedUiKey=null; // v1.9.39: eindeutige visuelle Einzelauswahl für Listen und Album-Kacheln
@@ -14,6 +14,9 @@ let selectedTracks=new Map();
 let selectedMediaArtist=null, selectedMediaFolder=null, selectedMediaAlbum=null;
 let mediaArtistsCache=[];
 let mediaAlbumsCache=[];
+const mediaArtistAlbumsCache=new Map();
+let mediaTracksRequestToken=0;
+let mediaPageLoaded=false;
 let tagDiscTotals={};
 let tagsDirty=false;
 let selectionSerial=0;
@@ -1112,7 +1115,6 @@ async function normalizeSelectedAlbums(){
 }
 
 let lastLibraryCheck=null;
-function escAttr(v){return String(v??'').replace(/"/g,'&quot;').replace(/</g,'&lt;').replace(/>/g,'&gt;')}
 function renderIssueGroup(title, items){
   if(!items || !items.length) return '';
   const rows=items.slice(0,6).map(x=>`<div class="checkPath">${escHtml(x.path||x.title||'')}</div>`).join('');
@@ -2062,8 +2064,13 @@ async function loadMediaPage(){
   const albumsBox=document.getElementById('mediaAlbums');
   const tracksBox=document.getElementById('mediaTracks');
   try{
-    mediaArtistsCache=await j(API+'/media/artists?sort=artist');
-    mediaAlbumsCache=await j(API+'/media_albums');
+    if(!mediaPageLoaded){
+      [mediaArtistsCache,mediaAlbumsCache]=await Promise.all([
+        j(API+'/media/artists?sort=artist'),
+        j(API+'/media_albums')
+      ]);
+      mediaPageLoaded=true;
+    }
     if(selectedMediaArtist && !mediaArtistsCache.some(x=>x.artist===selectedMediaArtist)){
       selectedMediaArtist=null; selectedMediaFolder=null; selectedMediaAlbum=null;
     }
@@ -2077,6 +2084,11 @@ async function loadMediaPage(){
     if(albumsBox) albumsBox.innerHTML='';
     if(tracksBox) tracksBox.innerHTML='';
   }
+}
+
+function invalidateMediaCaches(){
+  mediaPageLoaded=false;
+  mediaArtistAlbumsCache.clear();
 }
 
 function mediaBrowseMode(){ return document.getElementById('mediaBrowseMode')?.value || 'artist'; }
@@ -2146,18 +2158,30 @@ async function loadMediaAlbums(sort){
     if(albumsBox) albumsBox.innerHTML='<div class="empty">Bitte Interpret auswählen.</div>';
     return;
   }
-  const albums=await j(API+'/media/artist_albums?artist='+encodeURIComponent(selectedMediaArtist)+'&sort='+encodeURIComponent(sort||'artist'));
+
+  const cacheKey=(selectedMediaArtist||'')+'|'+(sort||'artist');
+  let albums=mediaArtistAlbumsCache.get(cacheKey);
+  if(!albums){
+    albums=await j(API+'/media/artist_albums?artist='+encodeURIComponent(selectedMediaArtist)+'&sort='+encodeURIComponent(sort||'artist'));
+    mediaArtistAlbumsCache.set(cacheKey, albums);
+  }
+
   if(selectedMediaFolder && !albums.some(a=>a.folder===selectedMediaFolder)) selectedMediaFolder=null;
   if(!selectedMediaFolder && albums.length){
     selectedMediaFolder=albums[0].folder;
     selectedMediaAlbum=albums[0].album;
   }
+
   albumsBox.innerHTML=albums.map(x=>{
     const cover=x.first_path ? coverUrlPath(x.first_path) : coverUrl(x.folder||'', selectedMediaArtist||'');
     const sel=x.folder===selectedMediaFolder;
     return `<div class="mediaAlbumRow ${sel?'sel':''}" data-folder="${encodeURIComponent(x.folder||'')}" data-album="${encodeURIComponent(x.album||'')}">${coverBox(cover)}<div class="mediaAlbumText"><b>${escHtml(x.album)}</b><br><span class="small">${x.tracks} Titel · ${x.analyzed}/${x.tracks} analysiert · ${dur(x.duration)}</span><br><span class="small pathLine">${escHtml(x.folder||'')}</span></div></div>`;
   }).join('') || '<div class="empty">Keine Alben gefunden.</div>';
-  albumsBox.querySelectorAll('[data-folder]').forEach(el=>{el.onclick=()=>selectMediaAlbum(decodeURIComponent(el.dataset.folder), decodeURIComponent(el.dataset.album||''));});
+
+  albumsBox.querySelectorAll('[data-folder]').forEach(el=>{
+    el.onclick=()=>selectMediaAlbum(decodeURIComponent(el.dataset.folder), decodeURIComponent(el.dataset.album||''));
+  });
+
   if(selectedMediaFolder) await loadMediaTracks();
   else{
     tracksBox.innerHTML='';
@@ -2169,20 +2193,31 @@ async function loadMediaAlbums(sort){
 async function selectMediaAlbum(folder, album){
   selectedMediaFolder=folder;
   selectedMediaAlbum=album;
+
+  // Update only the selection marker. Rebuilding every album card reloads all
+  // cover images and caused the visible 3–4 second stutter.
+  document.querySelectorAll('#mediaAlbums .mediaAlbumRow').forEach(el=>{
+    let f='';
+    try{ f=decodeURIComponent(el.dataset.folder||''); }catch(_e){ f=el.dataset.folder||''; }
+    el.classList.toggle('sel', f===folder);
+  });
+
   const head=document.getElementById('mediaAlbumHead');
   const tracksBox=document.getElementById('mediaTracks');
   if(head) head.innerHTML='<div class="mediaCoverBox large loading noCover"><div class="coverFallback">♪</div></div><div class="mediaAlbumText"><b>'+escHtml(album||'Album')+'</b><br><span>Cover/Titel werden geladen…</span></div>';
-  if(tracksBox) tracksBox.innerHTML='';
-  renderMediaBrowser();
-  await loadMediaAlbums('artist');
+  if(tracksBox) tracksBox.innerHTML='<div class="empty">Titel werden geladen…</div>';
+  await loadMediaTracks();
 }
 
 async function loadMediaTracks(){
+  const requestToken=++mediaTracksRequestToken;
+  const requestedFolder=selectedMediaFolder;
   const tracksBox=document.getElementById('mediaTracks');
   const head=document.getElementById('mediaAlbumHead');
   const dl=document.getElementById('mediaDownload');
   if(!selectedMediaFolder){return;}
-  const tracks=await j(API+'/media/album_tracks?folder='+encodeURIComponent(selectedMediaFolder)+'&artist='+encodeURIComponent(selectedMediaFolder.startsWith('__album__:')?'':(selectedMediaArtist||'')));
+  const tracks=await j(API+'/media/album_tracks?folder='+encodeURIComponent(requestedFolder)+'&artist='+encodeURIComponent(requestedFolder.startsWith('__album__:')?'':(selectedMediaArtist||'')));
+  if(requestToken!==mediaTracksRequestToken || requestedFolder!==selectedMediaFolder) return;
   const cover=tracks[0]?.path ? coverUrlPath(tracks[0].path) : coverUrl(selectedMediaFolder, selectedMediaArtist||'');
   const album=selectedMediaAlbum || (tracks[0]?.album) || 'Album';
   const duration=tracks.reduce((a,x)=>a+Number(x.duration||0),0);
@@ -2400,24 +2435,15 @@ document.addEventListener('DOMContentLoaded',()=>{
     }
   }
   function ensureSummary(){
-    var side = document.querySelector('aside,.sidebar,.side-panel,.left-pane,#sidebar');
-    if(!side) return null;
-    var summary = side.querySelector('.ml-selection-summary');
-    if(!summary){
-      summary = document.createElement('div');
-      summary.className = 'ml-selection-summary';
-      summary.textContent = 'Auswahl: 0 markiert';
-      var anchor = side.querySelector('input,select,.search,.tabs');
-      if(anchor && anchor.parentNode){
-        anchor.parentNode.insertBefore(summary, anchor.nextSibling);
-      }else{
-        side.insertBefore(summary, side.firstChild);
-      }
-    }
-    return summary;
+    // v2.0.0:
+    // Die zusätzliche "Auswahl: ... markiert"-Box wird nicht mehr erzeugt.
+    // Sie hat auf der Tags-Seite den Suchfilter zusammengedrückt.
+    document.querySelectorAll('.ml-selection-summary').forEach(el=>el.remove());
+    return null;
   }
   function updateUI(){
     safe(function(){
+      document.querySelectorAll('.ml-selection-summary').forEach(el=>el.remove());
       updateCredit();
       var cards = findCards();
       var selected = 0;

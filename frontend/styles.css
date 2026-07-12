@@ -1679,3 +1679,480 @@ body.tagBusy{
   border-radius:8px;
   padding:3px 6px;
 }
+
+
+/* v2.0.0-beta2: stabiler Header ohne abgeschnittene Tabs */
+header{
+  gap:6px!important;
+  padding-left:10px!important;
+  padding-right:10px!important;
+  min-width:0!important;
+  overflow:hidden!important;
+}
+header h1{
+  font-size:18px!important;
+  flex:0 0 auto!important;
+}
+header > button{
+  padding:7px 9px!important;
+  font-size:12px!important;
+  flex:0 0 auto!important;
+}
+.headerStatus{
+  min-width:135px!important;
+  max-width:none!important;
+  flex:1 1 240px!important;
+}
+.viewTabs{
+  min-width:0!important;
+  flex:0 1 auto!important;
+  display:flex!important;
+  gap:4px!important;
+  overflow:visible!important;
+}
+.viewTabs button{
+  padding:7px 9px!important;
+  font-size:12px!important;
+  flex:0 0 auto!important;
+}
+@media(max-width:1250px){
+  header h1{font-size:16px!important}
+  header > button{padding:6px 7px!important;font-size:11px!important}
+  .viewTabs button{padding:6px 7px!important;font-size:11px!important}
+  .headerStatus{min-width:110px!important}
+}
+
+/* Der Inhalt darf niemals breiter als das Browserfenster werden. */
+.layout, main, .appView, .panel, .mediaPage, .mediaColumns, .protocolPage{
+  min-width:0!important;
+  max-width:100%!important;
+}
+.layout{
+  width:100%!important;
+  overflow:hidden!important;
+}
+main{
+  width:100%!important;
+}
+
+/* Protokollfilter behalten beim Wechsel immer exakt dieselbe Breite. */
+#protocolView .filterPills{
+  display:grid!important;
+  grid-template-columns:repeat(6,96px)!important;
+  gap:8px!important;
+  align-items:center!important;
+}
+#protocolView .filterPills button{
+  width:96px!important;
+  min-width:96px!important;
+  max-width:96px!important;
+  box-sizing:border-box!important;
+}
+#protocolView .protocolTools{
+  overflow:hidden!important;
+}
+@media(max-width:1050px){
+  #protocolView .filterPills{
+    grid-template-columns:repeat(3,96px)!important;
+  }
+}
+
+/* Medien: keine Layoutsprünge und weniger schweres synchrones Rendering. */
+.mediaList{
+  contain:strict;
+}
+.mediaAlbumRow,.mediaTracks tr{
+  content-visibility:auto;
+  contain-intrinsic-size:64px;
+}
+.mediaColumns{
+  min-width:0!important;
+}
+.mediaCol{
+  min-width:0!important;
+  overflow:hidden!important;
+}
+.mediaTracks{
+  min-width:0!important;
+  overflow:auto!important;
+}
+
+
+/* ============================================================
+   v2.0.0-beta3 – Header und Protokoll ohne Größen-/Zeilensprünge
+   ============================================================ */
+
+/*
+ * Breitere Fenster: eine Zeile.
+ * Unter 1500 px: Bedienung oben, Navigation vollständig in einer
+ * eigenen zweiten Zeile. Dadurch wird rechts nichts mehr abgeschnitten.
+ */
+@media (min-width:1501px){
+  body.studioRedesign header{
+    display:flex!important;
+    flex-wrap:nowrap!important;
+    height:auto!important;
+    min-height:64px!important;
+    overflow:visible!important;
+  }
+  body.studioRedesign header .viewTabs{
+    margin-left:auto!important;
+  }
+}
+
+@media (max-width:1500px){
+  body.studioRedesign header{
+    display:grid!important;
+    grid-template-columns:max-content max-content max-content max-content max-content minmax(120px,1fr)!important;
+    grid-template-rows:auto auto!important;
+    column-gap:7px!important;
+    row-gap:7px!important;
+    align-items:center!important;
+    height:auto!important;
+    min-height:96px!important;
+    padding:8px 12px!important;
+    overflow:visible!important;
+  }
+
+  body.studioRedesign header > h1{
+    grid-column:1!important;
+    grid-row:1!important;
+    min-width:0!important;
+    white-space:nowrap!important;
+  }
+
+  body.studioRedesign header > button:nth-of-type(1){
+    grid-column:2!important;
+    grid-row:1!important;
+  }
+  body.studioRedesign header > button:nth-of-type(2){
+    grid-column:3!important;
+    grid-row:1!important;
+  }
+  body.studioRedesign header > button:nth-of-type(3){
+    grid-column:4!important;
+    grid-row:1!important;
+  }
+  body.studioRedesign header > button:nth-of-type(4){
+    grid-column:5!important;
+    grid-row:1!important;
+  }
+
+  body.studioRedesign header > .headerStatus{
+    grid-column:6!important;
+    grid-row:1!important;
+    width:100%!important;
+    min-width:100px!important;
+    max-width:none!important;
+    overflow:hidden!important;
+  }
+
+  body.studioRedesign header > .headerStatus #progressText{
+    display:block!important;
+    min-width:0!important;
+    overflow:hidden!important;
+    text-overflow:ellipsis!important;
+    white-space:nowrap!important;
+  }
+
+  body.studioRedesign header > .viewTabs{
+    grid-column:1 / -1!important;
+    grid-row:2!important;
+    width:100%!important;
+    min-width:0!important;
+    margin:0!important;
+    padding:4px!important;
+    box-sizing:border-box!important;
+    display:flex!important;
+    flex-wrap:nowrap!important;
+    justify-content:flex-end!important;
+    gap:5px!important;
+    overflow:visible!important;
+  }
+
+  body.studioRedesign header > .viewTabs button{
+    flex:0 0 auto!important;
+    min-width:0!important;
+    padding:7px 11px!important;
+    font-size:12px!important;
+    white-space:nowrap!important;
+  }
+}
+
+/* Etwas kompakter, ohne Navigation abzuschneiden. */
+@media (max-width:1120px){
+  body.studioRedesign header{
+    grid-template-columns:max-content repeat(4,max-content) minmax(90px,1fr)!important;
+    column-gap:5px!important;
+  }
+  body.studioRedesign header > h1{
+    font-size:15px!important;
+  }
+  body.studioRedesign header > button{
+    padding:6px 7px!important;
+    font-size:10.5px!important;
+  }
+  body.studioRedesign header > .viewTabs{
+    justify-content:flex-start!important;
+    overflow-x:auto!important;
+    scrollbar-width:thin;
+  }
+}
+
+/*
+ * Protokoll:
+ * Das per ::before erzeugte Wort "Filter:" ist ein eigenes Grid-Element.
+ * beta2 hatte nur sechs Spalten definiert, obwohl sieben Elemente vorhanden
+ * waren. Deshalb sprang "Sortierung" allein in die zweite Zeile.
+ */
+#protocolView .protocolTools{
+  display:grid!important;
+  grid-template-columns:minmax(0,1fr) auto!important;
+  grid-template-rows:auto!important;
+  align-items:center!important;
+  gap:12px!important;
+  padding:12px 16px!important;
+  overflow:visible!important;
+}
+
+#protocolView .filterPills{
+  display:grid!important;
+  grid-template-columns:auto repeat(6,88px)!important;
+  grid-auto-flow:row!important;
+  align-items:center!important;
+  justify-content:start!important;
+  gap:8px!important;
+  min-width:0!important;
+}
+
+#protocolView .filterPills::before{
+  position:static!important;
+  display:block!important;
+  margin:0 4px 0 0!important;
+  white-space:nowrap!important;
+}
+
+#protocolView .filterPills button{
+  width:88px!important;
+  min-width:88px!important;
+  max-width:88px!important;
+  height:36px!important;
+  min-height:36px!important;
+  padding:0 8px!important;
+  margin:0!important;
+  border-width:1px!important;
+  box-sizing:border-box!important;
+  line-height:34px!important;
+  text-align:center!important;
+  white-space:nowrap!important;
+}
+
+#protocolView .filterPills button.active{
+  border-width:1px!important;
+  transform:none!important;
+}
+
+#protocolView .protocolTools > .toolbar{
+  display:flex!important;
+  flex-wrap:nowrap!important;
+  justify-content:flex-end!important;
+  gap:8px!important;
+  margin:0!important;
+}
+
+#protocolView .protocolTools > .toolbar button{
+  height:36px!important;
+  min-height:36px!important;
+  box-sizing:border-box!important;
+  white-space:nowrap!important;
+}
+
+/* Auf schmaleren Fenstern bewusst zwei stabile Zeilen statt zufälligem Umbrechen. */
+@media (max-width:1160px){
+  #protocolView .protocolTools{
+    grid-template-columns:1fr!important;
+    grid-template-rows:auto auto!important;
+  }
+  #protocolView .protocolTools > .toolbar{
+    justify-content:flex-end!important;
+  }
+}
+
+@media (max-width:760px){
+  #protocolView .filterPills{
+    grid-template-columns:auto repeat(3,88px)!important;
+  }
+  #protocolView .protocolTools > .toolbar{
+    flex-wrap:wrap!important;
+    justify-content:flex-start!important;
+  }
+}
+
+
+/* ============================================================
+   v2.0.0-beta4 – Tags-Filter und Protokollgrößen stabilisieren
+   ============================================================ */
+
+/* Verhindert ein horizontales Springen, wenn irgendwo ein Scrollbalken erscheint. */
+html{
+  scrollbar-gutter:stable both-edges;
+}
+body{
+  overflow:hidden!important;
+}
+
+/* Die alte dynamische Auswahl-Zusammenfassung darf nirgends mehr Platz belegen. */
+.ml-selection-summary{
+  display:none!important;
+}
+
+/* Tags: "Suchen nach" erhält einen festen, sichtbaren Bereich. */
+body.tagsMode aside.panel{
+  min-width:320px!important;
+}
+body.tagsMode #tagSearchControls{
+  display:grid!important;
+  grid-template-columns:auto minmax(190px,1fr)!important;
+  align-items:center!important;
+  gap:10px!important;
+  width:100%!important;
+  min-width:0!important;
+  box-sizing:border-box!important;
+}
+body.tagsMode #tagSearchControls label{
+  white-space:nowrap!important;
+  margin:0!important;
+}
+body.tagsMode #tagSearchControls select{
+  display:block!important;
+  width:100%!important;
+  min-width:190px!important;
+  max-width:100%!important;
+  height:36px!important;
+  padding:0 34px 0 10px!important;
+  box-sizing:border-box!important;
+  overflow:hidden!important;
+  text-overflow:ellipsis!important;
+}
+body.tagsMode aside.panel .searchBox{
+  width:100%!important;
+  min-width:0!important;
+}
+
+/*
+ * Protokoll: Beide Hauptbereiche bleiben immer exakt gleich groß.
+ * Scrollbalken werden dauerhaft reserviert und verändern die Spalten nicht.
+ */
+#protocolView.appView.active{
+  grid-template-rows:70px 64px minmax(0,1fr)!important;
+  height:100%!important;
+  min-height:0!important;
+  overflow:hidden!important;
+}
+
+#protocolView .tagsHeader{
+  height:70px!important;
+  min-height:70px!important;
+  max-height:70px!important;
+  box-sizing:border-box!important;
+}
+
+#protocolView .protocolTools{
+  height:64px!important;
+  min-height:64px!important;
+  max-height:64px!important;
+  box-sizing:border-box!important;
+}
+
+#protocolView .protocolGrid{
+  display:grid!important;
+  grid-template-columns:minmax(0,1fr) minmax(0,1fr)!important;
+  grid-template-rows:minmax(0,1fr)!important;
+  width:100%!important;
+  height:100%!important;
+  min-width:0!important;
+  min-height:0!important;
+  gap:12px!important;
+  overflow:hidden!important;
+}
+
+#protocolView .protocolGrid > .panel{
+  width:100%!important;
+  height:100%!important;
+  min-width:0!important;
+  min-height:0!important;
+  max-width:none!important;
+  max-height:none!important;
+  box-sizing:border-box!important;
+  overflow:hidden!important;
+}
+
+#protocolView .protocolGrid > .panel > .toolbar{
+  height:52px!important;
+  min-height:52px!important;
+  max-height:52px!important;
+  box-sizing:border-box!important;
+  flex:0 0 52px!important;
+}
+
+#protocolView .historyList,
+#protocolView .logBox{
+  flex:1 1 auto!important;
+  width:100%!important;
+  min-width:0!important;
+  min-height:0!important;
+  box-sizing:border-box!important;
+  overflow-y:scroll!important;
+  overflow-x:auto!important;
+  scrollbar-gutter:stable!important;
+}
+
+#protocolView .logBox{
+  margin:0!important;
+}
+
+/* Filterleiste: keinerlei Größenänderung zwischen aktiv/inaktiv. */
+#protocolView .filterPills{
+  height:40px!important;
+  min-height:40px!important;
+  align-content:center!important;
+}
+#protocolView .filterPills button,
+#protocolView .filterPills button:hover,
+#protocolView .filterPills button:focus,
+#protocolView .filterPills button.active{
+  width:88px!important;
+  min-width:88px!important;
+  max-width:88px!important;
+  height:36px!important;
+  min-height:36px!important;
+  max-height:36px!important;
+  padding:0 8px!important;
+  margin:0!important;
+  border:1px solid transparent!important;
+  box-sizing:border-box!important;
+  transform:none!important;
+  font-size:13px!important;
+  line-height:34px!important;
+  font-weight:700!important;
+  letter-spacing:0!important;
+}
+#protocolView .filterPills button.active{
+  border-color:rgba(255,255,255,.12)!important;
+}
+
+/* Unterhalb 1160 px kontrollierter Wechsel auf zwei feste Hauptzeilen. */
+@media(max-width:1160px){
+  #protocolView.appView.active{
+    grid-template-rows:70px auto minmax(0,1fr)!important;
+  }
+  #protocolView .protocolTools{
+    height:auto!important;
+    min-height:112px!important;
+    max-height:none!important;
+  }
+  #protocolView .protocolGrid{
+    grid-template-columns:1fr!important;
+    grid-template-rows:minmax(220px,1fr) minmax(220px,1fr)!important;
+  }
+}
