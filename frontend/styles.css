@@ -2156,3 +2156,17 @@ body.tagsMode aside.panel .searchBox{
     grid-template-rows:minmax(220px,1fr) minmax(220px,1fr)!important;
   }
 }
+
+/* v2.1.0: Toleranz-Normalisierung */
+#normalizeTolerancePage,#normalizeTolerance{max-width:160px}
+
+.backupRestoreAllBox{
+  margin-top:14px;
+  padding:12px;
+  border:1px solid rgba(255,92,92,.25);
+  border-radius:12px;
+  background:rgba(255,92,92,.06);
+}
+.backupRestoreAllBox button{
+  margin-bottom:8px;
+}

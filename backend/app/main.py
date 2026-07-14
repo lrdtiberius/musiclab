@@ -1,5 +1,6 @@
 from __future__ import annotations
 import json
+import csv
 import mutagen
 from mutagen.mp3 import MP3
 from io import BytesIO
@@ -53,7 +54,7 @@ except Exception:
     Image = None
 
 SCHEMA_VERSION = 24
-APP_VERSION = "2.0.1"
+APP_VERSION = "2.1.1"
 
 
 LOG_TZ = os.getenv("TZ") or os.getenv("LOG_TZ") or "Europe/Berlin"
@@ -299,7 +300,7 @@ def get_settings():
 
 def save_settings(data: dict):
     with db() as con:
-        for k in ["target_lufs", "true_peak", "lra", "backup_mode", "parallel_analysis", "parallel_normalize", "music_root", "watch_mode", "sort_after_tags", "smb_base_url"]:
+        for k in ["target_lufs", "true_peak", "lra", "backup_mode", "parallel_analysis", "parallel_normalize", "normalize_tolerance_lufs", "music_root", "watch_mode", "sort_after_tags", "smb_base_url"]:
             if k in data:
                 con.execute("INSERT OR REPLACE INTO settings(key,value) VALUES(?,?)", (k, str(data[k])))
         con.commit()
@@ -314,6 +315,7 @@ def default_settings_dict():
         "backup_mode": "on",
         "parallel_analysis": "2",
         "parallel_normalize": "2",
+        "normalize_tolerance_lufs": "1.5",
         "music_root": str(DEFAULT_MUSIC_ROOT),
         "watch_mode": "off",
         "sort_after_tags": "off",
@@ -1067,6 +1069,85 @@ def analysis_worker(artist: Optional[str] = None, album: Optional[str] = None):
         finish_job("Analyse fertig")
 
 
+def normalization_plan(before: dict, settings: dict) -> dict:
+    """Berechnet eine rein statische Pegelanpassung.
+
+    Keine dynamische Loudness-Regelung und kein Limiter: Die Lautstärke innerhalb
+    des Titels bleibt unverändert. Positive Verstärkung wird am True-Peak-Ziel
+    begrenzt. Titel innerhalb der Toleranz werden übersprungen.
+    """
+    try:
+        target = float(settings.get("target_lufs", -16))
+    except Exception:
+        target = -16.0
+    try:
+        tolerance = max(0.0, float(settings.get("normalize_tolerance_lufs", 1.5)))
+    except Exception:
+        tolerance = 1.5
+    try:
+        tp_target = float(settings.get("true_peak", -1.5))
+    except Exception:
+        tp_target = -1.5
+    current = float(before.get("input_i"))
+    input_tp = float(before.get("input_tp"))
+    requested = target - current
+    predicted_requested_tp = input_tp + requested
+    plan = {
+        "target_lufs": target,
+        "tolerance_lufs": tolerance,
+        "current_lufs": current,
+        "input_tp": input_tp,
+        "requested_gain_db": round(requested, 3),
+        "applied_gain_db": 0.0,
+        "predicted_tp": input_tp,
+        "normalize": False,
+        "capped_by_true_peak": False,
+        "reason": "",
+    }
+    if abs(requested) <= tolerance:
+        plan["reason"] = "innerhalb_toleranz"
+        return plan
+    applied = requested
+    if requested > 0:
+        safe_positive_gain = tp_target - input_tp
+        if safe_positive_gain <= 0.01:
+            plan["reason"] = "kein_sicherer_gain_wegen_true_peak"
+            return plan
+        if requested > safe_positive_gain:
+            applied = safe_positive_gain
+            plan["capped_by_true_peak"] = True
+    if abs(applied) < 0.01:
+        plan["reason"] = "gain_zu_klein"
+        return plan
+    plan.update({
+        "applied_gain_db": round(applied, 3),
+        "predicted_tp": round(input_tp + applied, 3),
+        "normalize": True,
+        "reason": "true_peak_begrenzt" if plan["capped_by_true_peak"] else "ausserhalb_toleranz",
+    })
+    return plan
+
+
+def normalization_report_rows() -> list:
+    settings = get_settings()
+    with db() as con:
+        rows = [dict(r) for r in con.execute("""
+            SELECT t.id,t.path,t.title,t.artist,t.album,
+                   a.input_i,a.input_tp,a.input_lra,a.input_thresh,a.target_offset,a.status
+            FROM tracks t
+            LEFT JOIN analysis a ON a.track_id=t.id
+            ORDER BY t.artist COLLATE NOCASE,t.album COLLATE NOCASE,
+                     COALESCE(t.disc_number,1),COALESCE(t.track_number,9999),t.title COLLATE NOCASE
+        """).fetchall()]
+    out=[]
+    for row in rows:
+        if row.get("status") != "ok" or row.get("input_i") is None or row.get("input_tp") is None:
+            out.append({**row,"normalize":False,"reason":"nicht_analysiert","requested_gain_db":None,"applied_gain_db":None,"predicted_tp":None})
+            continue
+        before={k:row.get(k) for k in ["input_i","input_tp","input_lra","input_thresh","target_offset"]}
+        out.append({**row,**normalization_plan(before,settings)})
+    return out
+
 def loudnorm_filter(first: dict, settings: dict) -> str:
     return (
         f"loudnorm=I={settings['target_lufs']}:TP={settings['true_peak']}:LRA={settings['lra']}:"
@@ -1109,8 +1190,13 @@ def normalize_file(rel_path: str, settings: dict, backup_mode: Optional[str] = N
     # Wenn der Titel direkt vorher analysiert wurde, können die gespeicherten Loudnorm-Messwerte
     # wiederverwendet werden. Das spart pro Datei einen kompletten ffmpeg-Analyse-Durchlauf.
     first = measured if measured else analyze_track_file(file)
+    plan = normalization_plan(first, settings)
+    if not plan.get("normalize"):
+        return None
     suffix = file.suffix.lower()
-    cmd = ["ffmpeg", "-y", "-hide_banner", "-i", str(file), "-af", loudnorm_filter(first, settings), "-map", "0", "-map_metadata", "0", "-c:v", "copy"]
+    gain = float(plan["applied_gain_db"])
+    # Konstante Pegeländerung: keine dynamische Lautheitsregelung, kein Limiter.
+    cmd = ["ffmpeg", "-y", "-hide_banner", "-i", str(file), "-af", f"volume={gain:.6f}dB", "-map", "0", "-map_metadata", "0", "-c:v", "copy"]
     if suffix == ".mp3":
         cmd += ["-c:a", "libmp3lame", "-q:a", "2", "-f", "mp3"]
     elif suffix in [".m4a", ".aac"]:
@@ -1182,9 +1268,12 @@ def normalize_row_fast(row: dict, settings: dict) -> dict:
     before = row.get("_before")
     if not before:
         before = analyze_track_file(get_music_root() / rel)
+    plan = normalization_plan(before, settings)
+    if not plan.get("normalize"):
+        return {"row": row, "before": before, "after": before, "backup_path": None, "skipped": True, "plan": plan}
     backup_path = normalize_file(rel, settings, settings.get("backup_mode", "on"), measured=before)
     after = analyze_track_file(get_music_root() / rel)
-    return {"row": row, "before": before, "after": after, "backup_path": backup_path}
+    return {"row": row, "before": before, "after": after, "backup_path": backup_path, "skipped": False, "plan": plan}
 
 def normalize_worker(artist: Optional[str] = None, album: Optional[str] = None, backup_mode: Optional[str] = None):
     init_db()
@@ -1222,6 +1311,11 @@ def normalize_worker(artist: Optional[str] = None, album: Optional[str] = None, 
                 state["current"] = row["path"]
                 try:
                     out = fut.result()
+                    if out.get("skipped"):
+                        add_log(f"Übersprungen ({out.get('plan',{}).get('reason','Toleranz')}): {row['path']}")
+                        state["done"] += 1
+                        con.commit()
+                        continue
                     result = out["after"]
                     upsert_analysis(con, row["id"], result)
                     insert_history(con, job_id, row, artist, album or row["album"], out.get("backup_path"), settings.get("backup_mode", "on"), settings, out.get("before"), result)
@@ -1341,6 +1435,11 @@ def normalize_tracks_worker(paths: list, backup_mode: Optional[str] = None):
                 state["current"] = row["path"]
                 try:
                     out = fut.result()
+                    if out.get("skipped"):
+                        add_log(f"Übersprungen ({out.get('plan',{}).get('reason','Toleranz')}): {row['path']}")
+                        state["done"] += 1
+                        con.commit()
+                        continue
                     result = out["after"]
                     upsert_analysis(con, row["id"], result)
                     insert_history(con, job_id, row, row.get("artist"), row.get("album"), out.get("backup_path"), settings.get("backup_mode", "on"), settings, out.get("before"), result)
@@ -1446,72 +1545,82 @@ def all_album_items_for_normalize() -> list:
 
 def all_normalize_preview(target_source: str = "settings") -> dict:
     settings = settings_for_normalize_source(target_source)
-    items = all_album_items_for_normalize()
-    preview = batch_preview_items(items, settings) if items else []
-    normalizable = [p for p in preview if p.get("can_normalize")]
-    skipped_reference = [p for p in preview if p.get("skip_reference")]
-    blocked = [p for p in preview if (not p.get("can_normalize") and not p.get("skip_reference"))]
+    report = normalization_report_rows()
+    candidates = [r for r in report if r.get("normalize")]
+    within = [r for r in report if r.get("reason") == "innerhalb_toleranz"]
+    peak_blocked = [r for r in report if r.get("reason") == "kein_sicherer_gain_wegen_true_peak"]
+    unanalyzed = [r for r in report if r.get("reason") == "nicht_analysiert"]
+    examples=[]
+    for r in candidates[:12]:
+        examples.append({
+            "label": f"{r.get('artist') or 'Unbekannt'} - {r.get('title') or Path(r.get('path','')).name}",
+            "current_lufs": round(float(r.get("current_lufs")),2),
+            "target_lufs": float(settings.get("target_lufs",-16)),
+            "gain_delta": r.get("applied_gain_db"),
+            "path": r.get("path"),
+        })
     return {
-        "items": preview,
-        "normalizable": normalizable,
-        "blocked": blocked,
-        "skipped_reference": skipped_reference,
-        "count_albums_total": len(preview),
-        "count_albums": len(normalizable),
-        "count_blocked": len(blocked),
-        "count_skipped_reference": len(skipped_reference),
-        "count_tracks": sum(int(p.get("tracks") or 0) for p in normalizable),
+        "normalizable": examples,
+        "count_albums": len(set((r.get("artist"),r.get("album")) for r in candidates)),
+        "count_tracks": len(candidates),
+        "count_total_tracks": len(report),
+        "count_within_tolerance": len(within),
+        "count_peak_blocked": len(peak_blocked),
+        "count_unanalyzed": len(unanalyzed),
         "target_lufs": settings.get("target_lufs"),
+        "tolerance_lufs": settings.get("normalize_tolerance_lufs","1.5"),
         "true_peak": settings.get("true_peak"),
         "lra": settings.get("lra"),
-        "backup_mode": settings.get("backup_mode", "on"),
-        "target_source": settings.get("target_source", "settings"),
-        "target_source_label": settings.get("target_source_label", "Werte aus Einstellungen"),
-        "can_normalize": bool(normalizable),
+        "backup_mode": settings.get("backup_mode","on"),
+        "target_source": "settings",
+        "target_source_label": "Werte aus Einstellungen",
+        "can_normalize": bool(candidates),
     }
 
 
 def normalize_all_worker(backup_mode: Optional[str] = None, target_source: str = "settings"):
-    normalize_all_parallelism_guard = get_normalize_parallelism()
     init_db()
-    try:
-        # v1.9.39: Sofort sichtbarer Status, bevor die große Album-Vorschau gebaut wird.
-        state.update({
-            "running": True,
-            "stop": False,
-            "mode": "batch_normalize_prepare",
-            "done": 0,
-            "total": 0,
-            "current": "Alles-Normalisierung wird vorbereitet",
-            "message": "Alles-Normalisierung wird vorbereitet...",
-            "errors": 0,
-            "recent_errors": [],
-        })
-        add_log(f"Alles-Normalisierung wird vorbereitet · Parallel: {get_normalize_parallelism()}")
-        pv = all_normalize_preview(target_source)
-        items = [{"artist": p.get("artist"), "album": p.get("album")} for p in pv.get("normalizable", [])]
-        if not items:
-            state.update({"running": False, "mode": "idle", "done": 0, "total": 0, "current": "", "message": "Keine vollständig analysierten Alben zu normalisieren", "errors": 0, "recent_errors": []})
-            add_log("Alles normalisieren: keine vollständig analysierten Alben gefunden", True)
-            return
-        if pv.get("count_blocked"):
-            add_log(f"Alles normalisieren: {pv.get('count_blocked')} Album/Alben übersprungen, weil sie noch nicht vollständig analysiert sind")
-        if pv.get("count_skipped_reference"):
-            add_log(f"Alles normalisieren: {pv.get('count_skipped_reference')} Referenzalbum/Alben übersprungen")
-        settings = settings_for_normalize_source(target_source)
-        normalize_batch_worker(items, backup_mode, settings)
-    except Exception as e:
-        state.update({
-            "running": False,
-            "mode": "idle",
-            "done": 0,
-            "total": 0,
-            "current": "",
-            "message": f"Alles-Normalisierung Fehler: {e}",
-            "errors": 1,
-            "recent_errors": [str(e)],
-        })
-        add_log(f"Alles-Normalisierung Fehler: {e}", True)
+    settings = settings_for_normalize_source(target_source)
+    if backup_mode is not None:
+        settings["backup_mode"] = backup_mode
+    report = normalization_report_rows()
+    candidate_ids = {int(r["id"]) for r in report if r.get("normalize")}
+    with db() as con:
+        rows = [dict(r) for r in con.execute("SELECT id,path,title,artist,album FROM tracks ORDER BY artist COLLATE NOCASE,album COLLATE NOCASE,title COLLATE NOCASE").fetchall() if int(r["id"]) in candidate_ids]
+        for row in rows:
+            row["_before"] = cached_analysis_for_row(con,row["id"])
+    if not rows:
+        state.update({"running":False,"mode":"idle","done":0,"total":0,"current":"","message":"Keine Titel außerhalb der Toleranz","errors":0,"recent_errors":[]})
+        add_log("Toleranz-Normalisierung: keine Titel außerhalb der Toleranz")
+        return
+    job_id=history_job_id()
+    workers=normalize_parallelism()
+    begin_job("tolerance_normalize",len(rows),f"Toleranz-Normalisierung: {len(rows)} Titel ({workers} parallel)")
+    add_log(f"Sichere Toleranz-Normalisierung gestartet: Ziel {settings.get('target_lufs')} LUFS ±{settings.get('normalize_tolerance_lufs','1.5')} LUFS · statischer Gain ohne Limiter")
+    with db() as con:
+        with ThreadPoolExecutor(max_workers=workers) as pool:
+            futures={pool.submit(normalize_row_fast,row,dict(settings)):row for row in rows}
+            for fut in as_completed(futures):
+                row=futures[fut]
+                if stop_requested(): break
+                state["current"]=row["path"]
+                try:
+                    out=fut.result()
+                    if out.get("skipped"):
+                        add_log(f"Übersprungen ({out.get('plan',{}).get('reason','Toleranz')}): {row['path']}")
+                    else:
+                        result=out["after"]
+                        upsert_analysis(con,row["id"],result)
+                        insert_history(con,job_id,row,row.get("artist"),row.get("album"),out.get("backup_path"),settings.get("backup_mode","on"),settings,out.get("before"),result)
+                        plan=out.get("plan") or {}
+                        cap=" · TP-begrenzt" if plan.get("capped_by_true_peak") else ""
+                        add_log(f"Statisch angepasst: {row['path']} · {plan.get('applied_gain_db')} dB{cap}")
+                except Exception as e:
+                    state["errors"]+=1
+                    add_log(f"Normalisierungsfehler: {row['path']} - {e}",True)
+                state["done"]+=1
+                con.commit()
+    finish_job("Toleranz-Normalisierung fertig",bool(state.get("errors")))
 
 
 def analyze_batch_worker(items: list):
@@ -1624,6 +1733,11 @@ def normalize_batch_worker(items: list, backup_mode: Optional[str] = None, setti
                 state["current"] = f"{row.get('_album_label','')} / {row['path']}".strip(" /")
                 try:
                     out = fut.result()
+                    if out.get("skipped"):
+                        add_log(f"Übersprungen ({out.get('plan',{}).get('reason','Toleranz')}): {row['path']}")
+                        state["done"] += 1
+                        con.commit()
+                        continue
                     result = out["after"]
                     upsert_analysis(con, row["id"], result)
                     insert_history(con, job_id, row, row.get("artist"), row.get("album"), out.get("backup_path"), settings.get("backup_mode", "on"), settings, out.get("before"), result)
@@ -2215,6 +2329,20 @@ def normalize_batch(data: dict):
 def normalize_preview_all(target_source: str = "settings"):
     return all_normalize_preview(target_source)
 
+
+
+@app.get("/api/normalize_export")
+def normalize_export():
+    settings = get_settings()
+    rows = normalization_report_rows()
+    buf = io.StringIO()
+    w = csv.writer(buf, delimiter=";", lineterminator="\n")
+    w.writerow(["Aktion","Grund","Interpret","Album","Titel","Pfad","Ist_LUFS","Ziel_LUFS","Toleranz_LUFS","Angeforderte_Aenderung_dB","Angewendete_Aenderung_dB","Ist_True_Peak","Prognose_True_Peak","TP_begrenzt"])
+    for r in rows:
+        action = "NORMALISIEREN" if r.get("normalize") else "UEBERSPRINGEN"
+        w.writerow([action,r.get("reason",""),r.get("artist","") or "",r.get("album","") or "",r.get("title","") or "",r.get("path","") or "",r.get("current_lufs",r.get("input_i","")),settings.get("target_lufs",""),settings.get("normalize_tolerance_lufs","1.5"),r.get("requested_gain_db",""),r.get("applied_gain_db",""),r.get("input_tp",""),r.get("predicted_tp",""),"ja" if r.get("capped_by_true_peak") else "nein"])
+    data = ('\ufeff'+buf.getvalue()).encode('utf-8')
+    return Response(content=data,media_type='text/csv; charset=utf-8',headers={'Content-Disposition':'attachment; filename="musiclab_normalisierungs_vorschau.csv"'})
 
 @app.post("/api/normalize_all")
 def normalize_all(data: dict = None):
@@ -4916,6 +5044,186 @@ def api_history_restore(data: dict):
     else:
         add_log(f"Wiederhergestellt: {artist + ' - ' if artist else ''}{album} ({restored} Dateien)")
     return {"restored": restored, "total": len(rows), "errors": errors}
+
+
+def _latest_restorable_backups():
+    """Gibt pro Musikdatei genau das neueste noch vorhandene Backup zurück.
+
+    Das ist bewusst ein schnelles 'letzte Änderung zurücknehmen' je Datei.
+    Mehrfach vorhandene ältere Backups werden nicht nacheinander kopiert.
+    """
+    root = get_music_root()
+    with db() as con:
+        rows = con.execute(
+            """
+            SELECT h.id, h.job_id, h.created_at, h.path, h.backup_path,
+                   h.artist, h.album, h.restored_at, t.id AS track_id
+            FROM history h
+            LEFT JOIN tracks t ON t.path=h.path
+            WHERE h.backup_path IS NOT NULL AND h.backup_path!=''
+            ORDER BY h.path COLLATE NOCASE, h.created_at DESC, h.id DESC
+            """
+        ).fetchall()
+
+    latest = {}
+    missing = 0
+    for row in rows:
+        path = row["path"]
+        if path in latest:
+            continue
+        backup = Path(row["backup_path"])
+        target = root / path
+        if not backup.exists():
+            missing += 1
+            continue
+        latest[path] = {
+            "history_id": row["id"],
+            "job_id": row["job_id"],
+            "created_at": row["created_at"],
+            "path": path,
+            "backup_path": str(backup),
+            "target_path": str(target),
+            "artist": row["artist"] or "",
+            "album": row["album"] or "",
+            "track_id": row["track_id"],
+            "size": backup.stat().st_size,
+        }
+    return list(latest.values()), missing
+
+
+@app.get("/api/backups/restore_all_preview")
+def api_restore_all_backups_preview():
+    items, missing = _latest_restorable_backups()
+    total_bytes = sum(int(x.get("size") or 0) for x in items)
+    examples = [
+        {
+            "path": x["path"],
+            "artist": x["artist"],
+            "album": x["album"],
+            "backup_date": x["created_at"],
+        }
+        for x in items[:12]
+    ]
+    return {
+        "ok": True,
+        "count": len(items),
+        "missing_backups": missing,
+        "total_bytes": total_bytes,
+        "examples": examples,
+        "mode": "latest_per_file",
+        "backups_kept": True,
+    }
+
+
+def restore_all_backups_worker():
+    init_db()
+    state.update({
+        "running": True,
+        "stop": False,
+        "mode": "restore_all_backups",
+        "done": 0,
+        "total": 0,
+        "current": "",
+        "message": "Backups werden geprüft...",
+        "errors": 0,
+        "recent_errors": [],
+    })
+    add_log("Gesamte Backup-Wiederherstellung gestartet")
+    restored = 0
+    errors = []
+    try:
+        items, missing = _latest_restorable_backups()
+        state["total"] = len(items)
+        restored_history_ids = []
+        affected_track_ids = []
+
+        for idx, item in enumerate(items, start=1):
+            if state.get("stop"):
+                add_log("Gesamte Backup-Wiederherstellung gestoppt")
+                break
+
+            rel = item["path"]
+            state.update({
+                "done": idx - 1,
+                "current": rel,
+                "message": f"Backup wiederherstellen: {idx}/{len(items)} · {rel}",
+            })
+
+            backup = Path(item["backup_path"])
+            target = Path(item["target_path"])
+            try:
+                target.parent.mkdir(parents=True, exist_ok=True)
+                tmp = target.with_name(target.name + ".restore_tmp")
+                if tmp.exists():
+                    tmp.unlink()
+                shutil.copy2(backup, tmp)
+                os.replace(tmp, target)
+                restored += 1
+                restored_history_ids.append(item["history_id"])
+                if item.get("track_id"):
+                    affected_track_ids.append(item["track_id"])
+            except Exception as e:
+                msg = f"{rel}: {e}"
+                errors.append(msg)
+                add_log("Backup-Wiederherstellung Fehler: " + msg, True)
+
+            state.update({
+                "done": idx,
+                "errors": len(errors),
+                "recent_errors": errors[-8:],
+            })
+
+        now = time.time()
+        with db() as con:
+            if restored_history_ids:
+                con.executemany(
+                    "UPDATE history SET restored_at=? WHERE id=?",
+                    [(now, hid) for hid in restored_history_ids],
+                )
+            # Analysewerte sind nach dem Kopieren nicht mehr zuverlässig.
+            # Löschen ist wesentlich schneller als jede Datei sofort neu zu analysieren.
+            if affected_track_ids:
+                con.executemany(
+                    "DELETE FROM analysis WHERE track_id=?",
+                    [(tid,) for tid in sorted(set(affected_track_ids))],
+                )
+            con.commit()
+
+        message = (
+            f"Backup-Wiederherstellung fertig: {restored}/{len(items)} Dateien · "
+            f"fehlende Backups {missing} · Fehler {len(errors)}. "
+            "Analysewerte der wiederhergestellten Dateien wurden zurückgesetzt."
+        )
+        state.update({
+            "running": False,
+            "mode": "idle",
+            "done": len(items),
+            "total": len(items),
+            "current": "",
+            "message": message,
+            "errors": len(errors),
+            "recent_errors": errors[-8:],
+        })
+        add_log(message, bool(errors))
+    except Exception as e:
+        state.update({
+            "running": False,
+            "mode": "idle",
+            "current": "",
+            "message": f"Backup-Wiederherstellung Fehler: {e}",
+            "errors": 1,
+            "recent_errors": [str(e)],
+        })
+        add_log(f"Backup-Wiederherstellung Fehler: {e}", True)
+
+
+@app.post("/api/backups/restore_all")
+def api_restore_all_backups():
+    if state.get("running"):
+        raise HTTPException(status_code=409, detail="Es läuft bereits ein Job")
+    threading.Thread(target=restore_all_backups_worker, daemon=True).start()
+    return {"ok": True, "started": True}
+
 
 @app.get("/api/log")
 def api_log():

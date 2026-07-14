@@ -1,5 +1,5 @@
 const API='http://'+location.hostname+':8091/api';
-const APP_VERSION='2.0.1';
+const APP_VERSION='2.1.1';
 let coverCacheBust=Date.now();
 let selectedArtist=null, selectedAlbum=null, selectedTagFolder=null;
 let selectedUiKey=null; // v1.9.39: eindeutige visuelle Einzelauswahl für Listen und Album-Kacheln
@@ -368,6 +368,8 @@ async function loadSettings(){
   backupMode.value=s.backup_mode || 'on';
   parallelAnalysis.value=s.parallel_analysis || '2';
   if(typeof parallelNormalize!=='undefined') parallelNormalize.value=s.parallel_normalize || '2';
+  if(typeof normalizeTolerance!=='undefined') normalizeTolerance.value=s.normalize_tolerance_lufs || '1.5';
+  if(typeof normalizeTolerancePage!=='undefined') normalizeTolerancePage.value=s.normalize_tolerance_lufs || '1.5';
   if(typeof musicRoot!=='undefined') musicRoot.value=s.music_root || '/music';
   if(typeof watchMode!=='undefined') watchMode.value=s.watch_mode || 'off';
   if(typeof sortAfterTags!=='undefined') sortAfterTags.value=s.sort_after_tags || 'off';
@@ -382,7 +384,7 @@ function updateTargetInfo(){
   const bm={on:'/data/backups',sidecar:'.bak',off:'kein Backup'}[backupMode.value]||backupMode.value;
   const bmShort={on:'ein',sidecar:'.bak',off:'aus'}[backupMode.value]||backupMode.value;
   const pn=(typeof parallelNormalize!=='undefined' && parallelNormalize.value) ? parallelNormalize.value : '2';
-  targetInfo.textContent=`Ziel ${targetLufs.value} LUFS · TP ${truePeak.value} · LRA ${lra.value} · Backup ${bm} · Analyse ${parallelAnalysis.value}× · Norm ${pn}×`;
+  targetInfo.textContent=`Ziel ${targetLufs.value} LUFS ±${(typeof normalizeTolerance!=='undefined'?normalizeTolerance.value:'1.5')} · TP ${truePeak.value} · LRA ${lra.value} · Backup ${bm} · Analyse ${parallelAnalysis.value}× · Norm ${pn}×`;
   const mr=(typeof musicRoot!=='undefined' && musicRoot.value) ? musicRoot.value : '/music';
   const wm=(typeof watchMode!=='undefined' && watchMode.value && watchMode.value!=='off') ? ` · Watch: ${watchMode.options[watchMode.selectedIndex].text}` : '';
   if(typeof settingsLine!=='undefined') settingsLine.textContent=`Backup: ${bmShort} · Analyse: ${parallelAnalysis.value}× · Norm: ${pn}× · Musik: ${mr}${wm}`;
@@ -392,7 +394,7 @@ async function saveSettings(){
   await j(API+'/settings',{
     method:'POST',
     headers:{'Content-Type':'application/json'},
-    body:JSON.stringify({target_lufs:targetLufs.value,true_peak:truePeak.value,lra:lra.value,backup_mode:backupMode.value,parallel_analysis:parallelAnalysis.value,parallel_normalize:(typeof parallelNormalize!=='undefined'?parallelNormalize.value:'2'),music_root:musicRoot.value,watch_mode:watchMode.value,sort_after_tags:(typeof sortAfterTags!=='undefined'?sortAfterTags.value:(typeof sortAfterTagsPage!=='undefined'?sortAfterTagsPage.value:'off')),smb_base_url:(typeof smbBaseUrl!=='undefined'?smbBaseUrl.value:(typeof smbBaseUrlPage!=='undefined'?smbBaseUrlPage.value:'smb://DS923/Musik'))})
+    body:JSON.stringify({target_lufs:targetLufs.value,true_peak:truePeak.value,lra:lra.value,backup_mode:backupMode.value,parallel_analysis:parallelAnalysis.value,parallel_normalize:(typeof parallelNormalize!=='undefined'?parallelNormalize.value:'2'),normalize_tolerance_lufs:(typeof normalizeTolerance!=='undefined'?normalizeTolerance.value:(typeof normalizeTolerancePage!=='undefined'?normalizeTolerancePage.value:'1.5')),music_root:musicRoot.value,watch_mode:watchMode.value,sort_after_tags:(typeof sortAfterTags!=='undefined'?sortAfterTags.value:(typeof sortAfterTagsPage!=='undefined'?sortAfterTagsPage.value:'off')),smb_base_url:(typeof smbBaseUrl!=='undefined'?smbBaseUrl.value:(typeof smbBaseUrlPage!=='undefined'?smbBaseUrlPage.value:'smb://DS923/Musik'))})
   });
   updateTargetInfo();
 }
@@ -979,12 +981,12 @@ async function normalizeAll(){
 
     const backupText = backupMode.value==='off' ? 'kein Backup' : (backupMode.value==='sidecar' ? '.bak neben der Datei' : 'Backup unter /data/backups');
     const sourceText = 'Werte aus Einstellungen';
-    const examples=(pv.normalizable||[]).slice(0,8).map(x=>`- ${x.label}: ${x.current_lufs} → ${x.target_lufs} LUFS`).join('\n');
+    const examples=(pv.normalizable||[]).slice(0,8).map(x=>`- ${x.label}: ${x.current_lufs} LUFS · ${x.gain_delta>0?'+':''}${x.gain_delta} dB`).join('\n');
     const more=(pv.count_albums||0)>8 ? `\n... und ${(pv.count_albums||0)-8} weitere` : '';
     const skipped=[];
     if(pv.count_blocked) skipped.push(`${pv.count_blocked} Album/Alben werden übersprungen, weil sie noch nicht vollständig analysiert sind`);
     if(pv.count_skipped_reference) skipped.push(`${pv.count_skipped_reference} Referenzalbum/Alben werden übersprungen`);
-    const msg=`Alles normalisieren starten?\n\n${pv.count_albums} Album/Alben · ${pv.count_tracks} Titel\nQuelle: ${sourceText}\nZiel: ${pv.target_lufs} LUFS · TP ${pv.true_peak} · LRA ${pv.lra}\nBackup: ${backupText}\n\n${examples}${more}${skipped.length?'\n\n'+skipped.join('\n'):''}\n\nDateien werden überschrieben.`;
+    const msg=`Alles normalisieren starten?\n\n${pv.count_tracks} von ${pv.count_total_tracks} Titeln außerhalb der Toleranz\nToleranz: ±${pv.tolerance_lufs} LUFS\nInnerhalb Toleranz: ${pv.count_within_tolerance} · TP-blockiert: ${pv.count_peak_blocked} · nicht analysiert: ${pv.count_unanalyzed}\nQuelle: ${sourceText}\nZiel: ${pv.target_lufs} LUFS · TP ${pv.true_peak} · LRA ${pv.lra}\nBackup: ${backupText}\n\n${examples}${more}${skipped.length?'\n\n'+skipped.join('\n'):''}\n\nEs wird nur ein konstanter Pegel angewendet; die Dynamik innerhalb des Liedes bleibt unverändert.\nDateien werden überschrieben.`;
     if(!confirm(msg)){
       status.textContent='Alles-Normalisierung abgebrochen';
       await poll();
@@ -1451,11 +1453,11 @@ function setAppView(view){
 function openSettings(){setAppView('settings')}
 function closeSettings(){document.getElementById('settingsModal')?.classList.add('hidden');setAppView(currentView==='settings'?'dashboard':currentView)}
 function syncSettingsPageFromMain(){
-  const pairs=[['targetLufs','targetLufsPage'],['truePeak','truePeakPage'],['lra','lraPage'],['backupMode','backupModePage'],['parallelAnalysis','parallelAnalysisPage'],['parallelNormalize','parallelNormalizePage'],['musicRoot','musicRootPage'],['watchMode','watchModePage'],['sortAfterTags','sortAfterTagsPage'],['smbBaseUrl','smbBaseUrlPage']];
+  const pairs=[['targetLufs','targetLufsPage'],['truePeak','truePeakPage'],['normalizeTolerance','normalizeTolerancePage'],['lra','lraPage'],['backupMode','backupModePage'],['parallelAnalysis','parallelAnalysisPage'],['parallelNormalize','parallelNormalizePage'],['musicRoot','musicRootPage'],['watchMode','watchModePage'],['sortAfterTags','sortAfterTagsPage'],['smbBaseUrl','smbBaseUrlPage']];
   for(const [a,b] of pairs){const x=document.getElementById(a), y=document.getElementById(b); if(x&&y)y.value=x.value;}
 }
 function syncSettingsMainFromPage(){
-  const pairs=[['targetLufs','targetLufsPage'],['truePeak','truePeakPage'],['lra','lraPage'],['backupMode','backupModePage'],['parallelAnalysis','parallelAnalysisPage'],['parallelNormalize','parallelNormalizePage'],['musicRoot','musicRootPage'],['watchMode','watchModePage'],['sortAfterTags','sortAfterTagsPage'],['smbBaseUrl','smbBaseUrlPage']];
+  const pairs=[['targetLufs','targetLufsPage'],['truePeak','truePeakPage'],['normalizeTolerance','normalizeTolerancePage'],['lra','lraPage'],['backupMode','backupModePage'],['parallelAnalysis','parallelAnalysisPage'],['parallelNormalize','parallelNormalizePage'],['musicRoot','musicRootPage'],['watchMode','watchModePage'],['sortAfterTags','sortAfterTagsPage'],['smbBaseUrl','smbBaseUrlPage']];
   for(const [a,b] of pairs){const x=document.getElementById(a), y=document.getElementById(b); if(x&&y)x.value=y.value;}
 }
 function downloadSortPreviewExport(){
@@ -2435,7 +2437,7 @@ document.addEventListener('DOMContentLoaded',()=>{
     }
   }
   function ensureSummary(){
-    // v2.0.1:
+    // v2.1.1:
     // Die zusätzliche "Auswahl: ... markiert"-Box wird nicht mehr erzeugt.
     // Sie hat auf der Tags-Seite den Suchfilter zusammengedrückt.
     document.querySelectorAll('.ml-selection-summary').forEach(el=>el.remove());
@@ -2738,4 +2740,49 @@ removeCurrentTagCover = async function(){
     try{ if(typeof setTagActionBusy==='function') setTagActionBusy(false); }catch(_e){}
   }
 };
+
+
+
+function exportNormalizationPreview(){
+  const a=document.createElement('a');
+  a.href=API+'/normalize_export?cb='+Date.now();
+  a.download='musiclab_normalisierungs_vorschau.csv';
+  document.body.appendChild(a); a.click(); a.remove();
+}
+
+
+function formatBytes(value){
+  const n=Number(value||0);
+  if(n<1024) return n+' B';
+  if(n<1024*1024) return (n/1024).toFixed(1)+' KiB';
+  if(n<1024*1024*1024) return (n/1024/1024).toFixed(1)+' MiB';
+  return (n/1024/1024/1024).toFixed(2)+' GiB';
+}
+
+async function restoreAllBackups(){
+  try{
+    const pv=await j(API+'/backups/restore_all_preview');
+    if(!pv.count){
+      alert('Es wurden keine vorhandenen Backups gefunden.');
+      return;
+    }
+    const examples=(pv.examples||[]).slice(0,8).map(x=>'- '+x.path).join('\n');
+    const more=pv.count>8?`\n... und ${pv.count-8} weitere Dateien`:'';
+    const msg=`Alle Backups wiederherstellen?\n\nDateien: ${pv.count}\nDatenmenge: ${formatBytes(pv.total_bytes)}\nFehlende Backups: ${pv.missing_backups}\n\n${examples}${more}\n\nJe Datei wird nur das neueste vorhandene Backup verwendet. Die Backup-Dateien bleiben erhalten. Analysewerte werden zurückgesetzt und sollten anschließend neu ermittelt werden.\n\nDie aktuellen Musikdateien werden überschrieben.`;
+    if(!confirm(msg)) return;
+
+    await j(API+'/backups/restore_all',{
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:'{}'
+    });
+    status.textContent='Gesamte Backup-Wiederherstellung gestartet...';
+    if(progressText) progressText.textContent='Backups werden wiederhergestellt...';
+    setAppView('protocol');
+    setTimeout(poll,250);
+    setTimeout(poll,1000);
+  }catch(e){
+    alert('Gesamte Backup-Wiederherstellung konnte nicht gestartet werden:\n'+e.message);
+  }
+}
 
