@@ -2,7 +2,7 @@
 set -e
 cd "$(dirname "$0")"
 
-echo "== MusicLab v2.0.0-beta1 Synology-Projektmodus =="
+echo "== MusicLab v2.0.1 Synology-Projektmodus =="
 echo "Quelle: $(pwd)"
 grep -R "MusicLab v" -n frontend/index.html || true
 grep -R "APP_VERSION" -n frontend/app.js | head || true

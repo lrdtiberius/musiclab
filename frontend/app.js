@@ -1,5 +1,5 @@
 const API='http://'+location.hostname+':8091/api';
-const APP_VERSION='2.0.0';
+const APP_VERSION='2.0.1';
 let coverCacheBust=Date.now();
 let selectedArtist=null, selectedAlbum=null, selectedTagFolder=null;
 let selectedUiKey=null; // v1.9.39: eindeutige visuelle Einzelauswahl für Listen und Album-Kacheln
@@ -2435,7 +2435,7 @@ document.addEventListener('DOMContentLoaded',()=>{
     }
   }
   function ensureSummary(){
-    // v2.0.0:
+    // v2.0.1:
     // Die zusätzliche "Auswahl: ... markiert"-Box wird nicht mehr erzeugt.
     // Sie hat auf der Tags-Seite den Suchfilter zusammengedrückt.
     document.querySelectorAll('.ml-selection-summary').forEach(el=>el.remove());
