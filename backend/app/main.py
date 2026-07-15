@@ -32,7 +32,7 @@ from fastapi import FastAPI, HTTPException, Response, Request
 from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
 from mutagen import File as MutagenFile
-from mutagen.id3 import ID3, APIC, ID3NoHeaderError
+from mutagen.id3 import ID3, APIC, TCMP, ID3NoHeaderError
 from mutagen.mp4 import MP4, MP4Cover
 from mutagen.flac import FLAC, Picture
 
@@ -53,8 +53,8 @@ try:
 except Exception:
     Image = None
 
-SCHEMA_VERSION = 24
-APP_VERSION = "2.1.1"
+SCHEMA_VERSION = 25
+APP_VERSION = "2.1.3"
 
 
 LOG_TZ = os.getenv("TZ") or os.getenv("LOG_TZ") or "Europe/Berlin"
@@ -160,6 +160,8 @@ def init_db():
                 path TEXT NOT NULL UNIQUE,
                 filename TEXT NOT NULL,
                 artist TEXT NOT NULL,
+                albumartist TEXT,
+                compilation INTEGER NOT NULL DEFAULT 0,
                 album TEXT NOT NULL,
                 title TEXT NOT NULL,
                 track_raw TEXT,
@@ -189,6 +191,8 @@ def init_db():
         required_track_cols = {
             "filename": "TEXT",
             "artist": "TEXT",
+            "albumartist": "TEXT",
+            "compilation": "INTEGER NOT NULL DEFAULT 0",
             "album": "TEXT",
             "title": "TEXT",
             "track_raw": "TEXT",
@@ -565,6 +569,49 @@ def audio_channels(info):
     return v if isinstance(v, int) else None
 
 
+def compilation_flag(tags) -> bool:
+    raw = tag_first(tags, ["compilation", "cpil", "tcmp"])
+    text = str(raw or "").strip().lower()
+    return text in {"1", "true", "yes", "on", "y"}
+
+def write_compilation_tag(path: Path, enabled: bool) -> None:
+    """Write a real compilation flag where the container format supports it."""
+    suffix = path.suffix.lower()
+    try:
+        if suffix == ".mp3":
+            try:
+                tags = ID3(path)
+            except ID3NoHeaderError:
+                tags = ID3()
+            tags.delall("TCMP")
+            if enabled:
+                tags.add(TCMP(encoding=3, text=["1"]))
+            tags.save(path, v2_version=3)
+            return
+        if suffix in {".m4a", ".mp4", ".aac", ".alac"}:
+            audio = MP4(path)
+            if enabled:
+                audio["cpil"] = [True]
+            elif "cpil" in audio:
+                del audio["cpil"]
+            audio.save()
+            return
+        audio = MutagenFile(path, easy=True)
+        if audio is not None:
+            if enabled:
+                audio["compilation"] = ["1"]
+            else:
+                for key in ("compilation", "cpil"):
+                    try:
+                        if key in audio: del audio[key]
+                    except Exception:
+                        pass
+            audio.save()
+    except Exception:
+        # The Album Artist tag still marks the album correctly even if a
+        # format has no writable compilation flag.
+        return
+
 def scan_file(path: Path, root: Optional[Path] = None) -> Optional[dict]:
     root = root or get_music_root()
     st = path.stat()
@@ -573,7 +620,10 @@ def scan_file(path: Path, root: Optional[Path] = None) -> Optional[dict]:
     audio = MutagenFile(path, easy=True)
     tags = audio.tags if audio and getattr(audio, "tags", None) else {}
     info = audio.info if audio and getattr(audio, "info", None) else None
-    artist = choose_artist_tag(tags, fallback_artist)
+    track_artist = tag_first(tags, ["artist"]) or fallback_artist
+    album_artist = tag_first(tags, ["albumartist", "album artist"]) or ""
+    compilation = compilation_flag(tags) or fold_ascii(album_artist) in {"verschiedeneinterpreten", "variousartists"}
+    artist = track_artist if compilation else choose_artist_tag(tags, fallback_artist)
     album = tag_first(tags, ["album"]) or fallback_album
     title = tag_first(tags, ["title"]) or path.stem
     track_raw = tag_first(tags, ["tracknumber", "track"])
@@ -592,6 +642,8 @@ def scan_file(path: Path, root: Optional[Path] = None) -> Optional[dict]:
         "path": rel,
         "filename": path.name,
         "artist": artist.strip() or "Unbekannt",
+        "albumartist": album_artist.strip(),
+        "compilation": 1 if compilation else 0,
         "album": album.strip() or "Unbekanntes Album",
         "title": title.strip() or path.stem,
         "track_raw": track_raw,
@@ -616,10 +668,10 @@ def scan_file(path: Path, root: Optional[Path] = None) -> Optional[dict]:
 def upsert_track(con, item):
     con.execute(
         """
-        INSERT INTO tracks(path,filename,artist,album,title,track_raw,track_number,track_total,disc_raw,disc_number,disc_total,genre,year,duration,codec,bitrate,sample_rate,channels,size,mtime,scanned_at)
-        VALUES(:path,:filename,:artist,:album,:title,:track_raw,:track_number,:track_total,:disc_raw,:disc_number,:disc_total,:genre,:year,:duration,:codec,:bitrate,:sample_rate,:channels,:size,:mtime,:scanned_at)
+        INSERT INTO tracks(path,filename,artist,albumartist,compilation,album,title,track_raw,track_number,track_total,disc_raw,disc_number,disc_total,genre,year,duration,codec,bitrate,sample_rate,channels,size,mtime,scanned_at)
+        VALUES(:path,:filename,:artist,:albumartist,:compilation,:album,:title,:track_raw,:track_number,:track_total,:disc_raw,:disc_number,:disc_total,:genre,:year,:duration,:codec,:bitrate,:sample_rate,:channels,:size,:mtime,:scanned_at)
         ON CONFLICT(path) DO UPDATE SET
-        filename=excluded.filename,artist=excluded.artist,album=excluded.album,title=excluded.title,track_raw=excluded.track_raw,track_number=excluded.track_number,track_total=excluded.track_total,disc_raw=excluded.disc_raw,disc_number=excluded.disc_number,disc_total=excluded.disc_total,genre=excluded.genre,year=excluded.year,duration=excluded.duration,codec=excluded.codec,bitrate=excluded.bitrate,sample_rate=excluded.sample_rate,channels=excluded.channels,size=excluded.size,mtime=excluded.mtime,scanned_at=excluded.scanned_at
+        filename=excluded.filename,artist=excluded.artist,albumartist=excluded.albumartist,compilation=excluded.compilation,album=excluded.album,title=excluded.title,track_raw=excluded.track_raw,track_number=excluded.track_number,track_total=excluded.track_total,disc_raw=excluded.disc_raw,disc_number=excluded.disc_number,disc_total=excluded.disc_total,genre=excluded.genre,year=excluded.year,duration=excluded.duration,codec=excluded.codec,bitrate=excluded.bitrate,sample_rate=excluded.sample_rate,channels=excluded.channels,size=excluded.size,mtime=excluded.mtime,scanned_at=excluded.scanned_at
         """,
         item,
     )
@@ -2909,20 +2961,20 @@ def stats():
 
 @app.get("/api/artists")
 def get_artists(q: str = ""):
-    sql = "SELECT artist, COUNT(DISTINCT album) albums, COUNT(*) tracks, COALESCE(SUM(duration),0) duration FROM tracks"
+    sql = "SELECT CASE WHEN COALESCE(compilation,0)=1 THEN 'Verschiedene Interpreten' ELSE artist END AS artist, COUNT(DISTINCT album) albums, COUNT(*) tracks, COALESCE(SUM(duration),0) duration FROM tracks"
     args = []
     if q:
-        sql += " WHERE artist LIKE ?"
-        args.append(f"%{q}%")
-    sql += " GROUP BY artist ORDER BY artist COLLATE NOCASE"
+        sql += " WHERE (artist LIKE ? OR (COALESCE(compilation,0)=1 AND 'Verschiedene Interpreten' LIKE ?))"
+        args.extend([f"%{q}%", f"%{q}%"])
+    sql += " GROUP BY CASE WHEN COALESCE(compilation,0)=1 THEN 'Verschiedene Interpreten' ELSE artist END ORDER BY artist COLLATE NOCASE"
     with db() as con:
         return [dict(r) for r in con.execute(sql, args).fetchall()]
 
 
 @app.get("/api/albums")
 def get_albums(artist: str, q: str = ""):
-    where = "WHERE t.artist=?"
-    args = [artist]
+    where = "WHERE (t.artist=? OR (?='Verschiedene Interpreten' AND COALESCE(t.compilation,0)=1))"
+    args = [artist, artist]
     if q:
         where += " AND t.album LIKE ?"
         args.append(f"%{q}%")
@@ -2950,8 +3002,8 @@ def get_library_albums(q: str = ""):
             f"""
             SELECT
               t.album,
-              CASE WHEN COUNT(DISTINCT t.artist)=1 THEN MIN(t.artist) ELSE 'Verschiedene Interpreten' END AS artist,
-              COUNT(DISTINCT t.artist) AS artist_count,
+              CASE WHEN MAX(COALESCE(t.compilation,0))=1 OR COUNT(DISTINCT t.artist)>1 THEN 'Verschiedene Interpreten' ELSE MIN(t.artist) END AS artist,
+              CASE WHEN MAX(COALESCE(t.compilation,0))=1 THEN MAX(2,COUNT(DISTINCT t.artist)) ELSE COUNT(DISTINCT t.artist) END AS artist_count,
               COUNT(*) tracks, COALESCE(SUM(t.duration),0) duration,
               COUNT(a.track_id) analyzed, ROUND(AVG(a.input_i),2) avg_lufs,
               ROUND(MAX(a.input_tp),2) max_true_peak, ROUND(AVG(a.input_lra),2) avg_lra
@@ -2978,8 +3030,8 @@ def get_new_albums(q: str = ""):
             f"""
             SELECT
               t.album,
-              CASE WHEN COUNT(DISTINCT t.artist)=1 THEN MIN(t.artist) ELSE 'Verschiedene Interpreten' END AS artist,
-              COUNT(DISTINCT t.artist) AS artist_count,
+              CASE WHEN MAX(COALESCE(t.compilation,0))=1 OR COUNT(DISTINCT t.artist)>1 THEN 'Verschiedene Interpreten' ELSE MIN(t.artist) END AS artist,
+              CASE WHEN MAX(COALESCE(t.compilation,0))=1 THEN MAX(2,COUNT(DISTINCT t.artist)) ELSE COUNT(DISTINCT t.artist) END AS artist_count,
               COUNT(*) tracks, COALESCE(SUM(t.duration),0) duration,
               COUNT(a.track_id) analyzed, ROUND(AVG(a.input_i),2) avg_lufs,
               ROUND(MAX(a.input_tp),2) max_true_peak, ROUND(AVG(a.input_lra),2) avg_lra,
@@ -3002,8 +3054,8 @@ def get_library_album(album: str):
             """
             SELECT
               t.album,
-              CASE WHEN COUNT(DISTINCT t.artist)=1 THEN MIN(t.artist) ELSE 'Verschiedene Interpreten' END AS artist,
-              COUNT(DISTINCT t.artist) AS artist_count,
+              CASE WHEN MAX(COALESCE(t.compilation,0))=1 OR COUNT(DISTINCT t.artist)>1 THEN 'Verschiedene Interpreten' ELSE MIN(t.artist) END AS artist,
+              CASE WHEN MAX(COALESCE(t.compilation,0))=1 THEN MAX(2,COUNT(DISTINCT t.artist)) ELSE COUNT(DISTINCT t.artist) END AS artist_count,
               COUNT(*) tracks, COALESCE(SUM(t.duration),0) duration,
               COUNT(a.track_id) analyzed, ROUND(AVG(a.input_i),2) avg_lufs,
               ROUND(MAX(a.input_tp),2) max_true_peak, ROUND(AVG(a.input_lra),2) avg_lra
@@ -3061,7 +3113,7 @@ def _media_rows():
     with db() as con:
         return [dict(r) for r in con.execute(
             """
-            SELECT t.id,t.artist,t.album,t.title,t.track_raw,t.track_number,t.track_total,t.disc_raw,t.disc_number,t.disc_total,t.genre,t.year,t.duration,t.codec,t.bitrate,t.sample_rate,t.channels,t.path,t.filename,
+            SELECT t.id,t.artist,t.albumartist,t.compilation,t.album,t.title,t.track_raw,t.track_number,t.track_total,t.disc_raw,t.disc_number,t.disc_total,t.genre,t.year,t.duration,t.codec,t.bitrate,t.sample_rate,t.channels,t.path,t.filename,
             a.input_i,a.input_tp,a.input_lra,a.status AS analysis_status
             FROM tracks t LEFT JOIN analysis a ON a.track_id=t.id
             ORDER BY t.artist COLLATE NOCASE, t.album COLLATE NOCASE, COALESCE(t.disc_number,1), COALESCE(t.track_number,9999), t.title COLLATE NOCASE, t.path COLLATE NOCASE
@@ -3769,7 +3821,7 @@ def update_tags(payload: dict):
                     # "Bibliothek anhand der Tags neu sortieren" nicht wieder den alten
                     # Album-Artist bevorzugen, schreiben wir den Wert bewusst in beide
                     # Tags: Artist und Album Artist.
-                    "artist": ["artist", "albumartist"],
+                    "artist": ["artist"],
                     "album": ["album"],
                     "tracknumber": ["tracknumber"],
                     "discnumber": ["discnumber"],
@@ -3790,7 +3842,19 @@ def update_tags(payload: dict):
                                 except Exception:
                                     audio[tag] = []
                         changed[src] = val
+                is_compilation = bool(item.get("compilation"))
+                albumartist_value = str(item.get("albumartist") or ("Verschiedene Interpreten" if is_compilation else item.get("artist") or "")).strip()
+                if albumartist_value:
+                    audio["albumartist"] = [albumartist_value]
+                else:
+                    try:
+                        if "albumartist" in audio: del audio["albumartist"]
+                    except Exception:
+                        pass
+                changed["albumartist"] = albumartist_value
+                changed["compilation"] = 1 if is_compilation else 0
                 audio.save()
+                write_compilation_tag(p, is_compilation)
 
                 current_rel = rel
                 current_path = p
@@ -3825,6 +3889,10 @@ def update_tags(payload: dict):
                     db_updates.append("title=?"); args.append(changed["title"])
                 if "artist" in changed:
                     db_updates.append("artist=?"); args.append(changed["artist"])
+                if "albumartist" in changed:
+                    db_updates.append("albumartist=?"); args.append(changed["albumartist"])
+                if "compilation" in changed:
+                    db_updates.append("compilation=?"); args.append(int(changed["compilation"]))
                 if "album" in changed:
                     db_updates.append("album=?"); args.append(changed["album"])
                 if "tracknumber" in changed:
@@ -4802,7 +4870,7 @@ def api_media_albums(q: str = ""):
     with db() as con:
         rows = [dict(r) for r in con.execute(
             """
-            SELECT t.artist,t.album,t.path,t.duration,t.id,a.track_id AS analyzed
+            SELECT t.artist,t.compilation,t.album,t.path,t.duration,t.id,a.track_id AS analyzed
             FROM tracks t LEFT JOIN analysis a ON a.track_id=t.id AND a.status='ok'
             ORDER BY t.album COLLATE NOCASE, COALESCE(t.disc_number,1), COALESCE(t.track_number,9999), t.path COLLATE NOCASE
             """
@@ -4817,8 +4885,9 @@ def api_media_albums(q: str = ""):
         if q_norm and q_norm not in hay:
             continue
         key = album.lower()
-        g = groups.setdefault(key, {"artist": artist, "artists": set(), "album": album, "folder": "__album__:" + album, "tracks": 0, "analyzed": 0, "duration": 0.0, "first_path": path, "folders": set()})
+        g = groups.setdefault(key, {"artist": artist, "artists": set(), "compilation": False, "album": album, "folder": "__album__:" + album, "tracks": 0, "analyzed": 0, "duration": 0.0, "first_path": path, "folders": set()})
         g["artists"].add(artist)
+        g["compilation"] = bool(g.get("compilation") or r.get("compilation"))
         g["folders"].add(folder)
         g["tracks"] += 1
         g["analyzed"] += 1 if r.get("analyzed") is not None else 0
@@ -4827,7 +4896,7 @@ def api_media_albums(q: str = ""):
     for g in groups.values():
         artists = sorted(g.pop("artists"), key=lambda x: x.lower())
         folders = sorted(g.pop("folders"), key=lambda x: x.lower())
-        g["artist"] = artists[0] if len(artists) == 1 else "Verschiedene Interpreten"
+        g["artist"] = "Verschiedene Interpreten" if g.pop("compilation", False) or len(artists) != 1 else artists[0]
         g["folder_hint"] = folders[0] if len(folders) == 1 else f"{len(folders)} Ordner"
         out.append(g)
     out.sort(key=lambda x: ((x.get("album") or "").lower(), (x.get("artist") or "").lower()))

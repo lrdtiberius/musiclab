@@ -1,5 +1,5 @@
 const API='http://'+location.hostname+':8091/api';
-const APP_VERSION='2.1.1';
+const APP_VERSION='2.1.3';
 let coverCacheBust=Date.now();
 let selectedArtist=null, selectedAlbum=null, selectedTagFolder=null;
 let selectedUiKey=null; // v1.9.39: eindeutige visuelle Einzelauswahl für Listen und Album-Kacheln
@@ -1544,8 +1544,8 @@ function setTagsDirty(dirty=true){
   if(info){ info.textContent=tagsDirty?'Ungespeicherte Änderungen':'Keine Änderungen'; info.className='small '+(tagsDirty?'warnText':'muted'); }
 }
 function bindTagDirtyHandlers(){
-  ['tagAlbumArtist','tagAlbumName','tagYear','tagGenre','tagTrackTotal','tagDiscTotal'].forEach(id=>{
-    const el=document.getElementById(id); if(el) el.oninput=()=>{ if(id==='tagTrackTotal')syncTrackTotalPreview(); if(id==='tagDiscTotal')syncDiscTotalPreview(); setTagsDirty(true); };
+  ['tagAlbumArtist','tagAlbumName','tagYear','tagGenre','tagTrackTotal','tagDiscTotal','tagCompilation'].forEach(id=>{
+    const el=document.getElementById(id); if(el){ const handler=()=>{ if(id==='tagTrackTotal')syncTrackTotalPreview(); if(id==='tagDiscTotal')syncDiscTotalPreview(); setTagsDirty(true); }; if(id==='tagCompilation') el.onchange=handler; else el.oninput=handler; }
   });
   document.querySelectorAll('#tagTracks input, #tagDiscTotalsBox input').forEach(el=>{
     const old=el.getAttribute('oninput')||'';
@@ -1569,6 +1569,8 @@ async function applyTagChanges(){
   const rows=[...document.querySelectorAll('#tagTracks tr[data-path]')];
   if(!rows.length){alert('Kein Album ausgewählt.');return;}
   const artist=document.getElementById('tagAlbumArtist')?.value||'';
+  const compilation=!!document.getElementById('tagCompilation')?.checked;
+  const albumartist=compilation?'Verschiedene Interpreten':artist;
   const album=document.getElementById('tagAlbumName')?.value||'';
   const year=document.getElementById('tagYear')?.value||'';
   const genre=document.getElementById('tagGenre')?.value||'';
@@ -1585,11 +1587,11 @@ async function applyTagChanges(){
     const discnumber = (discTotalNum && discTotalNum>1 && discNum) ? `${discNum}/${discTotalNum}` : '';
     const rowArtist=(r.querySelector('.tagArtist')?.value||'').trim();
     const origArtist=(r.dataset.origArtist||'').trim();
-    const finalArtist = (rowArtist && rowArtist !== origArtist) ? rowArtist : artist;
+    const finalArtist = compilation ? (rowArtist || origArtist || artist) : ((rowArtist && rowArtist !== origArtist) ? rowArtist : artist);
     return {
       path:r.dataset.path,
       title:r.querySelector('.tagTitle')?.value||'',
-      artist:finalArtist,
+      artist:finalArtist, albumartist, compilation,
       album, year, genre,
       tracknumber, discnumber
     };
@@ -1621,6 +1623,7 @@ async function getTagTrackUrl(){
 
 function clearTagForm(){
   ['tagAlbumArtist','tagAlbumName','tagYear','tagGenre','tagTrackTotal','tagDiscTotal'].forEach(id=>{const el=document.getElementById(id); if(el){el.value=''; el.disabled=false;}});
+  const comp=document.getElementById('tagCompilation'); if(comp)comp.checked=false;
   const box=document.getElementById('tagDiscTotalsBox'); if(box){box.innerHTML=''; box.style.display='none';}
   const b=document.getElementById('btnTagScraper'); if(b)b.disabled=true;
 }
@@ -1651,10 +1654,12 @@ async function loadTagsPage(){
       const cp=document.getElementById('tagCoverPreview'); const ci=document.getElementById('tagCoverInfo');
       if(cp){ cp.outerHTML = tagCoverBox(coverUrlPath(first.path||'')); }
       if(ci) ci.textContent = 'Cover wird in die sichtbaren Audiodateien dieses Albums eingebettet.';
-      const aa=document.getElementById('tagAlbumArtist'), al=document.getElementById('tagAlbumName'), tt=document.getElementById('tagTrackTotal'), dt=document.getElementById('tagDiscTotal'), yr=document.getElementById('tagYear'), ge=document.getElementById('tagGenre');
+      const aa=document.getElementById('tagAlbumArtist'), comp=document.getElementById('tagCompilation'), al=document.getElementById('tagAlbumName'), tt=document.getElementById('tagTrackTotal'), dt=document.getElementById('tagDiscTotal'), yr=document.getElementById('tagYear'), ge=document.getElementById('tagGenre');
       const artists=[...new Set(rows.map(r=>r.artist||'').filter(Boolean))];
+      const isCompilation=rows.some(r=>Number(r.compilation||0)===1) || rows.some(r=>['verschiedene interpreten','various artists'].includes(String(r.albumartist||'').toLowerCase()));
+      if(comp)comp.checked=isCompilation;
       const albums=[...new Set(rows.map(r=>r.album||'').filter(Boolean))];
-      if(aa)aa.value=artists.length===1 ? artists[0] : '';
+      if(aa)aa.value=isCompilation ? 'Verschiedene Interpreten' : (artists.length===1 ? artists[0] : '');
       if(al)al.value=byFolder ? (selectedAlbum||first.album||'') : (albums.length===1 ? albums[0] : (selectedAlbum||''));
       const discNums=[...new Set(rows.map(r=>Number(r.disc_number||parseInt(String(r.disc_raw||'').split('/')[0],10)||1)).filter(n=>n>0))].sort((a,b)=>a-b);
       const discTotalsExisting=rows.map(r=>Number(r.disc_total||0)).filter(n=>n>0);

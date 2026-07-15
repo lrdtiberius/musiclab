@@ -2170,3 +2170,54 @@ body.tagsMode aside.panel .searchBox{
 .backupRestoreAllBox button{
   margin-bottom:8px;
 }
+
+.tagCompilationCheck{display:flex!important;align-items:center;gap:9px;min-height:36px;color:var(--text);font-weight:600}.tagCompilationCheck input{width:18px!important;height:18px!important;min-width:18px!important;margin:0!important}
+
+
+/* v2.1.3 – größere und besser lesbare Titel-Tags */
+body.tagsMode #tagsView.appView.active{
+  grid-template-rows:auto auto minmax(300px,1fr)!important;
+}
+body.tagsMode .tagTracksPanel{
+  min-height:300px!important;
+}
+body.tagsMode .tagTracksPanel > .toolbar{
+  min-height:48px!important;
+  padding-top:8px!important;
+  padding-bottom:8px!important;
+}
+body.tagsMode .tagTrackScroll table{
+  font-size:14px!important;
+}
+body.tagsMode .tagTrackScroll th{
+  height:40px!important;
+  padding:9px 10px!important;
+  font-size:13px!important;
+  vertical-align:middle!important;
+}
+body.tagsMode .tagTrackScroll td{
+  height:48px!important;
+  padding:7px 10px!important;
+  font-size:14px!important;
+  vertical-align:middle!important;
+}
+body.tagsMode .tagTrackScroll input{
+  min-height:36px!important;
+  padding:8px 10px!important;
+  font-size:14px!important;
+  line-height:18px!important;
+  box-sizing:border-box!important;
+}
+body.tagsMode .tagTrackScroll td:first-child,
+body.tagsMode .tagTrackScroll th:first-child{
+  width:42px!important;
+  text-align:center!important;
+}
+@media(max-height:820px){
+  body.tagsMode #tagsView.appView.active{
+    grid-template-rows:auto auto minmax(220px,1fr)!important;
+  }
+  body.tagsMode .tagTracksPanel{min-height:220px!important;}
+  body.tagsMode .tagTrackScroll td{height:42px!important;padding:5px 8px!important;}
+  body.tagsMode .tagTrackScroll input{min-height:32px!important;font-size:13px!important;}
+}
