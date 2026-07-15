@@ -1,5 +1,5 @@
 const API='http://'+location.hostname+':8091/api';
-const APP_VERSION='2.1.6';
+const APP_VERSION='2.1.8';
 let coverCacheBust=Date.now();
 let selectedArtist=null, selectedAlbum=null, selectedTagFolder=null;
 let selectedUiKey=null; // v1.9.39: eindeutige visuelle Einzelauswahl für Listen und Album-Kacheln
@@ -1350,7 +1350,7 @@ function filterLogLine(line, filter){
   if(filter==='scan') return s.includes('scan');
   if(filter==='tags') return s.includes('tag') || s.includes('cover') || s.includes('verschoben') || s.includes('sortier');
   if(filter==='audio') return s.includes('analyse') || s.includes('normalisierung') || s.includes('normalisiert') || s.includes('referenz');
-  if(filter==='sort') return s.includes('sortier') || s.includes('verschoben');
+  if(filter==='sort') return s.includes('[sortierung]') || s.includes('sortier') || s.includes('verschoben');
   return true;
 }
 
@@ -1466,16 +1466,70 @@ function downloadSortPreviewExport(){
 async function sortLibraryByTags(){
   try{
     const preview=await j(API+'/library/sort_preview');
-    if(!preview.move_count){ alert('Die Bibliothek ist bereits nach den aktuellen Tags sortiert.'); return; }
-    const groups=(preview.groups||[]).slice(0,8).map(x=>`• ${x.artist||'Unbekannter Interpret'} – ${x.album||'Unbekanntes Album'}\n  ${x.count} Dateien`).join('\n');
-    const msg=`Bibliothek neu sortieren?\n\n${preview.move_count} Dateien würden verschoben\n${preview.conflicts||0} Konflikte\n${preview.skipped||0} übersprungen\n\nGrößte Gruppen:\n${groups||'-'}\n\nEine vollständige Detail-Liste kannst du danach/jetzt über „Sortier-Vorschau exportieren“ herunterladen.\n\nJetzt sortieren?`;
+    const moves=Number(preview.move_count||0);
+    const conflicts=Number(preview.conflicts||0);
+    const correct=Number(preview.already_correct||0);
+    const skipped=Number(preview.skipped||0);
+    const newDirs=Number(preview.new_target_dirs||0);
+    const existingDirs=Number(preview.existing_target_dirs||0);
+
+    if(!moves){
+      let text='Es gibt keine sicheren Dateien zu verschieben.';
+      if(correct) text+=`\n\nBereits am richtigen Ort: ${correct}`;
+      if(conflicts) text+=`\nKonflikte: ${conflicts}`;
+      if(skipped) text+=`\nFehlende/nicht lesbare Dateien: ${skipped}`;
+      if(conflicts){
+        text+='\n\nKonflikte werden aus Sicherheitsgründen nicht automatisch als Duplikat verschoben. Bitte die Sortier-Vorschau exportieren und die betreffenden Dateien prüfen.';
+      }else{
+        text='\nDie Bibliothek ist bereits nach den aktuellen Tags sortiert.'+text.substring(text.indexOf('\n\n'));
+      }
+      alert(text);
+      return;
+    }
+
+    const groups=(preview.groups||[]).slice(0,8)
+      .map(x=>`• ${x.artist||'Unbekannter Interpret'} – ${x.album||'Unbekanntes Album'}\n  ${x.count} Dateien`)
+      .join('\n');
+
+    const examples=(preview.conflict_examples||[]).slice(0,5)
+      .map(x=>`• ${x.from}\n  → ${x.to}\n  ${x.reason||'Konflikt'}`)
+      .join('\n');
+
+    let msg=`Bibliothek neu sortieren?\n\n`
+      +`${moves} Dateien werden sicher verschoben\n`
+      +`${correct} bereits am richtigen Ort\n`
+      +`${conflicts} echte Dateikonflikte\n`
+      +`${skipped} fehlende/nicht lesbare Dateien\n\n`
+      +`Neue Zielordner: ${newDirs}\n`
+      +`Vorhandene Zielordner werden genutzt: ${existingDirs}\n\n`
+      +`Größte Gruppen:\n${groups||'-'}`;
+
+    if(examples){
+      msg+=`\n\nKonfliktbeispiele:\n${examples}`;
+    }
+
+    msg+='\n\nEin vorhandener Ordner ist kein Konflikt. Nur eine bereits vorhandene Zieldatei mit demselben Namen gilt als Konflikt und wird übersprungen.'
+      +'\n\nDie vollständige Liste steht über „Sortier-Vorschau exportieren“ bereit.'
+      +'\n\nJetzt sortieren?';
+
     if(!confirm(msg)) return;
+
     const res=await j(API+'/library/sort',{method:'POST'});
-    if(res && res.error){ alert(res.error); return; }
+    if(res && res.error){
+      alert(res.error);
+      return;
+    }
     const spText=document.getElementById('sortProgressText');
     if(spText) spText.textContent='Sortierung wird gestartet…';
+    setAppView('protocol');
+    setProtocolFilter('sort');
     poll();
-  }catch(e){alert('Bibliothek konnte nicht sortiert werden:\n'+(e && e.message ? e.message : e));}
+    setTimeout(loadLog,300);
+    setTimeout(loadLog,1200);
+  }catch(e){
+    alert('Bibliothek konnte nicht sortiert werden:\n'
+      +(e && e.message ? e.message : e));
+  }
 }
 
 let folderPickerCurrent='/music';
@@ -1543,9 +1597,42 @@ function setTagsDirty(dirty=true){
   const info=document.getElementById('tagDirtyInfo');
   if(info){ info.textContent=tagsDirty?'Ungespeicherte Änderungen':'Keine Änderungen'; info.className='small '+(tagsDirty?'warnText':'muted'); }
 }
+function syncCompilationAlbumArtist(fromLoad=false){
+  const comp=document.getElementById('tagCompilation');
+  const artist=document.getElementById('tagAlbumArtist');
+  if(!comp || !artist) return;
+
+  if(comp.checked){
+    const current=(artist.value||'').trim();
+    if(current && current!=='Verschiedene Interpreten'){
+      artist.dataset.singleArtist=current;
+    }
+    artist.value='Verschiedene Interpreten';
+    artist.disabled=true;
+    artist.title='Bei Samplern wird der Albuminterpret automatisch gesetzt. Die einzelnen Titelinterpreten bleiben unten erhalten.';
+  }else{
+    artist.disabled=false;
+    artist.title='';
+    if((artist.value||'').trim()==='Verschiedene Interpreten'){
+      artist.value=artist.dataset.singleArtist||'';
+    }
+  }
+  if(!fromLoad) setTagsDirty(true);
+}
+
 function bindTagDirtyHandlers(){
   ['tagAlbumArtist','tagAlbumName','tagYear','tagGenre','tagTrackTotal','tagDiscTotal','tagCompilation'].forEach(id=>{
-    const el=document.getElementById(id); if(el){ const handler=()=>{ if(id==='tagTrackTotal')syncTrackTotalPreview(); if(id==='tagDiscTotal')syncDiscTotalPreview(); setTagsDirty(true); }; if(id==='tagCompilation') el.onchange=handler; else el.oninput=handler; }
+    const el=document.getElementById(id);
+    if(!el) return;
+    if(id==='tagCompilation'){
+      el.onchange=()=>syncCompilationAlbumArtist(false);
+    }else{
+      el.oninput=()=>{
+        if(id==='tagTrackTotal')syncTrackTotalPreview();
+        if(id==='tagDiscTotal')syncDiscTotalPreview();
+        setTagsDirty(true);
+      };
+    }
   });
   document.querySelectorAll('#tagTracks input, #tagDiscTotalsBox input').forEach(el=>{
     const old=el.getAttribute('oninput')||'';
@@ -1650,6 +1737,8 @@ async function getTagTrackUrl(){
 function clearTagForm(){
   ['tagAlbumArtist','tagAlbumName','tagYear','tagGenre','tagTrackTotal','tagDiscTotal'].forEach(id=>{const el=document.getElementById(id); if(el){el.value=''; el.disabled=false;}});
   const comp=document.getElementById('tagCompilation'); if(comp)comp.checked=false;
+  const albumArtist=document.getElementById('tagAlbumArtist');
+  if(albumArtist){ delete albumArtist.dataset.singleArtist; albumArtist.disabled=false; }
   const box=document.getElementById('tagDiscTotalsBox'); if(box){box.innerHTML=''; box.style.display='none';}
   const b=document.getElementById('btnTagScraper'); if(b)b.disabled=true;
 }
@@ -1685,7 +1774,12 @@ async function loadTagsPage(){
       const isCompilation=rows.some(r=>Number(r.compilation||0)===1) || rows.some(r=>['verschiedene interpreten','various artists'].includes(String(r.albumartist||'').toLowerCase()));
       if(comp)comp.checked=isCompilation;
       const albums=[...new Set(rows.map(r=>r.album||'').filter(Boolean))];
-      if(aa)aa.value=isCompilation ? 'Verschiedene Interpreten' : (artists.length===1 ? artists[0] : '');
+      if(aa){
+        const singleArtist=artists.length===1 ? artists[0] : '';
+        aa.dataset.singleArtist=singleArtist;
+        aa.value=isCompilation ? 'Verschiedene Interpreten' : singleArtist;
+      }
+      syncCompilationAlbumArtist(true);
       if(al)al.value=byFolder ? (selectedAlbum||first.album||'') : (albums.length===1 ? albums[0] : (selectedAlbum||''));
       const discNums=[...new Set(rows.map(r=>Number(r.disc_number||parseInt(String(r.disc_raw||'').split('/')[0],10)||1)).filter(n=>n>0))].sort((a,b)=>a-b);
       const discTotalsExisting=rows.map(r=>Number(r.disc_total||0)).filter(n=>n>0);
@@ -2079,7 +2173,16 @@ async function saveTagUpdates(updates, okMsg, opts={}){
   try{
     setTagActionBusy(true, 'Tags werden gespeichert…');
     const res=await j(API+'/tags/update',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({updates,sort_files:sortFiles})});
-    const msg = `${okMsg} Gespeichert: ${res.updated}/${res.total}` + (res.errors?.length ? ` · Fehler: ${res.errors.length}` : '');
+    const moveText = sortFiles
+      ? (Number(res.moved||0)>0
+          ? ` · tatsächlich verschoben: ${res.moved}`
+          : ' · keine Pfadänderung erforderlich')
+      : '';
+    const targetText = Number(res.preexisting_target_dirs||0)>0
+      ? ` · vorhandene Zielordner: ${res.preexisting_target_dirs}`
+      : '';
+    const msg = `${okMsg} Gespeichert: ${res.updated}/${res.total}${moveText}${targetText}`
+      + (res.errors?.length ? ` · Fehler: ${res.errors.length}` : '');
     progressText.textContent = msg;
     status.textContent = msg;
     if(res.errors?.length) alert(`${okMsg}\nGespeichert: ${res.updated}/${res.total}\nFehler:\n${res.errors.join('\n')}`);
@@ -2482,7 +2585,7 @@ document.addEventListener('DOMContentLoaded',()=>{
     return /\bAktiv\b/.test(card.innerText || '') || card.classList.contains('active') || card.classList.contains('is-active') || card.classList.contains('selected');
   }
   function updateCredit(){
-    // v2.1.6: credit is rendered discreetly in the top navigation.
+    // v2.1.8: credit is rendered discreetly in the top navigation.
     document.querySelectorAll('.musiclab-credit-fixed,.footerCredit').forEach(el=>el.remove());
   }
   function ensureSummary(){
@@ -2544,7 +2647,7 @@ document.addEventListener('DOMContentLoaded',()=>{
 
 
 async function reembedAllCoversApple(){
-  let previewText='Die vorhandenen Cover werden Apple-kompatibel neu eingebettet.';
+  let previewText='Nicht kompatible Cover werden Apple-kompatibel neu eingebettet. Bereits passende JPEG-Cover werden übersprungen.';
   try{
     const pv=await j(API+'/covers/reembed_preview');
     if(pv && pv.ok!==false){
@@ -2555,7 +2658,7 @@ async function reembedAllCoversApple(){
     previewText='Vorschau konnte nicht geladen werden. Der Job kann trotzdem gestartet werden.';
   }
 
-  if(!confirm(`Alle vorhandenen Cover Apple-kompatibel neu einbetten?\n\n${previewText}\n\nDas schreibt eingebettete Cover neu und erstellt cover.jpg/folder.jpg.`)) return;
+  if(!confirm(`Cover Apple-kompatibel prüfen und bei Bedarf neu einbetten?\n\n${previewText}\n\nBereits kompatible eingebettete JPEG-Cover werden nicht erneut geschrieben. cover.jpg/folder.jpg werden weiterhin angelegt bzw. aktualisiert.`)) return;
 
   try{
     status.textContent='Apple-Cover-Neueinbettung wird gestartet...';

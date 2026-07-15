@@ -56,7 +56,7 @@ except Exception:
 Image = PILImage
 
 SCHEMA_VERSION = 25
-APP_VERSION = "2.1.6"
+APP_VERSION = "2.1.8"
 
 
 LOG_TZ = os.getenv("TZ") or os.getenv("LOG_TZ") or "Europe/Berlin"
@@ -1811,18 +1811,34 @@ def normalize_batch_worker(items: list, backup_mode: Optional[str] = None, setti
 
 
 def build_sort_plan(limit_preview: int = 100):
+    """Erstellt einen idempotenten und konfliktfreien Sortierplan.
+
+    Ein vorhandener Zielordner ist kein Konflikt. Ein Konflikt liegt nur vor,
+    wenn der konkrete Ziel-Dateipfad bereits durch eine andere Datei belegt ist
+    oder mehrere Quelldateien auf denselben Zielpfad zeigen. Konflikte werden
+    nicht automatisch als '(Duplikat)' verschoben, sondern sicher übersprungen.
+    """
     root = get_music_root().resolve()
     plan = []
     skipped = 0
+    already_correct = 0
     conflicts = 0
+    conflict_items = []
+    planned_targets = set()
+    target_dirs = set()
+    new_target_dirs = set()
+    existing_target_dirs = set()
+
     with db() as con:
         rows = [dict(r) for r in con.execute(
             """
-            SELECT id,path,filename,title,artist,album,size,mtime
+            SELECT id,path,filename,title,artist,album,albumartist,compilation,size,mtime
             FROM tracks
-            ORDER BY artist COLLATE NOCASE, album COLLATE NOCASE, title COLLATE NOCASE, path COLLATE NOCASE
+            ORDER BY artist COLLATE NOCASE, album COLLATE NOCASE,
+                     title COLLATE NOCASE, path COLLATE NOCASE
             """
         ).fetchall()]
+
     groups = {}
     for r in rows:
         try:
@@ -1832,92 +1848,240 @@ def build_sort_plan(limit_preview: int = 100):
                 skipped += 1
                 continue
 
-            # v1.8.12: Die Sortierung darf NICHT mehr blind den Datenbankwerten
-            # vertrauen. Nach manuellen Tag-Änderungen kann die DB kurzzeitig/stale
-            # sein. Würden wir dann nach DB sortieren, kann MusicLab Dateien wieder
-            # in die alte Struktur zurückschieben. Deshalb liest die Sortierplanung
-            # immer die aktuellen Tags aus der Datei und nutzt nur bei Lesefehlern
-            # die DB als Fallback.
-            live = None
+            # Aktuelle Tags direkt aus der Datei lesen. DB nur als Fallback.
             try:
                 live = scan_file(current, root)
             except Exception:
                 live = None
+
             artist = (live or {}).get("artist") or r.get("artist") or "Unbekannter Interpret"
+            albumartist = (
+                (live or {}).get("albumartist")
+                or r.get("albumartist")
+                or artist
+            )
+            compilation = int(
+                (live or {}).get("compilation")
+                if (live or {}).get("compilation") is not None
+                else (r.get("compilation") or 0)
+            )
             album = (live or {}).get("album") or r.get("album") or "Unbekanntes Album"
             title = (live or {}).get("title") or r.get("title") or current.stem
             ext = current.suffix or Path(r.get("filename") or current.name).suffix or ".mp3"
-            target_rel = Path(safe_name(artist, "Unbekannter Interpret")) / safe_name(album, "Unbekanntes Album") / f"{safe_name(title, current.stem)}{ext}"
+
+            folder_artist = albumartist if compilation == 1 else artist
+            target_rel = (
+                Path(safe_name(folder_artist, "Unbekannter Interpret"))
+                / safe_name(album, "Unbekanntes Album")
+                / f"{safe_name(title, current.stem)}{ext}"
+            )
             target = (root / target_rel).resolve()
+
             if target == current:
+                already_correct += 1
                 continue
-            if target.exists():
+
+            target_key = target.as_posix()
+            target_dir_key = target.parent.as_posix()
+            target_dirs.add(target_dir_key)
+
+            conflict_reason = None
+            if target_key in planned_targets:
+                conflict_reason = "Mehrere Quelldateien haben denselben Zielpfad"
+            elif target.exists() and target.is_file():
+                conflict_reason = "Zieldatei existiert bereits"
+
+            if conflict_reason:
                 conflicts += 1
-                target = unique_target_path(root, target_rel, current)
-            item = {"id": r.get("id"), "from": rel, "to": target.relative_to(root).as_posix(), "artist": artist, "album": album}
-            key = (artist, album)
-            g = groups.setdefault(key, {"artist": artist, "album": album, "count": 0})
-            g["count"] += 1
+                if len(conflict_items) < 100:
+                    conflict_items.append({
+                        "from": rel,
+                        "to": target.relative_to(root).as_posix(),
+                        "reason": conflict_reason,
+                        "artist": folder_artist,
+                        "album": album,
+                    })
+                continue
+
+            planned_targets.add(target_key)
+            if target.parent.exists():
+                existing_target_dirs.add(target_dir_key)
+            else:
+                new_target_dirs.add(target_dir_key)
+
+            item = {
+                "id": r.get("id"),
+                "from": rel,
+                "to": target.relative_to(root).as_posix(),
+                "artist": folder_artist,
+                "album": album,
+            }
+            key = (folder_artist, album)
+            group = groups.setdefault(
+                key,
+                {"artist": folder_artist, "album": album, "count": 0},
+            )
+            group["count"] += 1
+
             if len(plan) < limit_preview:
                 plan.append(item)
             else:
-                plan.append({"id": r.get("id"), "from": rel, "to": item["to"], "hidden": True, "artist": artist, "album": album})
+                plan.append({**item, "hidden": True})
         except Exception:
             skipped += 1
-    group_list = sorted(groups.values(), key=lambda x: (-x["count"], (x.get("artist") or "").lower(), (x.get("album") or "").lower()))[:20]
-    return {"total": len(rows), "move_count": len(plan), "groups": group_list, "preview": [p for p in plan if not p.get("hidden")], "hidden": max(0, len(plan) - limit_preview), "conflicts": conflicts, "skipped": skipped, "_plan": plan}
 
+    group_list = sorted(
+        groups.values(),
+        key=lambda x: (
+            -x["count"],
+            (x.get("artist") or "").lower(),
+            (x.get("album") or "").lower(),
+        ),
+    )[:20]
+
+    return {
+        "total": len(rows),
+        "move_count": len(plan),
+        "already_correct": already_correct,
+        "groups": group_list,
+        "preview": [p for p in plan if not p.get("hidden")],
+        "hidden": max(0, len(plan) - limit_preview),
+        "conflicts": conflicts,
+        "conflict_examples": conflict_items[:20],
+        "skipped": skipped,
+        "new_target_dirs": len(new_target_dirs),
+        "existing_target_dirs": len(existing_target_dirs),
+        "_plan": plan,
+    }
 
 def sort_library_worker():
     reset_stop()
     try:
         full = build_sort_plan(limit_preview=10**9)
         plan = full.get("_plan", [])
-        state.update({"running": True, "mode": "Bibliothek sortieren", "total": len(plan), "done": 0, "errors": 0, "current": "", "message": "Bibliothek wird anhand der Tags sortiert"})
-        add_log(f"Bibliothek sortieren gestartet: {len(plan)} Dateien")
+        conflict_count = int(full.get("conflicts") or 0)
+        already_correct = int(full.get("already_correct") or 0)
+        skipped = int(full.get("skipped") or 0)
+
+        state.update({
+            "running": True,
+            "mode": "sort",
+            "total": len(plan),
+            "done": 0,
+            "errors": 0,
+            "current": "",
+            "message": "Bibliothek wird anhand der Tags sortiert",
+        })
+        add_log(
+            "[Sortierung] gestartet: "
+            f"{len(plan)} sichere Verschiebungen, "
+            f"{conflict_count} Konflikte, "
+            f"{already_correct} bereits korrekt, "
+            f"{skipped} übersprungen"
+        )
+
         root = get_music_root().resolve()
         moved = 0
+        runtime_conflicts = 0
+
         with db() as con:
-            for it in plan:
+            for index, item in enumerate(plan, start=1):
                 if stop_requested():
                     break
                 try:
-                    src = (root / it["from"]).resolve()
-                    dst = (root / it["to"]).resolve()
-                    state["current"] = it["from"]
+                    src = (root / item["from"]).resolve()
+                    dst = (root / item["to"]).resolve()
+                    state["current"] = item["from"]
+                    state["message"] = (
+                        f"Sortierung {index}/{len(plan)}: {item['from']}"
+                    )
+
                     if not src.exists():
                         state["errors"] += 1
-                        add_log(f"Sortierfehler: {it['from']} - Datei fehlt", True)
+                        add_log(
+                            f"[Sortierung] Fehler: {item['from']} - Datei fehlt",
+                            True,
+                        )
+                    elif dst.exists() and dst != src:
+                        # Sicherheitsprüfung gegen Änderungen seit der Vorschau.
+                        runtime_conflicts += 1
+                        add_log(
+                            f"[Sortierung] Konflikt übersprungen: "
+                            f"{item['from']} -> {item['to']} "
+                            "(Zieldatei existiert bereits)",
+                            True,
+                        )
+                    elif dst == src:
+                        # Kann auftreten, wenn parallel ein anderer Vorgang die
+                        # Datei bereits korrekt abgelegt hat.
+                        pass
                     else:
                         dst.parent.mkdir(parents=True, exist_ok=True)
-                        final = unique_target_path(root, dst.relative_to(root), src)
-                        shutil.move(str(src), str(final))
+                        shutil.move(str(src), str(dst))
                         prune_empty_dirs(src.parent, root)
-                        rel = final.relative_to(root).as_posix()
-                        # Nach dem Verschieben direkt neu aus der Datei lesen und DB
-                        # synchronisieren. So bleibt die Sortierung tag-basiert und
-                        # alte DB-Werte können spätere Sortierläufe nicht zurückdrehen.
+                        rel = dst.relative_to(root).as_posix()
+
                         try:
-                            fresh = scan_file(final, root)
-                            con.execute("DELETE FROM tracks WHERE path=? AND path<>?", (it["from"], rel))
+                            fresh = scan_file(dst, root)
+                            con.execute(
+                                "DELETE FROM tracks WHERE path=? AND path<>?",
+                                (item["from"], rel),
+                            )
                             upsert_track(con, fresh)
                         except Exception:
-                            st = final.stat()
-                            con.execute("UPDATE tracks SET path=?, filename=?, size=?, mtime=? WHERE path=?", (rel, final.name, st.st_size, st.st_mtime, it["from"]))
+                            stat = dst.stat()
+                            con.execute(
+                                """
+                                UPDATE tracks
+                                SET path=?,filename=?,size=?,mtime=?
+                                WHERE path=?
+                                """,
+                                (
+                                    rel, dst.name, stat.st_size,
+                                    stat.st_mtime, item["from"],
+                                ),
+                            )
                         moved += 1
-                except Exception as e:
+
+                    state["done"] = index
+                    con.commit()
+
+                    if index % 100 == 0 or index == len(plan):
+                        add_log(
+                            f"[Sortierung] Fortschritt: {index}/{len(plan)} "
+                            f"geprüft, {moved} verschoben, "
+                            f"{runtime_conflicts} Laufzeitkonflikte"
+                        )
+                except Exception as exc:
                     state["errors"] += 1
-                    add_log(f"Sortierfehler: {it.get('from')} - {e}", True)
-                state["done"] += 1
-                con.commit()
+                    add_log(
+                        f"[Sortierung] Fehler: {item.get('from')} - {exc}",
+                        True,
+                    )
+                    state["done"] = index
+                    con.commit()
+
         if stop_requested():
-            add_log(f"Bibliothek sortieren abgebrochen: {state['done']}/{state['total']} Dateien, Fehler {state['errors']}", True)
+            message = (
+                f"[Sortierung] abgebrochen: {state['done']}/{state['total']} "
+                f"geprüft, {moved} verschoben, Fehler {state['errors']}"
+            )
+            add_log(message, True)
             finish_job("Bibliothek sortieren abgebrochen", True)
         else:
-            add_log(f"Bibliothek sortieren fertig: {moved} Dateien verschoben, Fehler {state['errors']}")
-            finish_job("Bibliothek sortieren fertig")
-    except Exception as e:
-        add_log(f"Bibliothek sortieren fehlgeschlagen: {e}", True)
+            message = (
+                f"[Sortierung] fertig: {moved} Dateien tatsächlich verschoben, "
+                f"{conflict_count} Vorschau-Konflikte übersprungen, "
+                f"{runtime_conflicts} neue Laufzeitkonflikte, "
+                f"{already_correct} bereits korrekt, "
+                f"Fehler {state['errors']}"
+            )
+            add_log(message)
+            finish_job(
+                f"Sortierung fertig: {moved} Dateien verschoben"
+            )
+    except Exception as exc:
+        add_log(f"[Sortierung] fehlgeschlagen: {exc}", True)
         finish_job("Bibliothek sortieren fehlgeschlagen", True)
 
 
@@ -1948,31 +2112,72 @@ def api_fs_browse(path: str = "/music"):
 
 @app.get("/api/library/sort_preview")
 def api_library_sort_preview():
-    p = build_sort_plan(limit_preview=50)
-    p.pop("_plan", None)
-    return p
+    preview = build_sort_plan(limit_preview=50)
+    add_log(
+        "[Sortierung] Vorschau: "
+        f"{preview.get('move_count', 0)} sichere Verschiebungen, "
+        f"{preview.get('conflicts', 0)} Konflikte, "
+        f"{preview.get('already_correct', 0)} bereits korrekt, "
+        f"{preview.get('skipped', 0)} übersprungen"
+    )
+    preview.pop("_plan", None)
+    return preview
 
 
 
 
 @app.get("/api/library/sort_preview_export")
 def api_library_sort_preview_export():
-    p = build_sort_plan(limit_preview=10**9)
-    rows = p.get("_plan", [])
+    preview = build_sort_plan(limit_preview=10**9)
+    rows = preview.get("_plan", [])
+    conflicts = preview.get("conflict_examples", [])
     out = io.StringIO()
-    out.write("from;to;artist;album\n")
-    for r in rows:
-        def cell(v):
-            return '"' + str(v or '').replace('"', '""') + '"'
-        out.write(';'.join([cell(r.get("from")), cell(r.get("to")), cell(r.get("artist")), cell(r.get("album"))]) + "\n")
-    filename = f"musiclab_sort_preview_{time.strftime('%Y-%m-%d_%H-%M-%S')}.csv"
-    return Response(out.getvalue(), media_type="text/csv; charset=utf-8", headers={"Content-Disposition": f"attachment; filename={filename}"})
+    out.write("status;from;to;artist;album;reason\n")
+
+    def cell(value):
+        return '"' + str(value or '').replace('"', '""') + '"'
+
+    for row in rows:
+        out.write(";".join([
+            cell("verschieben"),
+            cell(row.get("from")),
+            cell(row.get("to")),
+            cell(row.get("artist")),
+            cell(row.get("album")),
+            cell(""),
+        ]) + "\n")
+
+    for row in conflicts:
+        out.write(";".join([
+            cell("konflikt"),
+            cell(row.get("from")),
+            cell(row.get("to")),
+            cell(row.get("artist")),
+            cell(row.get("album")),
+            cell(row.get("reason")),
+        ]) + "\n")
+
+    filename = (
+        "musiclab_sort_preview_"
+        + time.strftime("%Y-%m-%d_%H-%M-%S")
+        + ".csv"
+    )
+    add_log(
+        "[Sortierung] Vorschau exportiert: "
+        f"{len(rows)} Verschiebungen, {len(conflicts)} Konflikte"
+    )
+    return Response(
+        out.getvalue(),
+        media_type="text/csv; charset=utf-8",
+        headers={"Content-Disposition": f"attachment; filename={filename}"},
+    )
 
 @app.post("/api/library/sort")
 def api_library_sort():
     if state.get("running"):
         return {"ok": False, "error": "Es läuft bereits ein Vorgang. Bitte erst stoppen oder warten."}
-    begin_job("Bibliothek sortieren", 0, "Sortierung wird vorbereitet")
+    begin_job("sort", 0, "Sortierung wird vorbereitet")
+    add_log("[Sortierung] Start angefordert")
     threading.Thread(target=sort_library_worker, daemon=True).start()
     return {"ok": True, "started": True}
 
@@ -2503,6 +2708,7 @@ def reembed_all_covers_worker():
         albums_without_cover = 0
         files_updated = 0
         files_verified = 0
+        files_skipped_compatible = 0
         unsupported = 0
         errors = []
 
@@ -2536,10 +2742,16 @@ def reembed_all_covers_worker():
 
             local_updated = 0
             local_verified = 0
+            local_skipped_compatible = 0
             local_unsupported = 0
 
             for fp in files:
                 try:
+                    if has_apple_compatible_embedded_cover(fp, 1200):
+                        local_skipped_compatible += 1
+                        local_verified += 1
+                        continue
+
                     ok = write_apple_cover_to_file(fp, jpg)
                     if ok:
                         local_updated += 1
@@ -2550,17 +2762,31 @@ def reembed_all_covers_worker():
                     errors.append(msg)
                     add_log("Cover-Fehler: " + msg, True)
 
+            # Nur neu geschriebene Dateien noch einmal prüfen.
             for fp in files:
-                if has_embedded_cover(fp):
-                    local_verified += 1
+                if has_apple_compatible_embedded_cover(fp, 1200):
+                    pass
+                elif has_embedded_cover(fp):
+                    # Eingebettet, aber nicht MusicLab-/Apple-Standard.
+                    pass
+
+            local_verified = sum(
+                1 for fp in files
+                if has_apple_compatible_embedded_cover(fp, 1200)
+            )
 
             files_updated += local_updated
             files_verified += local_verified
+            files_skipped_compatible += local_skipped_compatible
             unsupported += local_unsupported
 
-            add_log("Cover Apple-kompatibel neu eingebettet: %s · eingebettet %s/%s · geprüft %s/%s" % (
-                rel_dir, local_updated, len(files), local_verified, len(files)
-            ))
+            add_log(
+                "Cover Apple-kompatibel verarbeitet: %s · neu eingebettet %s/%s · "
+                "bereits kompatibel %s · geprüft %s/%s" % (
+                    rel_dir, local_updated, len(files),
+                    local_skipped_compatible, local_verified, len(files)
+                )
+            )
 
             state.update({
                 "done": idx,
@@ -2574,15 +2800,25 @@ def reembed_all_covers_worker():
             "done": len(album_items),
             "total": len(album_items),
             "current": "",
-            "message": "Apple-Cover-Neueinbettung fertig: %s Alben mit Cover, %s ohne Cover, Dateien geprüft %s" % (
-                albums_with_cover, albums_without_cover, files_verified
+            "message": (
+                "Apple-Cover-Verarbeitung fertig: %s Alben mit Cover, %s ohne Cover, "
+                "%s Dateien neu eingebettet, %s bereits kompatibel, %s geprüft"
+            ) % (
+                albums_with_cover, albums_without_cover, files_updated,
+                files_skipped_compatible, files_verified
             ),
             "errors": len(errors),
             "recent_errors": errors[-8:],
         })
-        add_log("Apple-Cover-Neueinbettung fertig: Alben mit Cover %s, ohne Cover %s, Dateien eingebettet %s, geprüft %s, nicht unterstützt %s, Fehler %s" % (
-            albums_with_cover, albums_without_cover, files_updated, files_verified, unsupported, len(errors)
-        ), bool(errors))
+        add_log(
+            "Apple-Cover-Verarbeitung fertig: Alben mit Cover %s, ohne Cover %s, "
+            "neu eingebettet %s, bereits kompatibel übersprungen %s, geprüft %s, "
+            "nicht unterstützt %s, Fehler %s" % (
+                albums_with_cover, albums_without_cover, files_updated,
+                files_skipped_compatible, files_verified, unsupported, len(errors)
+            ),
+            bool(errors),
+        )
     except Exception as e:
         state.update({
             "running": False,
@@ -3796,7 +4032,8 @@ def update_tags(payload: dict):
     root = get_music_root().resolve()
     updated = 0
     moved = 0
-    album_exists = False
+    preexisting_target_dirs = set()
+    checked_target_dirs = set()
     move_preview = []
     errors = []
     with db() as con:
@@ -3864,12 +4101,33 @@ def update_tags(payload: dict):
                 current_path = p
                 if sort_files:
                     final_artist = changed.get("artist", old.get("artist") or "Unbekannter Interpret")
+                    final_albumartist = changed.get(
+                        "albumartist",
+                        old.get("albumartist") or final_artist
+                    )
                     final_album = changed.get("album", old.get("album") or "Unbekanntes Album")
                     final_title = changed.get("title", old.get("title") or p.stem)
-                    target_dir_rel = Path(safe_name(final_artist, "Unbekannter Interpret")) / safe_name(final_album, "Unbekanntes Album")
+
+                    # Sampler werden gemeinsam unter dem Albumartist abgelegt.
+                    folder_artist = (
+                        final_albumartist
+                        if int(changed.get("compilation") or 0) == 1
+                        else final_artist
+                    )
+                    target_dir_rel = (
+                        Path(safe_name(folder_artist, "Unbekannter Interpret"))
+                        / safe_name(final_album, "Unbekanntes Album")
+                    )
                     target_dir = (root / target_dir_rel).resolve()
-                    if target_dir.exists() and target_dir != current_path.parent.resolve():
-                        album_exists = True
+
+                    target_key = target_dir.as_posix()
+                    if target_key not in checked_target_dirs:
+                        checked_target_dirs.add(target_key)
+                        if (
+                            target_dir.exists()
+                            and target_dir != current_path.parent.resolve()
+                        ):
+                            preexisting_target_dirs.add(target_key)
                     ext = current_path.suffix or Path(old.get("filename") or current_path.name).suffix or ".mp3"
                     target_rel = target_dir_rel / f"{safe_name(final_title, current_path.stem)}{ext}"
                     target = unique_target_path(root, target_rel, current_path)
@@ -3927,13 +4185,23 @@ def update_tags(payload: dict):
     if updated:
         msg = f"Tags gespeichert: {updated}/{len(updates)} Dateien"
         if moved:
-            msg += f", verschoben {moved}"
-        if album_exists:
-            msg += ", Albumordner existierte bereits"
+            msg += f", tatsächlich verschoben {moved}"
+        else:
+            msg += ", keine Pfadänderung erforderlich"
+        if preexisting_target_dirs:
+            msg += f", vorhandene Zielordner {len(preexisting_target_dirs)}"
         if errors:
             msg += f", Fehler {len(errors)}"
         add_log(msg, bool(errors))
-    return {"updated": updated, "total": len(updates), "moved": moved, "album_exists": album_exists, "moves": move_preview, "errors": errors[:50]}
+    return {
+        "updated": updated,
+        "total": len(updates),
+        "moved": moved,
+        "album_exists": bool(preexisting_target_dirs),
+        "preexisting_target_dirs": len(preexisting_target_dirs),
+        "moves": move_preview,
+        "errors": errors[:50],
+    }
 
 
 
@@ -4413,6 +4681,43 @@ def has_embedded_cover(file_path):
             audio = FLAC(file_path)
             return bool(audio.pictures)
         return False
+    except Exception:
+        return False
+
+
+def has_apple_compatible_embedded_cover(file_path, max_size=1200):
+    """Prüft, ob bereits ein MusicLab-/Apple-taugliches JPEG eingebettet ist.
+
+    Als kompatibel gilt:
+    - echtes JPEG,
+    - lesbar,
+    - maximal max_size Pixel an der längsten Seite,
+    - RGB oder Graustufen.
+    """
+    try:
+        hit = _embedded_cover_from_file(file_path)
+        if not hit:
+            return False
+        mime, raw = hit
+        raw = bytes(raw or b"")
+        if not raw or not raw.startswith(b"\xff\xd8\xff"):
+            return False
+        if mime and str(mime).lower() not in {
+            "image/jpeg", "image/jpg", "jpeg", "jpg"
+        }:
+            return False
+
+        if PILImage is None:
+            # Ohne Pillow ist die JPEG-Signatur die sicherste verfügbare Prüfung.
+            return True
+
+        with PILImage.open(io.BytesIO(raw)) as image:
+            image.load()
+            if str(image.format or "").upper() != "JPEG":
+                return False
+            if max(image.size) > int(max_size):
+                return False
+            return image.mode in ("RGB", "L")
     except Exception:
         return False
 

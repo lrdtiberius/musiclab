@@ -2552,3 +2552,17 @@ body.tagsMode #tagsView .tagTrackScroll{
   font-weight:700!important;transform:none!important;text-align:center!important
 }
 #protocolView .filterPills>button.active{border-color:rgba(255,255,255,.12)!important}
+
+
+/* v2.1.7 - Sampler-/Compilation-Feld */
+#tagAlbumArtist:disabled{
+  opacity:.78!important;
+  cursor:not-allowed!important;
+  color:var(--text)!important;
+  -webkit-text-fill-color:var(--text)!important;
+  background:rgba(90,145,220,.10)!important;
+  border-color:rgba(90,145,220,.28)!important;
+}
+.tagCompilationCheck{
+  align-items:center!important;
+}
