@@ -2221,3 +2221,101 @@ body.tagsMode .tagTrackScroll th:first-child{
   body.tagsMode .tagTrackScroll td{height:42px!important;padding:5px 8px!important;}
   body.tagsMode .tagTrackScroll input{min-height:32px!important;font-size:13px!important;}
 }
+
+
+/* v2.1.4 - dezente Signatur oben und mehr Platz für Titel-Tags */
+.navCredit{
+  display:inline-flex;
+  align-items:center;
+  align-self:center;
+  flex:0 0 auto;
+  margin-left:7px;
+  padding:0 3px;
+  color:var(--muted);
+  font-size:10px;
+  line-height:1;
+  white-space:nowrap;
+  opacity:.72;
+  pointer-events:none;
+}
+.footerCredit,
+.musiclab-credit-fixed{
+  display:none!important;
+}
+
+/* Ohne Fußsignatur darf die App die volle verbleibende Fensterhöhe verwenden. */
+body.tagsMode main{
+  min-height:0!important;
+  height:100%!important;
+  padding-bottom:0!important;
+}
+body.tagsMode #tagsView.appView.active{
+  height:100%!important;
+  min-height:0!important;
+  grid-template-rows:auto auto minmax(390px,1fr)!important;
+  gap:10px!important;
+  padding-bottom:0!important;
+}
+body.tagsMode .tagEditor{
+  padding-bottom:12px!important;
+}
+body.tagsMode .tagTracksPanel{
+  min-height:390px!important;
+  height:100%!important;
+  overflow:hidden!important;
+  display:flex!important;
+  flex-direction:column!important;
+}
+body.tagsMode .tagTrackScroll{
+  flex:1 1 auto!important;
+  min-height:310px!important;
+  height:auto!important;
+  overflow:auto!important;
+}
+body.tagsMode .tagTrackScroll table{
+  min-height:100%!important;
+}
+
+/* Der Album-Bereich bleibt kompakt, damit die Titelliste den Platz bekommt. */
+body.tagsMode .tagEditor > .toolbar{
+  margin-bottom:8px!important;
+}
+body.tagsMode .tagCoverRow{
+  margin-bottom:8px!important;
+}
+body.tagsMode .tagCoverDrop{
+  min-height:88px!important;
+}
+body.tagsMode .tagCoverDrop .mediaCoverBox.large{
+  width:78px!important;
+  height:78px!important;
+  min-width:78px!important;
+}
+body.tagsMode .formgrid.compact{
+  gap:8px 12px!important;
+}
+
+/* Safari-Fenster in der gezeigten Größe */
+@media (min-height:780px){
+  body.tagsMode #tagsView.appView.active{
+    grid-template-rows:auto auto minmax(420px,1fr)!important;
+  }
+  body.tagsMode .tagTracksPanel{
+    min-height:420px!important;
+  }
+  body.tagsMode .tagTrackScroll{
+    min-height:340px!important;
+  }
+}
+@media (max-height:779px){
+  body.tagsMode #tagsView.appView.active{
+    grid-template-rows:auto auto minmax(280px,1fr)!important;
+  }
+  body.tagsMode .tagTracksPanel{min-height:280px!important;}
+  body.tagsMode .tagTrackScroll{min-height:210px!important;}
+}
+
+/* Auf kleineren Breiten bleibt die Signatur unaufdringlich. */
+@media(max-width:1250px){
+  .navCredit{font-size:9px;margin-left:3px}
+}

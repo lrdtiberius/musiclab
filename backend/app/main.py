@@ -54,7 +54,7 @@ except Exception:
     Image = None
 
 SCHEMA_VERSION = 25
-APP_VERSION = "2.1.3"
+APP_VERSION = "2.1.4"
 
 
 LOG_TZ = os.getenv("TZ") or os.getenv("LOG_TZ") or "Europe/Berlin"
@@ -3596,7 +3596,7 @@ def get_tag_albums(q: str = "", artist: Optional[str] = None, genre: Optional[st
     albums stay physical, so broken folder/tag cases remain repairable.
     """
     q_norm = (q or "").strip().lower()
-    artist_norm = (artist or "").strip().lower()
+    artist_exact = (artist or "").strip()
     genre_norm = (genre or "").strip().lower()
     year_norm = (year or "").strip().lower()
     with db() as con:
@@ -3613,7 +3613,9 @@ def get_tag_albums(q: str = "", artist: Optional[str] = None, genre: Optional[st
         hay = " ".join([r.get("path") or "", r.get("artist") or "", r.get("album") or "", r.get("title") or "", r.get("genre") or "", r.get("year") or ""]).lower()
         if q_norm and q_norm not in hay:
             continue
-        if artist_norm and (r.get("artist") or "").strip().lower() != artist_norm:
+        # Tags editor must keep differently spelled artists separately so
+        # incorrect capitalization can be selected and repaired deliberately.
+        if artist_exact and (r.get("artist") or "").strip() != artist_exact:
             continue
         if genre_norm and (r.get("genre") or "").strip().lower() != genre_norm:
             continue
@@ -3707,7 +3709,7 @@ def get_tracks_by_folder(folder: str, artist: Optional[str] = None, genre: Optio
     happen to live in the same physical folder.
     """
     folder = str(folder or "").strip().strip("/")
-    artist_norm = (artist or "").strip().lower()
+    artist_exact = (artist or "").strip()
     genre_norm = (genre or "").strip().lower()
     year_norm = (year or "").strip().lower()
     q_norm = (q or "").strip().lower()
@@ -3730,7 +3732,7 @@ def get_tracks_by_folder(folder: str, artist: Optional[str] = None, genre: Optio
                 continue
         elif parent_folder_key(r.get("path") or "") != folder:
             continue
-        if artist_norm and (r.get("artist") or "").strip().lower() != artist_norm:
+        if artist_exact and (r.get("artist") or "").strip() != artist_exact:
             continue
         if genre_norm and (r.get("genre") or "").strip().lower() != genre_norm:
             continue
