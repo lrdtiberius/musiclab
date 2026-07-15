@@ -2319,3 +2319,192 @@ body.tagsMode .formgrid.compact{
 @media(max-width:1250px){
   .navCredit{font-size:9px;margin-left:3px}
 }
+
+
+/* ============================================================
+   v2.1.5 – Tags füllen die Fensterhöhe; Protokollfilter identisch
+   ============================================================ */
+
+/*
+ * Der frühere Fehler: main blieb selbst ein mehrzeiliges Grid aus dem
+ * alten Audio-Layout. Dadurch erhielt #tagsView nur einen kleinen Grid-
+ * Bereich, obwohl #tagsView intern auf 100 % stand.
+ *
+ * Im Tags-Modus wird main deshalb zu einem einfachen Blockcontainer.
+ */
+body.tagsMode main{
+  display:block!important;
+  width:100%!important;
+  height:100%!important;
+  min-height:0!important;
+  max-height:100%!important;
+  overflow:hidden!important;
+}
+
+body.tagsMode #tagsView.appView.active{
+  display:grid!important;
+  width:100%!important;
+  height:100%!important;
+  min-height:0!important;
+  max-height:100%!important;
+  box-sizing:border-box!important;
+  grid-template-columns:minmax(0,1fr)!important;
+  grid-template-rows:72px auto minmax(0,1fr)!important;
+  align-content:stretch!important;
+  gap:10px!important;
+  overflow:hidden!important;
+}
+
+/* Album-Tags bleiben so hoch wie ihr Inhalt – Titel erhalten alles Übrige. */
+body.tagsMode #tagsView > .tagsHeader{
+  grid-row:1!important;
+  height:72px!important;
+  min-height:72px!important;
+  max-height:72px!important;
+  box-sizing:border-box!important;
+}
+body.tagsMode #tagsView > .tagEditor{
+  grid-row:2!important;
+  height:auto!important;
+  min-height:0!important;
+  max-height:none!important;
+  box-sizing:border-box!important;
+}
+body.tagsMode #tagsView > .tagTracksPanel{
+  grid-row:3!important;
+  width:100%!important;
+  height:100%!important;
+  min-height:0!important;
+  max-height:none!important;
+  box-sizing:border-box!important;
+  display:flex!important;
+  flex-direction:column!important;
+  overflow:hidden!important;
+}
+
+body.tagsMode #tagsView .tagTracksPanel > .toolbar{
+  flex:0 0 48px!important;
+  height:48px!important;
+  min-height:48px!important;
+  max-height:48px!important;
+  box-sizing:border-box!important;
+}
+body.tagsMode #tagsView #tagHint{
+  flex:0 0 auto!important;
+  min-height:20px!important;
+}
+body.tagsMode #tagsView .tagTrackScroll{
+  flex:1 1 0!important;
+  width:100%!important;
+  height:auto!important;
+  min-height:0!important;
+  max-height:none!important;
+  overflow-y:auto!important;
+  overflow-x:auto!important;
+  box-sizing:border-box!important;
+}
+
+/* Tabellenzeilen gut lesbar, aber der Bereich selbst wächst statt nur die Zeile. */
+body.tagsMode #tagsView .tagTrackScroll table{
+  min-height:0!important;
+  height:auto!important;
+}
+body.tagsMode #tagsView .tagTrackScroll th{
+  height:38px!important;
+}
+body.tagsMode #tagsView .tagTrackScroll td{
+  height:46px!important;
+}
+
+/* Bei sehr niedrigen Fenstern darf Album-Tags kompakter werden. */
+@media(max-height:800px){
+  body.tagsMode #tagsView.appView.active{
+    grid-template-rows:64px auto minmax(0,1fr)!important;
+    gap:8px!important;
+  }
+  body.tagsMode #tagsView > .tagsHeader{
+    height:64px!important;
+    min-height:64px!important;
+    max-height:64px!important;
+  }
+  body.tagsMode .tagCoverDrop{
+    min-height:76px!important;
+  }
+  body.tagsMode .tagCoverDrop .mediaCoverBox.large{
+    width:68px!important;
+    height:68px!important;
+    min-width:68px!important;
+  }
+}
+
+/*
+ * Protokollfilter: alle sechs Schaltflächen erhalten dieselbe feste
+ * Außenbreite. Aktiv, Hover und Fokus verändern keinerlei Geometrie.
+ */
+#protocolView .filterPills{
+  display:grid!important;
+  grid-template-columns:auto repeat(6,94px)!important;
+  grid-auto-columns:94px!important;
+  align-items:center!important;
+  justify-content:start!important;
+  column-gap:8px!important;
+  row-gap:0!important;
+  width:auto!important;
+  min-width:0!important;
+}
+
+#protocolView .filterPills::before{
+  position:static!important;
+  width:auto!important;
+  min-width:auto!important;
+  margin:0 4px 0 0!important;
+  line-height:36px!important;
+  white-space:nowrap!important;
+}
+
+#protocolView .filterPills > button,
+#protocolView .filterPills > button:hover,
+#protocolView .filterPills > button:focus,
+#protocolView .filterPills > button:active,
+#protocolView .filterPills > button.active{
+  display:block!important;
+  width:94px!important;
+  min-width:94px!important;
+  max-width:94px!important;
+  height:36px!important;
+  min-height:36px!important;
+  max-height:36px!important;
+  padding:0!important;
+  margin:0!important;
+  border:1px solid transparent!important;
+  border-radius:10px!important;
+  box-sizing:border-box!important;
+  line-height:34px!important;
+  font-size:13px!important;
+  font-weight:700!important;
+  text-align:center!important;
+  letter-spacing:0!important;
+  transform:none!important;
+  white-space:nowrap!important;
+}
+
+#protocolView .filterPills > button.active{
+  border-color:rgba(255,255,255,.12)!important;
+}
+
+/* Sortierung braucht keinen Sonderplatz mehr. */
+#protocolView .filterPills > button:nth-child(4),
+#protocolView .filterPills > button:nth-child(5),
+#protocolView .filterPills > button:nth-child(6){
+  width:94px!important;
+  min-width:94px!important;
+  max-width:94px!important;
+}
+
+/* Kontrollierter Umbruch nur auf wirklich kleinen Fenstern. */
+@media(max-width:900px){
+  #protocolView .filterPills{
+    grid-template-columns:auto repeat(3,94px)!important;
+    row-gap:8px!important;
+  }
+}

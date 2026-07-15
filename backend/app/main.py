@@ -54,7 +54,7 @@ except Exception:
     Image = None
 
 SCHEMA_VERSION = 25
-APP_VERSION = "2.1.4"
+APP_VERSION = "2.1.5"
 
 
 LOG_TZ = os.getenv("TZ") or os.getenv("LOG_TZ") or "Europe/Berlin"
