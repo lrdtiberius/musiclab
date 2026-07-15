@@ -1,4 +1,4 @@
-# MusicLab v2.1.5
+# MusicLab v2.1.6
 
 MusicLab ist eine Docker-basierte Musikverwaltung für NAS und Linux.
 
@@ -11,7 +11,7 @@ MusicLab ist eine Docker-basierte Musikverwaltung für NAS und Linux.
 6. `http://NAS-IP:8092` öffnen.
 
 ## Dokumentation
-Vollständige Anleitung: `MusicLab_Benutzerhandbuch_v2.1.5.pdf`
+Vollständige Anleitung: `MusicLab_Benutzerhandbuch_v2.1.6.pdf`
 
 ## Wichtig
 `data/musiclab.sqlite` bei Updates nicht löschen oder überschreiben.
@@ -20,14 +20,14 @@ Vollständige Anleitung: `MusicLab_Benutzerhandbuch_v2.1.5.pdf`
 Idea & Umsetzung by Lrd.Tiberius
 
 
-## Neue Normalisierung in v2.1.5
+## Neue Normalisierung in v2.1.6
 
 MusicLab verändert nur Titel, deren gemessene integrierte Lautheit außerhalb der eingestellten LUFS-Toleranz liegt. Die Pegeländerung ist konstant und verändert nicht die Lautstärkeverhältnisse innerhalb des Liedes. Positive Verstärkung wird am True-Peak-Ziel begrenzt; es wird kein dynamischer Limiter eingesetzt.
 
 Vor dem Start kann unter Einstellungen - Audio eine CSV-Vorschau exportiert werden.
 
 
-## Neu in v2.1.5
+## Neu in v2.1.6
 
 - Schaltfläche **Alle Backups wiederherstellen** unter Einstellungen -> Backup
 - stellt pro Datei das neueste vorhandene Backup wieder her
@@ -36,17 +36,17 @@ Vor dem Start kann unter Einstellungen - Audio eine CSV-Vorschau exportiert werd
 - Backup-Dateien bleiben erhalten
 
 
-## Neu in v2.1.5
+## Neu in v2.1.6
 
 Auf der Tags-Seite können Sampler und Alben mit mehreren Künstlern über eine Checkbox als „Verschiedene Interpreten“ markiert werden. Die einzelnen Titelinterpreten bleiben erhalten.
 
 
-## Neu in v2.1.5
+## Neu in v2.1.6
 
 Die Titel-Tabelle unter Tags nutzt den verfügbaren Platz besser und besitzt größere, besser lesbare Zeilen und Eingabefelder.
 
 
-## Neu in v2.1.5
+## Neu in v2.1.6
 
 - Tag-Interpreten werden beim Auswählen exakt nach Groß-/Kleinschreibung gefiltert.
 - Falsch geschriebene Varianten wie `Die toten Hosen` können gezielt geöffnet und korrigiert werden.
@@ -55,10 +55,20 @@ Die Titel-Tabelle unter Tags nutzt den verfügbaren Platz besser und besitzt gr�
 - Der Album-Bereich wurde leicht kompakter gestaltet.
 
 
-## Neu in v2.1.5
+## Neu in v2.1.6
 
 - Der Bereich `Titel-Tags` füllt nun tatsächlich den gesamten verbleibenden Platz bis zum unteren Fensterrand.
 - Das alte `main`-Grid wird im Tags-Modus deaktiviert; dadurch kann es die Höhe nicht mehr begrenzen.
 - Nur die Titel-Tabelle scrollt.
 - Alle sechs Protokollfilter sind exakt gleich breit und hoch.
 - Aktivieren von `Tags`, `Audio` oder `Sortierung` verändert keine Abmessungen mehr.
+
+
+## Neu in v2.1.6
+
+- Coverfläche öffnet nur noch den Dateiauswahldialog.
+- Das kleine X entfernt nur das eingebettete Cover.
+- Vorschau wird erst nach erfolgreichem Speichern aktualisiert.
+- robuste JPEG-Konvertierung mit Pillow und FFmpeg-Fallback.
+- verständliche Fehler bei ungültigen Bildern.
+- Titel-Tags und Protokollfilter weiter stabilisiert.

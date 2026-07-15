@@ -1,5 +1,5 @@
 const API='http://'+location.hostname+':8091/api';
-const APP_VERSION='2.1.5';
+const APP_VERSION='2.1.6';
 let coverCacheBust=Date.now();
 let selectedArtist=null, selectedAlbum=null, selectedTagFolder=null;
 let selectedUiKey=null; // v1.9.39: eindeutige visuelle Einzelauswahl für Listen und Album-Kacheln
@@ -1556,15 +1556,41 @@ function setupCoverDrop(){
   const drop=document.getElementById('tagCoverDrop');
   const inp=document.getElementById('tagCoverInput');
   if(!drop || !inp) return;
-  ['dragenter','dragover'].forEach(ev=>drop.addEventListener(ev,e=>{e.preventDefault();e.stopPropagation();drop.classList.add('dragover');}));
-  ['dragleave','drop'].forEach(ev=>drop.addEventListener(ev,e=>{e.preventDefault();e.stopPropagation();drop.classList.remove('dragover');}));
-  drop.ondrop=(e)=>{
-    const f=e.dataTransfer?.files?.[0];
-    if(!f) return;
-    if(!/^image\//.test(f.type||'')){ alert('Bitte eine Bilddatei verwenden.'); return; }
-    const dt=new DataTransfer(); dt.items.add(f); inp.files=dt.files; uploadTagCover();
+
+  drop.onclick=(event)=>{
+    if(event.target?.closest?.('.tagCoverRemoveBtn')) return;
+    event.preventDefault();
+    inp.click();
+  };
+  drop.onkeydown=(event)=>{
+    if(event.key==='Enter' || event.key===' '){
+      event.preventDefault();
+      inp.click();
+    }
+  };
+  drop.ondragenter=drop.ondragover=(event)=>{
+    event.preventDefault(); event.stopPropagation();
+    drop.classList.add('dragover');
+  };
+  drop.ondragleave=(event)=>{
+    event.preventDefault(); event.stopPropagation();
+    drop.classList.remove('dragover');
+  };
+  drop.ondrop=(event)=>{
+    event.preventDefault(); event.stopPropagation();
+    drop.classList.remove('dragover');
+    const file=event.dataTransfer?.files?.[0];
+    if(!file) return;
+    if(!String(file.type||'').startsWith('image/')){
+      alert('Bitte eine Bilddatei verwenden.'); return;
+    }
+    const transfer=new DataTransfer();
+    transfer.items.add(file);
+    inp.files=transfer.files;
+    uploadTagCover();
   };
 }
+
 async function applyTagChanges(){
   const rows=[...document.querySelectorAll('#tagTracks tr[data-path]')];
   if(!rows.length){alert('Kein Album ausgewählt.');return;}
@@ -1750,58 +1776,81 @@ function setTagCoverPreviewFromFile(file){
 
 async function uploadTagCover(){
   const inp=document.getElementById('tagCoverInput');
-  const f=inp?.files?.[0];
-  if(!f){return;}
+  const file=inp?.files?.[0];
+  if(!file) return;
+  if(!String(file.type||'').startsWith('image/')){
+    alert('Bitte eine gültige Bilddatei auswählen.');
+    inp.value='';
+    return;
+  }
 
   const paths=visibleTagPaths();
   let folder=selectedTagFolder;
-  const first=paths[0] || '';
-  const firstFolder=parentFolderFromPath(first||'');
-
+  const firstFolder=parentFolderFromPath(paths[0]||'');
   if(firstFolder) folder=firstFolder;
+
   if((!folder || String(folder).startsWith('__album__:')) && !paths.length){
-    alert('Bitte zuerst ein konkretes Album/einen Ordner auswählen.'); return;
+    alert('Bitte zuerst ein konkretes Album oder einen Ordner auswählen.');
+    inp.value='';
+    return;
   }
 
-  const previewUrl=setTagCoverPreviewFromFile(f);
+  const drop=document.getElementById('tagCoverDrop');
   try{
-    setTagActionBusy(true, 'Cover wird gespeichert…');
+    drop?.classList.add('uploading');
+    setTagActionBusy(true, 'Cover wird geprüft und gespeichert…');
+
     const data=await new Promise((resolve,reject)=>{
-      const r=new FileReader();
-      r.onload=()=>resolve(String(r.result||''));
-      r.onerror=()=>reject(new Error('Datei konnte nicht gelesen werden'));
-      r.readAsDataURL(f);
+      const reader=new FileReader();
+      reader.onload=()=>resolve(String(reader.result||''));
+      reader.onerror=()=>reject(new Error('Die Bilddatei konnte nicht gelesen werden.'));
+      reader.readAsDataURL(file);
     });
-    const payload={folder, paths, filename:f.name, content_type:f.type, data};
-    const res=await j(API+'/tags/cover', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(payload)});
+    if(!data.startsWith('data:image/')){
+      throw new Error('Die ausgewählte Datei enthält kein erkennbares Bild.');
+    }
+
+    const res=await j(API+'/tags/cover',{
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({
+        folder, paths, filename:file.name,
+        content_type:file.type, data
+      })
+    });
+
     coverCacheBust=Date.now();
     const folderFiles=(res.folder_files||[]).length;
     const verified=Number(res.verified||0);
-    const msg=`Cover Apple-kompatibel gespeichert: ${res.updated}/${res.total} eingebettet · geprüft: ${verified}/${res.total}`+(folderFiles?` · Ordnercover: ${folderFiles}`:'')+(res.unsupported?` · nicht unterstützt: ${res.unsupported}`:'')+(res.errors?.length?` · Fehler: ${res.errors.length}`:'');
-    progressText.textContent=msg;
-    status.textContent=msg;
-    const ci=document.getElementById('tagCoverInfo');
-    if(ci) ci.textContent=msg;
+    const msg=`Cover Apple-kompatibel gespeichert: ${res.updated}/${res.total} eingebettet · geprüft: ${verified}/${res.total}`
+      +(folderFiles?` · Ordnercover: ${folderFiles}`:'')
+      +(res.unsupported?` · nicht unterstützt: ${res.unsupported}`:'')
+      +(res.errors?.length?` · Fehler: ${res.errors.length}`:'');
+
+    if(progressText) progressText.textContent=msg;
+    if(status) status.textContent=msg;
+    const info=document.getElementById('tagCoverInfo');
+    if(info) info.textContent=msg;
+
+    const firstPath=(res.paths && res.paths[0]) || paths[0] || '';
+    const preview=document.getElementById('tagCoverPreview');
+    if(preview && firstPath){
+      preview.outerHTML=tagCoverBox(coverUrlPath(firstPath));
+      enhanceTagCoverRemoveButton();
+    }
+
     if(res.errors?.length || verified < Number(res.updated||0) || res.apple_compatible===false){
       alert(msg+(res.errors?.length?'\n'+res.errors.join('\n'):''));
     }
-    try{
-      const firstPath=(res.paths && res.paths[0]) || paths[0] || '';
-      const cp=document.getElementById('tagCoverPreview');
-      if(cp && firstPath){ cp.outerHTML = tagCoverBox(coverUrlPath(firstPath)); }
-    }catch(_e){}
-    if(currentView==='media') setTimeout(()=>loadMediaPage().catch(()=>{}), 300);
-  }catch(e){
+  }catch(error){
     coverCacheBust=Date.now();
-    alert('Cover konnte nicht gespeichert werden: '+e.message);
-  }
-  finally{
+    alert('Cover konnte nicht gespeichert werden:\n'+error.message);
+  }finally{
+    drop?.classList.remove('uploading');
     setTagActionBusy(false);
-    if(previewUrl) setTimeout(()=>URL.revokeObjectURL(previewUrl), 15000);
-    if(inp) inp.value='';
+    inp.value='';
   }
 }
-
 
 
 function currentTagRows(){
@@ -2433,7 +2482,7 @@ document.addEventListener('DOMContentLoaded',()=>{
     return /\bAktiv\b/.test(card.innerText || '') || card.classList.contains('active') || card.classList.contains('is-active') || card.classList.contains('selected');
   }
   function updateCredit(){
-    // v2.1.5: credit is rendered discreetly in the top navigation.
+    // v2.1.6: credit is rendered discreetly in the top navigation.
     document.querySelectorAll('.musiclab-credit-fixed,.footerCredit').forEach(el=>el.remove());
   }
   function ensureSummary(){
@@ -2631,7 +2680,7 @@ function enhanceTagCoverRemoveButton(){
   btn.className='tagCoverRemoveBtn';
   btn.title='Cover aus Tags entfernen';
   btn.textContent='×';
-  btn.addEventListener('click', (ev)=>{ev.stopPropagation(); removeCurrentTagCover();});
+  btn.addEventListener('click', (ev)=>{ev.preventDefault();ev.stopImmediatePropagation();removeCurrentTagCover();});
   box.style.position='relative';
   box.appendChild(btn);
 }

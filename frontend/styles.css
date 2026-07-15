@@ -2508,3 +2508,47 @@ body.tagsMode #tagsView .tagTrackScroll td{
     row-gap:8px!important;
   }
 }
+
+
+/* v2.1.6 - Cover-Upload-Stabilität */
+.tagCoverDrop{user-select:none!important;position:relative!important}
+.tagCoverDrop:focus-visible{outline:2px solid var(--blue)!important;outline-offset:2px!important}
+.tagCoverDrop.uploading{opacity:.75!important;cursor:progress!important;pointer-events:none!important}
+.tagCoverDrop.uploading::after{
+  content:"Cover wird gespeichert…";
+  position:absolute;inset:0;display:flex;align-items:center;justify-content:center;
+  border-radius:12px;background:rgba(7,12,22,.82);color:#fff;font-weight:800;z-index:7
+}
+.tagCoverRemoveBtn{pointer-events:auto!important;cursor:pointer!important}
+
+/* Titel-Tags nutzen den real verfügbaren Restplatz. */
+body.tagsMode #tagsView > .tagTracksPanel{
+  min-height:clamp(280px,calc(100dvh - 610px),540px)!important
+}
+body.tagsMode #tagsView .tagTrackScroll{
+  min-height:clamp(210px,calc(100dvh - 685px),470px)!important
+}
+@supports not (height:100dvh){
+  body.tagsMode #tagsView > .tagTracksPanel{
+    min-height:clamp(280px,calc(100vh - 610px),540px)!important
+  }
+  body.tagsMode #tagsView .tagTrackScroll{
+    min-height:clamp(210px,calc(100vh - 685px),470px)!important
+  }
+}
+
+/* Protokollfilter: identische Außenmaße in Safari. */
+#protocolView .filterPills{display:flex!important;flex-flow:row nowrap!important;align-items:center!important;gap:8px!important}
+#protocolView .filterPills::before{flex:0 0 auto!important}
+#protocolView .filterPills>button,
+#protocolView .filterPills>button:hover,
+#protocolView .filterPills>button:focus,
+#protocolView .filterPills>button:active,
+#protocolView .filterPills>button.active{
+  flex:0 0 96px!important;width:96px!important;min-width:96px!important;max-width:96px!important;
+  height:38px!important;min-height:38px!important;max-height:38px!important;
+  padding:0!important;margin:0!important;border:1px solid transparent!important;
+  box-sizing:border-box!important;line-height:36px!important;font-size:13px!important;
+  font-weight:700!important;transform:none!important;text-align:center!important
+}
+#protocolView .filterPills>button.active{border-color:rgba(255,255,255,.12)!important}

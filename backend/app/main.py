@@ -49,12 +49,14 @@ LOG_MAX_BYTES = int(os.getenv("LOG_MAX_BYTES", str(10 * 1024 * 1024)))
 AUDIO_EXTS = {".mp3", ".m4a", ".mp4", ".aac", ".alac", ".flac", ".ogg", ".oga", ".opus", ".wav", ".aiff", ".aif"}
 EXTS = AUDIO_EXTS
 try:
-    Image = __import__("PIL.Image", fromlist=["Image"])
+    from PIL import Image as PILImage
 except Exception:
-    Image = None
+    PILImage = None
+
+Image = PILImage
 
 SCHEMA_VERSION = 25
-APP_VERSION = "2.1.5"
+APP_VERSION = "2.1.6"
 
 
 LOG_TZ = os.getenv("TZ") or os.getenv("LOG_TZ") or "Europe/Berlin"
@@ -4193,25 +4195,72 @@ def _write_folder_cover_files(folders, raw: bytes, mime: str):
 
 
 def _apple_jpeg_cover(raw: bytes, max_size: int = 1200) -> bytes:
-    """Apple-kompatibles Cover: JPEG, RGB/sRGB-nahe, max. 1200px Kantenlänge."""
-    try:
-        img = Image.open(io.BytesIO(raw))
-        img.load()
-        if img.mode in ("RGBA", "LA") or (img.mode == "P" and "transparency" in img.info):
-            rgba = img.convert("RGBA")
-            bg = Image.new("RGBA", rgba.size, (255, 255, 255, 255))
-            bg.alpha_composite(rgba)
-            img = bg.convert("RGB")
-        else:
-            img = img.convert("RGB")
-        if max(img.size) > max_size:
-            img.thumbnail((max_size, max_size), Image.LANCZOS)
-        out = io.BytesIO()
-        img.save(out, format="JPEG", quality=92, optimize=True, progressive=False)
-        return out.getvalue()
-    except Exception as e:
-        raise HTTPException(status_code=400, detail=f"Cover konnte nicht nach JPEG konvertiert werden: {e}")
+    """Bild robust in ein Apple-kompatibles JPEG umwandeln."""
+    if not isinstance(raw, (bytes, bytearray)) or not raw:
+        raise HTTPException(status_code=400, detail="Keine gültigen Bilddaten empfangen")
 
+    pillow_error = None
+    if PILImage is not None:
+        try:
+            with PILImage.open(io.BytesIO(bytes(raw))) as source:
+                source.load()
+                if source.mode in ("RGBA", "LA") or (
+                    source.mode == "P" and "transparency" in source.info
+                ):
+                    rgba = source.convert("RGBA")
+                    bg = PILImage.new("RGBA", rgba.size, (255, 255, 255, 255))
+                    bg.alpha_composite(rgba)
+                    image = bg.convert("RGB")
+                else:
+                    image = source.convert("RGB")
+
+                if max(image.size) > max_size:
+                    resampling = getattr(getattr(PILImage, "Resampling", PILImage), "LANCZOS")
+                    image.thumbnail((max_size, max_size), resampling)
+
+                output = io.BytesIO()
+                image.save(output, format="JPEG", quality=92, optimize=True,
+                           progressive=False, subsampling=0)
+                result = output.getvalue()
+                if result:
+                    return result
+        except Exception as exc:
+            pillow_error = str(exc)
+
+    ffmpeg_error = None
+    ffmpeg_bin = shutil.which("ffmpeg")
+    if ffmpeg_bin:
+        try:
+            with tempfile.TemporaryDirectory(prefix="musiclab_cover_") as td:
+                inp = Path(td) / "input_image"
+                outp = Path(td) / "cover.jpg"
+                inp.write_bytes(bytes(raw))
+                subprocess.run(
+                    [
+                        ffmpeg_bin, "-y", "-hide_banner", "-loglevel", "error",
+                        "-i", str(inp),
+                        "-vf",
+                        f"scale='min({max_size},iw)':'min({max_size},ih)':"
+                        "force_original_aspect_ratio=decrease,format=yuvj444p",
+                        "-frames:v", "1", str(outp),
+                    ],
+                    check=True, timeout=30, capture_output=True,
+                )
+                if outp.exists() and outp.stat().st_size > 0:
+                    return outp.read_bytes()
+        except Exception as exc:
+            ffmpeg_error = str(exc)
+    else:
+        ffmpeg_error = "ffmpeg nicht gefunden"
+
+    detail = "Cover konnte nicht in ein gültiges JPEG umgewandelt werden."
+    if PILImage is None:
+        detail += " Pillow ist im Backend nicht verfügbar."
+    elif pillow_error:
+        detail += f" Pillow: {pillow_error}."
+    if ffmpeg_error:
+        detail += f" FFmpeg: {ffmpeg_error}."
+    raise HTTPException(status_code=400, detail=detail)
 
 def _has_embedded_cover_bool(p: Path) -> bool:
     try:
@@ -4649,6 +4698,8 @@ async def api_tags_cover(request: Request):
         raise HTTPException(status_code=400, detail="Cover konnte nicht gelesen werden")
     if not raw:
         raise HTTPException(status_code=400, detail="Leere Datei")
+    if len(raw) > 30 * 1024 * 1024:
+        raise HTTPException(status_code=413, detail="Coverdatei ist größer als 30 MiB")
 
     jpg = _apple_jpeg_cover(raw, 1200)
     mime = "image/jpeg"
