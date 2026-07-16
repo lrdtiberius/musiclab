@@ -1,6 +1,26 @@
 # Changelog
 
-## v2.1.8
+## v2.2.0
+
+- Tags-Layout komplett refaktoriert
+- Album-Tags auf echte Inhaltshöhe reduziert
+- Titel-Tags füllt den gesamten restlichen Fensterplatz
+- kompakteres Cover- und Formularlayout
+- sticky Tabellenkopf
+- responsive Anpassung für niedrige und schmale Fenster
+
+
+
+## v2.2.0
+
+- Album-Tags-Layout auf Desktop kompakter angeordnet
+- Cover und Albumfelder nebeneinander
+- Titel-Tags-Bereich deutlich vergrößert
+- Fensterhöhe wird zuverlässiger ausgenutzt
+
+
+
+## v2.2.0
 
 - echte Dateikonflikte statt vorhandener Ordner zählen
 - Konflikte sicher überspringen, keine automatischen Duplikatnamen
@@ -11,7 +31,7 @@
 
 
 
-## v2.1.8
+## v2.2.0
 
 - Albuminterpret bei Samplern automatisch `Verschiedene Interpreten`
 - individuelles Interpret-Feld während der Samplerkennzeichnung gesperrt
@@ -22,7 +42,7 @@
 
 
 
-## v2.1.8
+## v2.2.0
 
 - Cover-Auswahl und Cover-Löschen getrennt
 - robuste JPEG-Konvertierung
@@ -32,7 +52,7 @@
 
 
 
-## v2.1.8
+## v2.2.0
 
 - Titel-Tags nutzen die vollständige verbleibende Fensterhöhe
 - altes Main-Grid im Tags-Modus neutralisiert
@@ -41,7 +61,7 @@
 
 
 
-## v2.1.8
+## v2.2.0
 
 - exakte, case-sensitive Auswahl von Interpreten im Tag-Editor
 - falsche Schreibweisen bleiben gezielt bearbeitbar
@@ -50,21 +70,21 @@
 - kompakterer Album-Tags-Bereich
 
 
-## v2.1.8
+## v2.2.0
 
 - Titel-Tabelle auf der Tags-Seite vergrößert
 - größere Eingabefelder und Schrift für Titel, Interpret, Track und Disc
 - verbleibender Platz nach unten wird besser genutzt
 - kompaktere Darstellung bei niedrigen Browserfenstern
 
-## v2.1.8
+## v2.2.0
 
 - Checkbox „Album als Verschiedene Interpreten anzeigen“ auf der Tags-Seite
 - schreibt Album Artist und Compilation-Flag in unterstützte Formate
 - individuelle Titelinterpreten bleiben erhalten
 - markierte Alben erscheinen gebündelt unter „Verschiedene Interpreten“
 
-## v2.1.8
+## v2.2.0
 
 - schnelle Wiederherstellung aller vorhandenen Backups
 - Vorschau mit Dateianzahl, Größe und fehlenden Backups
@@ -72,7 +92,7 @@
 - Backups bleiben nach der Wiederherstellung bestehen
 - Analysewerte der wiederhergestellten Titel werden sicher zurückgesetzt
 
-## v2.1.8
+## v2.2.0
 - sichere statische Pegelanpassung statt dynamischem loudnorm bei der Normalisierung
 - einstellbare LUFS-Toleranz (Standard ±1,5 LUFS)
 - nur Titel außerhalb der Toleranz werden verändert

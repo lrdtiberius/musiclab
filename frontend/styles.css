@@ -2566,3 +2566,404 @@ body.tagsMode #tagsView .tagTrackScroll{
 .tagCompilationCheck{
   align-items:center!important;
 }
+
+
+/* ==========================================================
+   v2.1.9 – Titel-Tags bekommt sichtbar mehr Fensterhöhe
+   ========================================================== */
+
+/*
+ * Der Album-Tags-Bereich war durch Coverzeile + Formular untereinander
+ * unnötig hoch. Ab breiten Desktopfenstern stehen Cover und Formular jetzt
+ * nebeneinander. Dadurch gewinnt die Titeltabelle rund 100–150 px Höhe.
+ */
+@media (min-width: 1050px){
+  body.tagsMode #tagsView.appView.active{
+    display:grid!important;
+    grid-template-rows:72px auto minmax(300px,1fr)!important;
+    gap:10px!important;
+    height:100%!important;
+    min-height:0!important;
+    overflow:hidden!important;
+  }
+
+  body.tagsMode #tagsView > .tagEditor{
+    display:grid!important;
+    grid-template-columns:320px minmax(0,1fr)!important;
+    grid-template-rows:46px auto auto!important;
+    column-gap:14px!important;
+    row-gap:8px!important;
+    padding:10px!important;
+    min-height:0!important;
+    height:auto!important;
+    overflow:visible!important;
+  }
+
+  body.tagsMode #tagsView > .tagEditor > .toolbar{
+    grid-column:1 / -1!important;
+    grid-row:1!important;
+    margin:0!important;
+    min-height:38px!important;
+    height:38px!important;
+  }
+
+  body.tagsMode #tagsView > .tagEditor > .tagCoverRow{
+    grid-column:1!important;
+    grid-row:2!important;
+    margin:0!important;
+    min-width:0!important;
+    align-self:start!important;
+  }
+
+  body.tagsMode #tagsView > .tagEditor > .formgrid.compact{
+    grid-column:2!important;
+    grid-row:2!important;
+    margin:0!important;
+    align-self:start!important;
+    grid-template-columns:92px minmax(180px,1fr) 86px minmax(220px,1fr)!important;
+    gap:8px 10px!important;
+  }
+
+  body.tagsMode #tagsView > .tagEditor > .discTotalsBox{
+    grid-column:2!important;
+    grid-row:3!important;
+    margin-top:0!important;
+  }
+
+  body.tagsMode .tagCoverDrop{
+    width:100%!important;
+    min-height:112px!important;
+    padding:10px!important;
+  }
+
+  body.tagsMode .tagCoverDrop .mediaCoverBox.large{
+    width:88px!important;
+    height:88px!important;
+    min-width:88px!important;
+  }
+
+  body.tagsMode .tagEditor input,
+  body.tagsMode .tagEditor select{
+    min-height:36px!important;
+    height:36px!important;
+    padding:7px 10px!important;
+  }
+
+  body.tagsMode .tagCompilationCheck{
+    min-height:36px!important;
+    line-height:18px!important;
+  }
+
+  body.tagsMode #tagsView > .tagTracksPanel{
+    min-height:300px!important;
+    height:100%!important;
+    max-height:none!important;
+    overflow:hidden!important;
+  }
+
+  body.tagsMode #tagsView .tagTrackScroll{
+    min-height:230px!important;
+    height:100%!important;
+    max-height:none!important;
+    overflow:auto!important;
+  }
+}
+
+/* Bei besonders hohen Fenstern wird der zusätzliche Platz vollständig genutzt. */
+@media (min-width:1050px) and (min-height:850px){
+  body.tagsMode #tagsView.appView.active{
+    grid-template-rows:72px auto minmax(360px,1fr)!important;
+  }
+  body.tagsMode #tagsView > .tagTracksPanel{
+    min-height:360px!important;
+  }
+  body.tagsMode #tagsView .tagTrackScroll{
+    min-height:290px!important;
+  }
+}
+
+/* Auf schmaleren Fenstern bleibt die bisherige untereinander angeordnete Form. */
+@media (max-width:1049px){
+  body.tagsMode #tagsView > .tagTracksPanel{
+    min-height:280px!important;
+  }
+  body.tagsMode #tagsView .tagTrackScroll{
+    min-height:210px!important;
+  }
+}
+
+
+/* ============================================================
+   v2.2.0 - Tags-Layout komplett neu aufgebaut
+   Ziel: Albumdaten nur so hoch wie nötig, Titel-Tags füllt den Rest.
+   ============================================================ */
+
+body.tagsMode{
+  overflow:hidden!important;
+}
+
+body.tagsMode main{
+  display:block!important;
+  height:calc(100dvh - 222px)!important;
+  min-height:0!important;
+  max-height:none!important;
+  overflow:hidden!important;
+  padding-bottom:0!important;
+}
+
+body.tagsMode #tagsView.appView.active{
+  display:flex!important;
+  flex-direction:column!important;
+  width:100%!important;
+  height:100%!important;
+  min-height:0!important;
+  max-height:none!important;
+  gap:10px!important;
+  overflow:hidden!important;
+  padding-bottom:0!important;
+}
+
+/* Kopfzeile */
+body.tagsMode #tagsView > .tagsHeader{
+  flex:0 0 72px!important;
+  min-height:72px!important;
+  max-height:72px!important;
+  height:72px!important;
+  margin:0!important;
+  box-sizing:border-box!important;
+}
+
+/* Album-Tags: tatsächliche Inhaltshöhe statt reservierter Resthöhe */
+body.tagsMode #tagsView > .tagEditor{
+  flex:0 0 auto!important;
+  display:grid!important;
+  grid-template-columns:300px minmax(0,1fr)!important;
+  grid-template-rows:42px auto!important;
+  column-gap:14px!important;
+  row-gap:8px!important;
+  width:100%!important;
+  height:auto!important;
+  min-height:0!important;
+  max-height:none!important;
+  overflow:visible!important;
+  padding:10px!important;
+  box-sizing:border-box!important;
+}
+
+body.tagsMode #tagsView > .tagEditor > .toolbar{
+  grid-column:1 / -1!important;
+  grid-row:1!important;
+  min-height:42px!important;
+  height:42px!important;
+  max-height:42px!important;
+  margin:0!important;
+}
+
+body.tagsMode #tagsView > .tagEditor > .tagCoverRow{
+  grid-column:1!important;
+  grid-row:2!important;
+  align-self:start!important;
+  margin:0!important;
+  min-width:0!important;
+  height:auto!important;
+}
+
+body.tagsMode #tagsView > .tagEditor > .formgrid.compact{
+  grid-column:2!important;
+  grid-row:2!important;
+  align-self:start!important;
+  display:grid!important;
+  grid-template-columns:92px minmax(180px,1fr) 86px minmax(220px,1fr)!important;
+  gap:8px 10px!important;
+  margin:0!important;
+  min-height:0!important;
+}
+
+body.tagsMode #tagsView > .tagEditor > .discTotalsBox{
+  grid-column:2!important;
+  grid-row:3!important;
+  margin:0!important;
+}
+
+/* Coverfeld kompakter */
+body.tagsMode .tagCoverDrop{
+  width:100%!important;
+  min-height:104px!important;
+  height:104px!important;
+  padding:8px 10px!important;
+  box-sizing:border-box!important;
+}
+
+body.tagsMode .tagCoverDrop .mediaCoverBox.large{
+  width:82px!important;
+  height:82px!important;
+  min-width:82px!important;
+  max-width:82px!important;
+}
+
+body.tagsMode .tagCoverText{
+  min-width:0!important;
+}
+
+/* Formular kompakter */
+body.tagsMode .tagEditor input,
+body.tagsMode .tagEditor select{
+  min-height:34px!important;
+  height:34px!important;
+  padding:6px 10px!important;
+  box-sizing:border-box!important;
+}
+
+body.tagsMode .tagCompilationCheck{
+  min-height:34px!important;
+  align-items:center!important;
+  line-height:17px!important;
+}
+
+/* Titelbereich bekommt sämtlichen verbleibenden Platz */
+body.tagsMode #tagsView > .tagTracksPanel{
+  flex:1 1 auto!important;
+  display:flex!important;
+  flex-direction:column!important;
+  width:100%!important;
+  min-height:0!important;
+  height:auto!important;
+  max-height:none!important;
+  overflow:hidden!important;
+  box-sizing:border-box!important;
+  margin:0!important;
+}
+
+body.tagsMode #tagsView .tagTracksPanel > .toolbar{
+  flex:0 0 46px!important;
+  min-height:46px!important;
+  max-height:46px!important;
+  height:46px!important;
+  margin:0!important;
+}
+
+body.tagsMode #tagsView #tagHint{
+  flex:0 0 auto!important;
+  min-height:20px!important;
+}
+
+body.tagsMode #tagsView .tagTrackScroll{
+  flex:1 1 auto!important;
+  width:100%!important;
+  min-height:0!important;
+  height:auto!important;
+  max-height:none!important;
+  overflow:auto!important;
+  box-sizing:border-box!important;
+}
+
+body.tagsMode #tagsView .tagTrackScroll table{
+  width:100%!important;
+  height:auto!important;
+  min-height:0!important;
+}
+
+body.tagsMode #tagsView .tagTrackScroll th{
+  position:sticky!important;
+  top:0!important;
+  z-index:2!important;
+}
+
+body.tagsMode #tagsView .tagTrackScroll td{
+  height:44px!important;
+}
+
+/* Große Desktopfenster: noch etwas mehr Platz durch kompaktere Kopfbereiche */
+@media (min-width:1200px){
+  body.tagsMode main{
+    height:calc(100dvh - 214px)!important;
+  }
+
+  body.tagsMode #tagsView > .tagsHeader{
+    flex-basis:66px!important;
+    min-height:66px!important;
+    max-height:66px!important;
+    height:66px!important;
+  }
+
+  body.tagsMode #tagsView > .tagEditor{
+    grid-template-columns:290px minmax(0,1fr)!important;
+    padding:9px!important;
+    gap:8px 12px!important;
+  }
+
+  body.tagsMode .tagCoverDrop{
+    height:96px!important;
+    min-height:96px!important;
+  }
+
+  body.tagsMode .tagCoverDrop .mediaCoverBox.large{
+    width:76px!important;
+    height:76px!important;
+    min-width:76px!important;
+  }
+}
+
+/* Niedrige Fenster: weiterhin nutzbar, nur Tabelle scrollt */
+@media (max-height:760px){
+  body.tagsMode main{
+    height:calc(100dvh - 202px)!important;
+  }
+
+  body.tagsMode #tagsView > .tagsHeader{
+    flex-basis:60px!important;
+    min-height:60px!important;
+    max-height:60px!important;
+    height:60px!important;
+  }
+
+  body.tagsMode #tagsView > .tagEditor{
+    grid-template-columns:260px minmax(0,1fr)!important;
+    padding:8px!important;
+    row-gap:6px!important;
+  }
+
+  body.tagsMode .tagCoverDrop{
+    height:86px!important;
+    min-height:86px!important;
+  }
+
+  body.tagsMode .tagCoverDrop .mediaCoverBox.large{
+    width:68px!important;
+    height:68px!important;
+    min-width:68px!important;
+  }
+}
+
+/* Schmale Fenster: saubere Stapelung, Titelbereich bleibt flexibel */
+@media (max-width:1049px){
+  body.tagsMode main{
+    height:auto!important;
+    overflow:auto!important;
+  }
+
+  body.tagsMode #tagsView.appView.active{
+    height:auto!important;
+    overflow:visible!important;
+  }
+
+  body.tagsMode #tagsView > .tagEditor{
+    display:block!important;
+  }
+
+  body.tagsMode #tagsView > .tagEditor > .toolbar,
+  body.tagsMode #tagsView > .tagEditor > .tagCoverRow,
+  body.tagsMode #tagsView > .tagEditor > .formgrid.compact,
+  body.tagsMode #tagsView > .tagEditor > .discTotalsBox{
+    width:100%!important;
+    margin-bottom:8px!important;
+  }
+
+  body.tagsMode #tagsView > .tagTracksPanel{
+    min-height:360px!important;
+  }
+
+  body.tagsMode #tagsView .tagTrackScroll{
+    min-height:280px!important;
+  }
+}
