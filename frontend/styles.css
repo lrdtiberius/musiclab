@@ -2967,3 +2967,311 @@ body.tagsMode #tagsView .tagTrackScroll td{
     min-height:280px!important;
   }
 }
+
+
+/* ============================================================
+   v2.2.1 – endgültiger Höhenfix für Titel-Tags
+   ============================================================ */
+
+/*
+ * Die bisherigen Regeln wurden von älteren min-height-Regeln überlagert.
+ * Deshalb bekommt die Tags-Seite nun eine feste Viewport-Höhe und der
+ * Album-Bereich auf Desktop eine klar begrenzte Höhe.
+ */
+@media (min-width:1050px){
+  body.tagsMode main{
+    display:block!important;
+    height:auto!important;
+    min-height:0!important;
+    max-height:none!important;
+    overflow:visible!important;
+  }
+
+  body.tagsMode #tagsView.appView.active{
+    display:grid!important;
+    grid-template-columns:minmax(0,1fr)!important;
+    grid-template-rows:72px 238px minmax(300px,1fr)!important;
+    gap:10px!important;
+    width:100%!important;
+    height:calc(100dvh - 242px)!important;
+    min-height:620px!important;
+    max-height:calc(100dvh - 242px)!important;
+    overflow:hidden!important;
+    box-sizing:border-box!important;
+  }
+
+  body.tagsMode #tagsView > .tagsHeader{
+    grid-row:1!important;
+    height:72px!important;
+    min-height:72px!important;
+    max-height:72px!important;
+  }
+
+  body.tagsMode #tagsView > .tagEditor{
+    grid-row:2!important;
+    display:grid!important;
+    grid-template-columns:300px minmax(0,1fr)!important;
+    grid-template-rows:42px 176px!important;
+    column-gap:14px!important;
+    row-gap:0!important;
+    width:100%!important;
+    height:238px!important;
+    min-height:238px!important;
+    max-height:238px!important;
+    overflow:hidden!important;
+    padding:10px!important;
+    box-sizing:border-box!important;
+  }
+
+  body.tagsMode #tagsView > .tagEditor > .toolbar{
+    grid-column:1 / -1!important;
+    grid-row:1!important;
+    height:42px!important;
+    min-height:42px!important;
+    max-height:42px!important;
+    margin:0!important;
+  }
+
+  body.tagsMode #tagsView > .tagEditor > .tagCoverRow{
+    grid-column:1!important;
+    grid-row:2!important;
+    height:176px!important;
+    min-height:176px!important;
+    max-height:176px!important;
+    margin:0!important;
+    overflow:hidden!important;
+  }
+
+  body.tagsMode #tagsView > .tagEditor > .formgrid.compact{
+    grid-column:2!important;
+    grid-row:2!important;
+    display:grid!important;
+    grid-template-columns:92px minmax(180px,1fr) 86px minmax(220px,1fr)!important;
+    grid-auto-rows:34px!important;
+    gap:8px 10px!important;
+    height:160px!important;
+    min-height:160px!important;
+    max-height:160px!important;
+    margin:0!important;
+    overflow:hidden!important;
+    align-content:start!important;
+  }
+
+  body.tagsMode #tagsView > .tagEditor > .discTotalsBox{
+    display:none!important;
+  }
+
+  body.tagsMode .tagCoverDrop{
+    width:100%!important;
+    height:104px!important;
+    min-height:104px!important;
+    max-height:104px!important;
+    padding:8px 10px!important;
+    box-sizing:border-box!important;
+  }
+
+  body.tagsMode #tagCoverInfo{
+    display:block!important;
+    max-height:46px!important;
+    overflow:hidden!important;
+    margin-top:6px!important;
+  }
+
+  body.tagsMode #tagsView > .tagTracksPanel{
+    grid-row:3!important;
+    display:flex!important;
+    flex-direction:column!important;
+    width:100%!important;
+    height:100%!important;
+    min-height:300px!important;
+    max-height:none!important;
+    overflow:hidden!important;
+    box-sizing:border-box!important;
+  }
+
+  body.tagsMode #tagsView .tagTracksPanel > .toolbar{
+    flex:0 0 46px!important;
+    height:46px!important;
+    min-height:46px!important;
+    max-height:46px!important;
+  }
+
+  body.tagsMode #tagsView #tagHint{
+    flex:0 0 22px!important;
+    min-height:22px!important;
+    max-height:22px!important;
+  }
+
+  body.tagsMode #tagsView .tagTrackScroll{
+    flex:1 1 auto!important;
+    height:auto!important;
+    min-height:230px!important;
+    max-height:none!important;
+    overflow:auto!important;
+  }
+}
+
+/* Für die gezeigte Safari-Fensterhöhe entsteht mindestens eine große Tabelle. */
+@media (min-width:1050px) and (min-height:850px){
+  body.tagsMode #tagsView.appView.active{
+    grid-template-rows:72px 228px minmax(360px,1fr)!important;
+    height:calc(100dvh - 232px)!important;
+    max-height:calc(100dvh - 232px)!important;
+  }
+
+  body.tagsMode #tagsView > .tagEditor{
+    height:228px!important;
+    min-height:228px!important;
+    max-height:228px!important;
+    grid-template-rows:42px 166px!important;
+  }
+
+  body.tagsMode #tagsView > .tagEditor > .tagCoverRow{
+    height:166px!important;
+    min-height:166px!important;
+    max-height:166px!important;
+  }
+
+  body.tagsMode #tagsView > .tagTracksPanel{
+    min-height:360px!important;
+  }
+
+  body.tagsMode #tagsView .tagTrackScroll{
+    min-height:290px!important;
+  }
+}
+
+
+/* ============================================================
+   v2.2.2 – tatsächlicher Fix
+   Ursache: body.tagsMode wurde vom JavaScript bisher nie gesetzt.
+   Diese Regeln greifen zusätzlich direkt am aktiven Tags-View.
+   ============================================================ */
+
+@media (min-width:1050px){
+  #tagsView.appView.active{
+    display:grid!important;
+    grid-template-columns:minmax(0,1fr)!important;
+    grid-template-rows:72px 238px minmax(320px,1fr)!important;
+    gap:10px!important;
+    height:calc(100dvh - 242px)!important;
+    min-height:630px!important;
+    max-height:calc(100dvh - 242px)!important;
+    overflow:hidden!important;
+    box-sizing:border-box!important;
+  }
+
+  #tagsView.appView.active > .tagsHeader{
+    grid-row:1!important;
+    height:72px!important;
+    min-height:72px!important;
+    max-height:72px!important;
+  }
+
+  #tagsView.appView.active > .tagEditor{
+    grid-row:2!important;
+    display:grid!important;
+    grid-template-columns:300px minmax(0,1fr)!important;
+    grid-template-rows:42px 176px!important;
+    column-gap:14px!important;
+    row-gap:0!important;
+    height:238px!important;
+    min-height:238px!important;
+    max-height:238px!important;
+    overflow:hidden!important;
+    padding:10px!important;
+    box-sizing:border-box!important;
+  }
+
+  #tagsView.appView.active > .tagEditor > .toolbar{
+    grid-column:1/-1!important;
+    grid-row:1!important;
+    height:42px!important;
+    min-height:42px!important;
+    max-height:42px!important;
+    margin:0!important;
+  }
+
+  #tagsView.appView.active > .tagEditor > .tagCoverRow{
+    grid-column:1!important;
+    grid-row:2!important;
+    height:176px!important;
+    min-height:176px!important;
+    max-height:176px!important;
+    margin:0!important;
+    overflow:hidden!important;
+  }
+
+  #tagsView.appView.active > .tagEditor > .formgrid.compact{
+    grid-column:2!important;
+    grid-row:2!important;
+    display:grid!important;
+    grid-template-columns:92px minmax(180px,1fr) 86px minmax(220px,1fr)!important;
+    grid-auto-rows:34px!important;
+    gap:8px 10px!important;
+    height:160px!important;
+    min-height:160px!important;
+    max-height:160px!important;
+    overflow:hidden!important;
+    align-content:start!important;
+    margin:0!important;
+  }
+
+  #tagsView.appView.active > .tagEditor > .discTotalsBox{
+    display:none!important;
+  }
+
+  #tagsView.appView.active > .tagTracksPanel{
+    grid-row:3!important;
+    display:flex!important;
+    flex-direction:column!important;
+    min-height:320px!important;
+    height:100%!important;
+    max-height:none!important;
+    overflow:hidden!important;
+  }
+
+  #tagsView.appView.active > .tagTracksPanel > .toolbar{
+    flex:0 0 46px!important;
+    height:46px!important;
+    min-height:46px!important;
+    max-height:46px!important;
+  }
+
+  #tagsView.appView.active > .tagTracksPanel > #tagHint{
+    flex:0 0 22px!important;
+    min-height:22px!important;
+    max-height:22px!important;
+  }
+
+  #tagsView.appView.active > .tagTracksPanel > .tagTrackScroll{
+    flex:1 1 auto!important;
+    min-height:250px!important;
+    height:auto!important;
+    max-height:none!important;
+    overflow:auto!important;
+  }
+}
+
+@media (min-width:1050px) and (min-height:850px){
+  #tagsView.appView.active{
+    grid-template-rows:72px 228px minmax(390px,1fr)!important;
+    height:calc(100dvh - 232px)!important;
+    max-height:calc(100dvh - 232px)!important;
+  }
+
+  #tagsView.appView.active > .tagEditor{
+    height:228px!important;
+    min-height:228px!important;
+    max-height:228px!important;
+    grid-template-rows:42px 166px!important;
+  }
+
+  #tagsView.appView.active > .tagTracksPanel{
+    min-height:390px!important;
+  }
+
+  #tagsView.appView.active > .tagTracksPanel > .tagTrackScroll{
+    min-height:320px!important;
+  }
+}
