@@ -1,4 +1,4 @@
-# MusicLab v2.2.3
+# MusicLab v2.3.0
 
 MusicLab ist eine Docker-basierte Musikverwaltung für NAS und Linux.
 
@@ -11,7 +11,7 @@ MusicLab ist eine Docker-basierte Musikverwaltung für NAS und Linux.
 6. `http://NAS-IP:8092` öffnen.
 
 ## Dokumentation
-Vollständige Anleitung: `MusicLab_Benutzerhandbuch_v2.2.3.pdf`
+Vollständige Anleitung: `MusicLab_Benutzerhandbuch_v2.3.0.pdf`
 
 ## Wichtig
 `data/musiclab.sqlite` bei Updates nicht löschen oder überschreiben.
@@ -20,14 +20,14 @@ Vollständige Anleitung: `MusicLab_Benutzerhandbuch_v2.2.3.pdf`
 Idea & Umsetzung by Lrd.Tiberius
 
 
-## Neue Normalisierung in v2.2.3
+## Neue Normalisierung in v2.3.0
 
 MusicLab verändert nur Titel, deren gemessene integrierte Lautheit außerhalb der eingestellten LUFS-Toleranz liegt. Die Pegeländerung ist konstant und verändert nicht die Lautstärkeverhältnisse innerhalb des Liedes. Positive Verstärkung wird am True-Peak-Ziel begrenzt; es wird kein dynamischer Limiter eingesetzt.
 
 Vor dem Start kann unter Einstellungen - Audio eine CSV-Vorschau exportiert werden.
 
 
-## Neu in v2.2.3
+## Neu in v2.3.0
 
 - Schaltfläche **Alle Backups wiederherstellen** unter Einstellungen -> Backup
 - stellt pro Datei das neueste vorhandene Backup wieder her
@@ -36,17 +36,17 @@ Vor dem Start kann unter Einstellungen - Audio eine CSV-Vorschau exportiert werd
 - Backup-Dateien bleiben erhalten
 
 
-## Neu in v2.2.3
+## Neu in v2.3.0
 
 Auf der Tags-Seite können Sampler und Alben mit mehreren Künstlern über eine Checkbox als „Verschiedene Interpreten“ markiert werden. Die einzelnen Titelinterpreten bleiben erhalten.
 
 
-## Neu in v2.2.3
+## Neu in v2.3.0
 
 Die Titel-Tabelle unter Tags nutzt den verfügbaren Platz besser und besitzt größere, besser lesbare Zeilen und Eingabefelder.
 
 
-## Neu in v2.2.3
+## Neu in v2.3.0
 
 - Tag-Interpreten werden beim Auswählen exakt nach Groß-/Kleinschreibung gefiltert.
 - Falsch geschriebene Varianten wie `Die toten Hosen` können gezielt geöffnet und korrigiert werden.
@@ -55,7 +55,7 @@ Die Titel-Tabelle unter Tags nutzt den verfügbaren Platz besser und besitzt gr�
 - Der Album-Bereich wurde leicht kompakter gestaltet.
 
 
-## Neu in v2.2.3
+## Neu in v2.3.0
 
 - Der Bereich `Titel-Tags` füllt nun tatsächlich den gesamten verbleibenden Platz bis zum unteren Fensterrand.
 - Das alte `main`-Grid wird im Tags-Modus deaktiviert; dadurch kann es die Höhe nicht mehr begrenzen.
@@ -64,7 +64,7 @@ Die Titel-Tabelle unter Tags nutzt den verfügbaren Platz besser und besitzt gr�
 - Aktivieren von `Tags`, `Audio` oder `Sortierung` verändert keine Abmessungen mehr.
 
 
-## Neu in v2.2.3
+## Neu in v2.3.0
 
 - Coverfläche öffnet nur noch den Dateiauswahldialog.
 - Das kleine X entfernt nur das eingebettete Cover.
@@ -74,7 +74,7 @@ Die Titel-Tabelle unter Tags nutzt den verfügbaren Platz besser und besitzt gr�
 - Titel-Tags und Protokollfilter weiter stabilisiert.
 
 
-## Neu in v2.2.3
+## Neu in v2.3.0
 
 - Bei aktivierter Checkbox `Verschiedene Interpreten` wird der Albuminterpret automatisch gesetzt und gesperrt.
 - Die einzelnen Titelinterpreten bleiben unverändert.
@@ -84,7 +84,7 @@ Die Titel-Tabelle unter Tags nutzt den verfügbaren Platz besser und besitzt gr�
 - Bereits Apple-kompatible eingebettete JPEG-Cover werden übersprungen.
 
 
-## Neu in v2.2.3
+## Neu in v2.3.0
 
 - Vorhandene Zielordner gelten nicht mehr als Konflikt.
 - Nur bereits vorhandene Zieldateien mit identischem Zielpfad sind echte Konflikte.
@@ -95,7 +95,7 @@ Die Titel-Tabelle unter Tags nutzt den verfügbaren Platz besser und besitzt gr�
 - Nach dem Start öffnet MusicLab automatisch den Protokollfilter `Sortierung`.
 
 
-## Neu in v2.2.3
+## Neu in v2.3.0
 
 - Album-Cover und Albumfelder stehen auf breiten Fenstern nebeneinander.
 - Der Album-Tags-Bereich ist dadurch deutlich kompakter.
@@ -103,7 +103,7 @@ Die Titel-Tabelle unter Tags nutzt den verfügbaren Platz besser und besitzt gr�
 - Nur die Titeltabelle scrollt; die Albumdaten bleiben sichtbar.
 
 
-## Neu in v2.2.3
+## Neu in v2.3.0
 
 - Tags-Seite vollständig auf Flexbox umgestellt.
 - Album-Tags nutzt nur noch die tatsächliche Inhaltshöhe.
@@ -114,7 +114,7 @@ Die Titel-Tabelle unter Tags nutzt den verfügbaren Platz besser und besitzt gr�
 - Saubere Anpassung für niedrige und schmale Fenster.
 
 
-## Neu in v2.2.3
+## Neu in v2.3.0
 
 - ältere Mindesthöhen werden durch eine eindeutige Desktop-Aufteilung überschrieben
 - Album-Tags ist auf 228–238 Pixel begrenzt
@@ -122,7 +122,7 @@ Die Titel-Tabelle unter Tags nutzt den verfügbaren Platz besser und besitzt gr�
 - Tags-Seite nutzt die reale Viewport-Höhe
 
 
-## Neu in v2.2.3
+## Neu in v2.3.0
 
 - eigentliche Ursache behoben: `tagsMode` wurde beim Wechsel auf die Tags-Seite nie am Body gesetzt
 - dadurch waren sämtliche früheren Tags-Höhenregeln wirkungslos
@@ -131,7 +131,7 @@ Die Titel-Tabelle unter Tags nutzt den verfügbaren Platz besser und besitzt gr�
 - Titel-Tags erhält bei großen Fenstern mindestens 390 Pixel
 
 
-## Neu in v2.2.3
+## Neu in v2.3.0
 
 - `Alles normalisieren` speichert die aktuell sichtbaren Einstellungen automatisch.
 - Vorschau und Job erhalten denselben unveränderlichen Einstellungsschnappschuss.
@@ -139,3 +139,14 @@ Die Titel-Tabelle unter Tags nutzt den verfügbaren Platz besser und besitzt gr�
 - Bei einer Abweichung wird die Normalisierung mit HTTP 409 sicher blockiert.
 - Der Bestätigungsdialog zeigt einen Prüfcode der verwendeten Einstellungen.
 - Das Protokoll nennt Werte und Prüfcode des tatsächlich gestarteten Jobs.
+
+
+## Neu in v2.3.0
+
+- Compilation-Verhalten an Apple Music angeglichen.
+- Die Checkbox setzt ein echtes Compilation-Flag.
+- Individuelle Titelinterpreten bleiben unverändert.
+- Der Albumartist darf bei Compilations leer bleiben.
+- MusicLab zeigt das Album trotzdem virtuell als `Verschiedene Interpreten` an.
+- Beim Sortieren werden solche Alben unter `Verschiedene Interpreten/Album` zusammengeführt.
+- Die Tags-Oberfläche verwendet nun `Albuminterpret` und `Compilation-Album`.

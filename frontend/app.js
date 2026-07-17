@@ -1,5 +1,5 @@
 const API='http://'+location.hostname+':8091/api';
-const APP_VERSION='2.2.3';
+const APP_VERSION='2.3.0';
 let coverCacheBust=Date.now();
 let selectedArtist=null, selectedAlbum=null, selectedTagFolder=null;
 let selectedUiKey=null; // v1.9.39: eindeutige visuelle Einzelauswahl für Listen und Album-Kacheln
@@ -1738,21 +1738,30 @@ function setTagsDirty(dirty=true){
 function syncCompilationAlbumArtist(fromLoad=false){
   const comp=document.getElementById('tagCompilation');
   const artist=document.getElementById('tagAlbumArtist');
+  const help=document.getElementById('tagCompilationHelp');
   if(!comp || !artist) return;
 
   if(comp.checked){
     const current=(artist.value||'').trim();
-    if(current && current!=='Verschiedene Interpreten'){
+    if(current){
       artist.dataset.singleArtist=current;
     }
-    artist.value='Verschiedene Interpreten';
+    artist.value='';
     artist.disabled=true;
-    artist.title='Bei Samplern wird der Albuminterpret automatisch gesetzt. Die einzelnen Titelinterpreten bleiben unten erhalten.';
+    artist.placeholder='Durch Compilation-Flag ersetzt';
+    artist.title='Wie in Apple Music: Das Album wird über das Compilation-Flag gruppiert. Die individuellen Titelinterpreten bleiben erhalten.';
+    if(help){
+      help.textContent='Die Titelinterpreten bleiben unverändert. MusicLab zeigt das Album virtuell als „Verschiedene Interpreten“ an.';
+    }
   }else{
     artist.disabled=false;
+    artist.placeholder='Albuminterpret';
     artist.title='';
-    if((artist.value||'').trim()==='Verschiedene Interpreten'){
+    if(!(artist.value||'').trim()){
       artist.value=artist.dataset.singleArtist||'';
+    }
+    if(help){
+      help.textContent='Für normale Alben wird dieser Wert als gemeinsamer Albuminterpret geschrieben.';
     }
   }
   if(!fromLoad) setTagsDirty(true);
@@ -1821,7 +1830,9 @@ async function applyTagChanges(){
   if(!rows.length){alert('Kein Album ausgewählt.');return;}
   const artist=document.getElementById('tagAlbumArtist')?.value||'';
   const compilation=!!document.getElementById('tagCompilation')?.checked;
-  const albumartist=compilation?'Verschiedene Interpreten':artist;
+  // Compilation wird über das echte Flag markiert. Der Albumartist darf
+  // wie in Apple Music leer bleiben.
+  const albumartist=compilation?'':artist;
   const album=document.getElementById('tagAlbumName')?.value||'';
   const year=document.getElementById('tagYear')?.value||'';
   const genre=document.getElementById('tagGenre')?.value||'';
@@ -1838,7 +1849,11 @@ async function applyTagChanges(){
     const discnumber = (discTotalNum && discTotalNum>1 && discNum) ? `${discNum}/${discTotalNum}` : '';
     const rowArtist=(r.querySelector('.tagArtist')?.value||'').trim();
     const origArtist=(r.dataset.origArtist||'').trim();
-    const finalArtist = compilation ? (rowArtist || origArtist || artist) : ((rowArtist && rowArtist !== origArtist) ? rowArtist : artist);
+    const finalArtist = compilation
+      ? (rowArtist || origArtist || 'Unbekannter Interpret')
+      : ((rowArtist && rowArtist !== origArtist)
+          ? rowArtist
+          : (artist || rowArtist || origArtist));
     return {
       path:r.dataset.path,
       title:r.querySelector('.tagTitle')?.value||'',
@@ -1876,7 +1891,15 @@ function clearTagForm(){
   ['tagAlbumArtist','tagAlbumName','tagYear','tagGenre','tagTrackTotal','tagDiscTotal'].forEach(id=>{const el=document.getElementById(id); if(el){el.value=''; el.disabled=false;}});
   const comp=document.getElementById('tagCompilation'); if(comp)comp.checked=false;
   const albumArtist=document.getElementById('tagAlbumArtist');
-  if(albumArtist){ delete albumArtist.dataset.singleArtist; albumArtist.disabled=false; }
+  if(albumArtist){
+    delete albumArtist.dataset.singleArtist;
+    albumArtist.disabled=false;
+    albumArtist.placeholder='Albuminterpret';
+  }
+  const compilationHelp=document.getElementById('tagCompilationHelp');
+  if(compilationHelp){
+    compilationHelp.textContent='Für normale Alben wird dieser Wert als gemeinsamer Albuminterpret geschrieben.';
+  }
   const box=document.getElementById('tagDiscTotalsBox'); if(box){box.innerHTML=''; box.style.display='none';}
   const b=document.getElementById('btnTagScraper'); if(b)b.disabled=true;
 }
@@ -1913,9 +1936,14 @@ async function loadTagsPage(){
       if(comp)comp.checked=isCompilation;
       const albums=[...new Set(rows.map(r=>r.album||'').filter(Boolean))];
       if(aa){
-        const singleArtist=artists.length===1 ? artists[0] : '';
+        const taggedAlbumArtists=[
+          ...new Set(rows.map(r=>String(r.albumartist||'').trim()).filter(Boolean))
+        ];
+        const singleArtist=taggedAlbumArtists.length===1
+          ? taggedAlbumArtists[0]
+          : (artists.length===1 ? artists[0] : '');
         aa.dataset.singleArtist=singleArtist;
-        aa.value=isCompilation ? 'Verschiedene Interpreten' : singleArtist;
+        aa.value=isCompilation ? '' : singleArtist;
       }
       syncCompilationAlbumArtist(true);
       if(al)al.value=byFolder ? (selectedAlbum||first.album||'') : (albums.length===1 ? albums[0] : (selectedAlbum||''));
@@ -2723,7 +2751,7 @@ document.addEventListener('DOMContentLoaded',()=>{
     return /\bAktiv\b/.test(card.innerText || '') || card.classList.contains('active') || card.classList.contains('is-active') || card.classList.contains('selected');
   }
   function updateCredit(){
-    // v2.2.3: credit is rendered discreetly in the top navigation.
+    // v2.3.0: credit is rendered discreetly in the top navigation.
     document.querySelectorAll('.musiclab-credit-fixed,.footerCredit').forEach(el=>el.remove());
   }
   function ensureSummary(){

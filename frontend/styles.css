@@ -3282,3 +3282,56 @@ body.tagsMode #tagsView .tagTrackScroll td{
   border-color:rgba(84,170,255,.45)!important;
   background:rgba(84,170,255,.08)!important;
 }
+
+
+/* ============================================================
+   v2.3.0 - Compilation-Workflow wie Apple Music
+   ============================================================ */
+
+.compilationControl{
+  display:flex!important;
+  flex-direction:column!important;
+  justify-content:center!important;
+  gap:3px!important;
+  min-width:0!important;
+}
+
+.compilationControl .tagCompilationCheck{
+  display:flex!important;
+  align-items:center!important;
+  gap:8px!important;
+  min-height:28px!important;
+  font-weight:750!important;
+}
+
+.compilationControl .tagCompilationCheck input{
+  flex:0 0 auto!important;
+  width:19px!important;
+  height:19px!important;
+  min-height:19px!important;
+  margin:0!important;
+}
+
+#tagCompilationHelp{
+  display:block!important;
+  line-height:1.25!important;
+}
+
+#tagAlbumArtist:disabled{
+  opacity:.72!important;
+  cursor:not-allowed!important;
+  font-style:italic!important;
+  -webkit-text-fill-color:var(--muted)!important;
+  color:var(--muted)!important;
+  background:rgba(255,255,255,.035)!important;
+}
+
+@media (min-width:1050px){
+  #tagsView.appView.active > .tagEditor > .formgrid.compact.compilationAwareForm{
+    grid-template-columns:104px minmax(180px,1fr) 86px minmax(250px,1fr)!important;
+  }
+
+  .compilationControl{
+    min-height:34px!important;
+  }
+}

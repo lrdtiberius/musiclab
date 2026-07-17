@@ -1,4 +1,4 @@
-# Installation MusicLab v2.2.3
+# Installation MusicLab v2.3.0
 
 ## Synology
 1. Projekt stoppen.

@@ -56,7 +56,7 @@ except Exception:
 Image = PILImage
 
 SCHEMA_VERSION = 25
-APP_VERSION = "2.2.3"
+APP_VERSION = "2.3.0"
 
 
 LOG_TZ = os.getenv("TZ") or os.getenv("LOG_TZ") or "Europe/Berlin"
@@ -1955,7 +1955,11 @@ def build_sort_plan(limit_preview: int = 100):
             title = (live or {}).get("title") or r.get("title") or current.stem
             ext = current.suffix or Path(r.get("filename") or current.name).suffix or ".mp3"
 
-            folder_artist = albumartist if compilation == 1 else artist
+            folder_artist = (
+                (albumartist or "Verschiedene Interpreten")
+                if compilation == 1
+                else artist
+            )
             target_rel = (
                 Path(safe_name(folder_artist, "Unbekannter Interpret"))
                 / safe_name(album, "Unbekanntes Album")
@@ -4218,14 +4222,29 @@ def update_tags(payload: dict):
                                     audio[tag] = []
                         changed[src] = val
                 is_compilation = bool(item.get("compilation"))
-                albumartist_value = str(item.get("albumartist") or ("Verschiedene Interpreten" if is_compilation else item.get("artist") or "")).strip()
+
+                # Wie in Apple Music:
+                # - Compilation wird über das echte Compilation-Flag markiert.
+                # - Die individuellen Track-Interpreten bleiben erhalten.
+                # - Albumartist darf bei Compilations leer bleiben.
+                # MusicLab zeigt solche Alben trotzdem als "Verschiedene Interpreten"
+                # an, ohne diesen Text zwingend in die Datei-Tags zu schreiben.
+                if is_compilation:
+                    albumartist_value = str(item.get("albumartist") or "").strip()
+                else:
+                    albumartist_value = str(
+                        item.get("albumartist") or item.get("artist") or ""
+                    ).strip()
+
                 if albumartist_value:
                     audio["albumartist"] = [albumartist_value]
                 else:
                     try:
-                        if "albumartist" in audio: del audio["albumartist"]
+                        if "albumartist" in audio:
+                            del audio["albumartist"]
                     except Exception:
                         pass
+
                 changed["albumartist"] = albumartist_value
                 changed["compilation"] = 1 if is_compilation else 0
                 audio.save()
@@ -4242,9 +4261,12 @@ def update_tags(payload: dict):
                     final_album = changed.get("album", old.get("album") or "Unbekanntes Album")
                     final_title = changed.get("title", old.get("title") or p.stem)
 
-                    # Sampler werden gemeinsam unter dem Albumartist abgelegt.
+                    # Compilations werden gemeinsam abgelegt. Ein leerer
+                    # Albumartist ist dabei erlaubt und wird nur für die
+                    # Ordnerstruktur virtuell als "Verschiedene Interpreten"
+                    # behandelt.
                     folder_artist = (
-                        final_albumartist
+                        (final_albumartist or "Verschiedene Interpreten")
                         if int(changed.get("compilation") or 0) == 1
                         else final_artist
                     )
