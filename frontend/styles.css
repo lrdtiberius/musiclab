@@ -3275,3 +3275,10 @@ body.tagsMode #tagsView .tagTrackScroll td{
     min-height:320px!important;
   }
 }
+
+
+/* v2.2.3 - Normalisierungs-Sicherheitsdialog */
+.normalizationSettingsVerified{
+  border-color:rgba(84,170,255,.45)!important;
+  background:rgba(84,170,255,.08)!important;
+}

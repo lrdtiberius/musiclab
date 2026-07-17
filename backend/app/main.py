@@ -56,7 +56,7 @@ except Exception:
 Image = PILImage
 
 SCHEMA_VERSION = 25
-APP_VERSION = "2.2.2"
+APP_VERSION = "2.2.3"
 
 
 LOG_TZ = os.getenv("TZ") or os.getenv("LOG_TZ") or "Europe/Berlin"
@@ -1182,8 +1182,71 @@ def normalization_plan(before: dict, settings: dict) -> dict:
     return plan
 
 
-def normalization_report_rows() -> list:
-    settings = get_settings()
+
+NORMALIZATION_SETTING_KEYS = (
+    "target_lufs",
+    "true_peak",
+    "lra",
+    "normalize_tolerance_lufs",
+    "backup_mode",
+    "parallel_normalize",
+)
+
+def validated_normalization_settings(snapshot: Optional[dict] = None) -> dict:
+    """Liefert einen validierten, unveränderlichen Einstellungsschnappschuss."""
+    current = dict(get_settings())
+    raw = dict(snapshot or {})
+    result = dict(current)
+
+    for key in NORMALIZATION_SETTING_KEYS:
+        if key in raw and raw.get(key) is not None:
+            result[key] = raw.get(key)
+
+    try:
+        target = float(result.get("target_lufs", -16))
+        true_peak = float(result.get("true_peak", -1.5))
+        lra = float(result.get("lra", 11))
+        tolerance = float(result.get("normalize_tolerance_lufs", 1.5))
+        parallel = int(result.get("parallel_normalize", 2))
+    except (TypeError, ValueError) as exc:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Ungültige Normalisierungseinstellung: {exc}",
+        )
+
+    if not -30.0 <= target <= -5.0:
+        raise HTTPException(status_code=400, detail="Ziel-LUFS muss zwischen -30 und -5 liegen")
+    if not -12.0 <= true_peak <= 0.0:
+        raise HTTPException(status_code=400, detail="True Peak muss zwischen -12 und 0 liegen")
+    if not 1.0 <= lra <= 30.0:
+        raise HTTPException(status_code=400, detail="LRA muss zwischen 1 und 30 liegen")
+    if not 0.0 <= tolerance <= 10.0:
+        raise HTTPException(status_code=400, detail="LUFS-Toleranz muss zwischen 0 und 10 liegen")
+
+    result["target_lufs"] = str(target).rstrip("0").rstrip(".")
+    result["true_peak"] = str(true_peak).rstrip("0").rstrip(".")
+    result["lra"] = str(lra).rstrip("0").rstrip(".")
+    result["normalize_tolerance_lufs"] = str(tolerance).rstrip("0").rstrip(".")
+    result["parallel_normalize"] = str(max(1, min(8, parallel)))
+    result["backup_mode"] = (
+        result.get("backup_mode")
+        if result.get("backup_mode") in {"on", "sidecar", "off"}
+        else "on"
+    )
+    return result
+
+
+def normalization_settings_signature(settings: dict) -> str:
+    payload = {
+        key: str(settings.get(key, ""))
+        for key in NORMALIZATION_SETTING_KEYS
+    }
+    canonical = json.dumps(payload, sort_keys=True, separators=(",", ":"))
+    return hashlib.sha256(canonical.encode("utf-8")).hexdigest()[:20]
+
+
+def normalization_report_rows(settings_override: Optional[dict] = None) -> list:
+    settings = validated_normalization_settings(settings_override)
     with db() as con:
         rows = [dict(r) for r in con.execute("""
             SELECT t.id,t.path,t.title,t.artist,t.album,
@@ -1597,9 +1660,14 @@ def all_album_items_for_normalize() -> list:
         return [{"artist": r["artist"], "album": r["album"]} for r in rows]
 
 
-def all_normalize_preview(target_source: str = "settings") -> dict:
-    settings = settings_for_normalize_source(target_source)
-    report = normalization_report_rows()
+def all_normalize_preview(
+    target_source: str = "settings",
+    settings_override: Optional[dict] = None,
+) -> dict:
+    settings = validated_normalization_settings(
+        settings_override or settings_for_normalize_source(target_source)
+    )
+    report = normalization_report_rows(settings)
     candidates = [r for r in report if r.get("normalize")]
     within = [r for r in report if r.get("reason") == "innerhalb_toleranz"]
     peak_blocked = [r for r in report if r.get("reason") == "kein_sicherer_gain_wegen_true_peak"]
@@ -1628,16 +1696,27 @@ def all_normalize_preview(target_source: str = "settings") -> dict:
         "backup_mode": settings.get("backup_mode","on"),
         "target_source": "settings",
         "target_source_label": "Werte aus Einstellungen",
+        "settings_signature": normalization_settings_signature(settings),
+        "settings_snapshot": {
+            key: settings.get(key) for key in NORMALIZATION_SETTING_KEYS
+        },
         "can_normalize": bool(candidates),
     }
 
 
-def normalize_all_worker(backup_mode: Optional[str] = None, target_source: str = "settings"):
+def normalize_all_worker(
+    backup_mode: Optional[str] = None,
+    target_source: str = "settings",
+    settings_override: Optional[dict] = None,
+):
     init_db()
-    settings = settings_for_normalize_source(target_source)
+    settings = validated_normalization_settings(
+        settings_override or settings_for_normalize_source(target_source)
+    )
     if backup_mode is not None:
         settings["backup_mode"] = backup_mode
-    report = normalization_report_rows()
+    settings = validated_normalization_settings(settings)
+    report = normalization_report_rows(settings)
     candidate_ids = {int(r["id"]) for r in report if r.get("normalize")}
     with db() as con:
         rows = [dict(r) for r in con.execute("SELECT id,path,title,artist,album FROM tracks ORDER BY artist COLLATE NOCASE,album COLLATE NOCASE,title COLLATE NOCASE").fetchall() if int(r["id"]) in candidate_ids]
@@ -1650,7 +1729,14 @@ def normalize_all_worker(backup_mode: Optional[str] = None, target_source: str =
     job_id=history_job_id()
     workers=normalize_parallelism()
     begin_job("tolerance_normalize",len(rows),f"Toleranz-Normalisierung: {len(rows)} Titel ({workers} parallel)")
-    add_log(f"Sichere Toleranz-Normalisierung gestartet: Ziel {settings.get('target_lufs')} LUFS ±{settings.get('normalize_tolerance_lufs','1.5')} LUFS · statischer Gain ohne Limiter")
+    add_log(
+        "Sichere Toleranz-Normalisierung gestartet: "
+        f"Ziel {settings.get('target_lufs')} LUFS "
+        f"±{settings.get('normalize_tolerance_lufs','1.5')} LUFS · "
+        f"TP {settings.get('true_peak')} · LRA {settings.get('lra')} · "
+        f"Konfiguration {normalization_settings_signature(settings)} · "
+        "statischer Gain ohne Limiter"
+    )
     with db() as con:
         with ThreadPoolExecutor(max_workers=workers) as pool:
             futures={pool.submit(normalize_row_fast,row,dict(settings)):row for row in rows}
@@ -2589,6 +2675,15 @@ def normalize_preview_all(target_source: str = "settings"):
     return all_normalize_preview(target_source)
 
 
+@app.post("/api/normalize_preview_all")
+def normalize_preview_all_post(data: dict = None):
+    data = data or {}
+    snapshot = validated_normalization_settings(data.get("settings") or {})
+    # Speichern, damit alle übrigen Ansichten ebenfalls denselben Stand zeigen.
+    save_settings(snapshot)
+    return all_normalize_preview("settings", snapshot)
+
+
 
 @app.get("/api/normalize_export")
 def normalize_export():
@@ -2606,12 +2701,30 @@ def normalize_export():
 @app.post("/api/normalize_all")
 def normalize_all(data: dict = None):
     data = data or {}
-    backup = data.get("backup") if isinstance(data, dict) else None
-    # v1.9.39: „Alles normalisieren“ nutzt bewusst die Einstellungen.
-    # Referenzwerte werden vorher mit „Ziel-LUFS übernehmen“ in die Einstellungen kopiert.
+    if not isinstance(data, dict):
+        raise HTTPException(status_code=400, detail="Ungültige Startdaten")
+
+    snapshot = validated_normalization_settings(data.get("settings") or {})
+    expected_signature = str(data.get("settings_signature") or "")
+    actual_signature = normalization_settings_signature(snapshot)
+
+    if expected_signature and expected_signature != actual_signature:
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                "Die Einstellungen haben sich seit der Vorschau geändert. "
+                "Die Normalisierung wurde aus Sicherheitsgründen nicht gestartet."
+            ),
+        )
+
+    # Exakt den geprüften Schnappschuss speichern und an den Worker übergeben.
+    save_settings(snapshot)
+    backup = snapshot.get("backup_mode")
     target_source = "settings"
+
     if state.get("running"):
         return state
+
     state.update({
         "running": True,
         "stop": False,
@@ -2619,12 +2732,33 @@ def normalize_all(data: dict = None):
         "done": 0,
         "total": 0,
         "current": "Alles-Normalisierung wird vorbereitet",
-        "message": "Alles-Normalisierung wird vorbereitet...",
+        "message": (
+            f"Normalisierung wird mit Ziel {snapshot.get('target_lufs')} LUFS "
+            f"±{snapshot.get('normalize_tolerance_lufs')} vorbereitet..."
+        ),
         "errors": 0,
         "recent_errors": [],
     })
-    threading.Thread(target=normalize_all_worker, args=(backup, target_source), daemon=True).start()
-    return state
+    add_log(
+        "[Normalisierung] Start bestätigt: "
+        f"Ziel {snapshot.get('target_lufs')} LUFS · "
+        f"TP {snapshot.get('true_peak')} · "
+        f"Toleranz ±{snapshot.get('normalize_tolerance_lufs')} · "
+        f"LRA {snapshot.get('lra')} · "
+        f"Konfiguration {actual_signature}"
+    )
+    threading.Thread(
+        target=normalize_all_worker,
+        args=(backup, target_source, dict(snapshot)),
+        daemon=True,
+    ).start()
+    return {
+        **state,
+        "settings_signature": actual_signature,
+        "settings_snapshot": {
+            key: snapshot.get(key) for key in NORMALIZATION_SETTING_KEYS
+        },
+    }
 
 
 @app.post("/api/normalize_preview_tracks")

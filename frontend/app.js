@@ -1,5 +1,5 @@
 const API='http://'+location.hostname+':8091/api';
-const APP_VERSION='2.2.2';
+const APP_VERSION='2.2.3';
 let coverCacheBust=Date.now();
 let selectedArtist=null, selectedAlbum=null, selectedTagFolder=null;
 let selectedUiKey=null; // v1.9.39: eindeutige visuelle Einzelauswahl für Listen und Album-Kacheln
@@ -390,13 +390,62 @@ function updateTargetInfo(){
   if(typeof settingsLine!=='undefined') settingsLine.textContent=`Backup: ${bmShort} · Analyse: ${parallelAnalysis.value}× · Norm: ${pn}× · Musik: ${mr}${wm}`;
 }
 
-async function saveSettings(){
-  await j(API+'/settings',{
+function currentSettingsPayload(){
+  return {
+    target_lufs:String(targetLufs.value||'').trim(),
+    true_peak:String(truePeak.value||'').trim(),
+    lra:String(lra.value||'').trim(),
+    backup_mode:backupMode.value,
+    parallel_analysis:parallelAnalysis.value,
+    parallel_normalize:(typeof parallelNormalize!=='undefined'?parallelNormalize.value:'2'),
+    normalize_tolerance_lufs:(typeof normalizeTolerance!=='undefined'
+      ? normalizeTolerance.value
+      : (typeof normalizeTolerancePage!=='undefined'
+        ? normalizeTolerancePage.value
+        : '1.5')),
+    music_root:musicRoot.value,
+    watch_mode:watchMode.value,
+    sort_after_tags:(typeof sortAfterTags!=='undefined'
+      ? sortAfterTags.value
+      : (typeof sortAfterTagsPage!=='undefined'
+        ? sortAfterTagsPage.value
+        : 'off')),
+    smb_base_url:(typeof smbBaseUrl!=='undefined'
+      ? smbBaseUrl.value
+      : (typeof smbBaseUrlPage!=='undefined'
+        ? smbBaseUrlPage.value
+        : 'smb://DS923/Musik'))
+  };
+}
+
+async function saveSettings(payload=null){
+  const requested=payload || currentSettingsPayload();
+  const saved=await j(API+'/settings',{
     method:'POST',
     headers:{'Content-Type':'application/json'},
-    body:JSON.stringify({target_lufs:targetLufs.value,true_peak:truePeak.value,lra:lra.value,backup_mode:backupMode.value,parallel_analysis:parallelAnalysis.value,parallel_normalize:(typeof parallelNormalize!=='undefined'?parallelNormalize.value:'2'),normalize_tolerance_lufs:(typeof normalizeTolerance!=='undefined'?normalizeTolerance.value:(typeof normalizeTolerancePage!=='undefined'?normalizeTolerancePage.value:'1.5')),music_root:musicRoot.value,watch_mode:watchMode.value,sort_after_tags:(typeof sortAfterTags!=='undefined'?sortAfterTags.value:(typeof sortAfterTagsPage!=='undefined'?sortAfterTagsPage.value:'off')),smb_base_url:(typeof smbBaseUrl!=='undefined'?smbBaseUrl.value:(typeof smbBaseUrlPage!=='undefined'?smbBaseUrlPage.value:'smb://DS923/Musik'))})
+    body:JSON.stringify(requested)
   });
+
+  // UI auf den tatsächlich vom Backend gespeicherten Stand synchronisieren.
+  if(saved){
+    targetLufs.value=saved.target_lufs ?? requested.target_lufs;
+    truePeak.value=saved.true_peak ?? requested.true_peak;
+    lra.value=saved.lra ?? requested.lra;
+    backupMode.value=saved.backup_mode ?? requested.backup_mode;
+    if(typeof parallelNormalize!=='undefined'){
+      parallelNormalize.value=saved.parallel_normalize ?? requested.parallel_normalize;
+    }
+    if(typeof normalizeTolerance!=='undefined'){
+      normalizeTolerance.value=saved.normalize_tolerance_lufs
+        ?? requested.normalize_tolerance_lufs;
+    }
+    if(typeof normalizeTolerancePage!=='undefined'){
+      normalizeTolerancePage.value=saved.normalize_tolerance_lufs
+        ?? requested.normalize_tolerance_lufs;
+    }
+  }
   updateTargetInfo();
+  return saved || requested;
 }
 
 
@@ -964,46 +1013,134 @@ async function chooseNormalizeTargetSource(){
   return 'settings';
 }
 
+function sameNumericSetting(a,b){
+  const x=Number(a), y=Number(b);
+  return Number.isFinite(x) && Number.isFinite(y)
+    ? Math.abs(x-y)<0.0001
+    : String(a??'')===String(b??'');
+}
+
+function assertNormalizationSettingsMatch(requested, preview){
+  const pairs=[
+    ['target_lufs', requested.target_lufs, preview.target_lufs],
+    ['true_peak', requested.true_peak, preview.true_peak],
+    ['lra', requested.lra, preview.lra],
+    ['normalize_tolerance_lufs',
+      requested.normalize_tolerance_lufs,
+      preview.tolerance_lufs],
+  ];
+  const mismatches=pairs.filter(([,a,b])=>!sameNumericSetting(a,b));
+  if(mismatches.length){
+    const details=mismatches
+      .map(([name,a,b])=>`${name}: Oberfläche ${a} / Backend ${b}`)
+      .join('\n');
+    throw new Error(
+      'Oberfläche und Backend verwenden unterschiedliche Einstellungen.\n'
+      +'Die Normalisierung wurde nicht gestartet.\n\n'+details
+    );
+  }
+}
+
 async function normalizeAll(){
   try{
-    const targetSource='settings';
+    const requested=currentSettingsPayload();
     lastRunning=true;
-    status.textContent='Alles-Normalisierung: Vorschau wird erstellt...';
-    if(progressText) progressText.textContent='Normalisierung vorbereiten...';
+    status.textContent='Einstellungen werden gespeichert…';
+    if(progressText) progressText.textContent='Einstellungen werden synchronisiert…';
 
-    const pv=await j(API+'/normalize_preview_all?target_source=settings');
+    // Kritischer Sicherheitsfix: aktuelle Eingabefelder immer zuerst speichern.
+    const saved=await saveSettings(requested);
+
+    status.textContent='Alles-Normalisierung: Vorschau wird erstellt…';
+    if(progressText) progressText.textContent='Normalisierung vorbereiten…';
+
+    // Vorschau wird mit genau demselben Snapshot erzeugt, der später startet.
+    const pv=await j(API+'/normalize_preview_all',{
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({settings:saved})
+    });
+
+    assertNormalizationSettingsMatch(saved,pv);
+
     if(!pv.can_normalize){
       status.textContent='Alles-Normalisierung nicht möglich';
-      alert('Alles normalisieren ist aktuell nicht möglich:\n\nEs gibt keine vollständig analysierten Alben, die normalisiert werden können.');
+      alert(
+        'Alles normalisieren ist aktuell nicht möglich:\n\n'
+        +'Es gibt keine analysierten Titel außerhalb der Toleranz.'
+      );
       await poll();
       return;
     }
 
-    const backupText = backupMode.value==='off' ? 'kein Backup' : (backupMode.value==='sidecar' ? '.bak neben der Datei' : 'Backup unter /data/backups');
-    const sourceText = 'Werte aus Einstellungen';
-    const examples=(pv.normalizable||[]).slice(0,8).map(x=>`- ${x.label}: ${x.current_lufs} LUFS · ${x.gain_delta>0?'+':''}${x.gain_delta} dB`).join('\n');
-    const more=(pv.count_albums||0)>8 ? `\n... und ${(pv.count_albums||0)-8} weitere` : '';
-    const skipped=[];
-    if(pv.count_blocked) skipped.push(`${pv.count_blocked} Album/Alben werden übersprungen, weil sie noch nicht vollständig analysiert sind`);
-    if(pv.count_skipped_reference) skipped.push(`${pv.count_skipped_reference} Referenzalbum/Alben werden übersprungen`);
-    const msg=`Alles normalisieren starten?\n\n${pv.count_tracks} von ${pv.count_total_tracks} Titeln außerhalb der Toleranz\nToleranz: ±${pv.tolerance_lufs} LUFS\nInnerhalb Toleranz: ${pv.count_within_tolerance} · TP-blockiert: ${pv.count_peak_blocked} · nicht analysiert: ${pv.count_unanalyzed}\nQuelle: ${sourceText}\nZiel: ${pv.target_lufs} LUFS · TP ${pv.true_peak} · LRA ${pv.lra}\nBackup: ${backupText}\n\n${examples}${more}${skipped.length?'\n\n'+skipped.join('\n'):''}\n\nEs wird nur ein konstanter Pegel angewendet; die Dynamik innerhalb des Liedes bleibt unverändert.\nDateien werden überschrieben.`;
+    const backupText = saved.backup_mode==='off'
+      ? 'kein Backup'
+      : (saved.backup_mode==='sidecar'
+        ? '.bak neben der Datei'
+        : 'Backup unter /data/backups');
+    const examples=(pv.normalizable||[]).slice(0,8)
+      .map(x=>`- ${x.label}: ${x.current_lufs} LUFS · `
+        +`${x.gain_delta>0?'+':''}${x.gain_delta} dB`)
+      .join('\n');
+    const more=(pv.count_albums||0)>8
+      ? `\n... und ${(pv.count_albums||0)-8} weitere`
+      : '';
+
+    const msg=`Alles normalisieren starten?
+
+${pv.count_tracks} von ${pv.count_total_tracks} Titeln außerhalb der Toleranz
+Toleranz: ±${pv.tolerance_lufs} LUFS
+Innerhalb Toleranz: ${pv.count_within_tolerance} · TP-blockiert: ${pv.count_peak_blocked} · nicht analysiert: ${pv.count_unanalyzed}
+
+Verbindlich geprüfte Einstellungen:
+Ziel-LUFS: ${pv.target_lufs}
+True Peak: ${pv.true_peak}
+Toleranz: ±${pv.tolerance_lufs}
+LRA: ${pv.lra}
+Backup: ${backupText}
+Prüfcode: ${pv.settings_signature}
+
+${examples}${more}
+
+Vorschau und Normalisierungsjob verwenden exakt denselben Einstellungsschnappschuss.
+Es wird nur ein konstanter Pegel angewendet; die Dynamik innerhalb des Liedes bleibt unverändert.
+Dateien werden überschrieben.`;
+
     if(!confirm(msg)){
       status.textContent='Alles-Normalisierung abgebrochen';
       await poll();
       return;
     }
 
-    status.textContent='Alles-Normalisierung wird gestartet...';
-    if(progressText) progressText.textContent='Normalisierung wird gestartet...';
-    await j(API+'/normalize_all',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({backup:backupMode.value,target_source:'settings'})});
-    setTimeout(poll, 250);
-    setTimeout(poll, 1000);
-    setTimeout(poll, 3000);
+    status.textContent='Alles-Normalisierung wird gestartet…';
+    if(progressText) progressText.textContent='Normalisierung wird gestartet…';
+
+    const started=await j(API+'/normalize_all',{
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({
+        settings:saved,
+        settings_signature:pv.settings_signature
+      })
+    });
+
+    if(
+      started?.settings_signature
+      && started.settings_signature!==pv.settings_signature
+    ){
+      throw new Error(
+        'Der gestartete Job bestätigt nicht denselben Prüfcode wie die Vorschau.'
+      );
+    }
+
+    setTimeout(poll,250);
+    setTimeout(poll,1000);
+    setTimeout(poll,3000);
   }catch(e){
     lastRunning=false;
     status.textContent='Alles-Normalisierung-Fehler';
     alert('Alles normalisieren konnte nicht gestartet werden:\n'+e.message);
-    try{ await poll(); }catch(_){}
+    try{await poll();}catch(_){}
   }
 }
 
@@ -2586,7 +2723,7 @@ document.addEventListener('DOMContentLoaded',()=>{
     return /\bAktiv\b/.test(card.innerText || '') || card.classList.contains('active') || card.classList.contains('is-active') || card.classList.contains('selected');
   }
   function updateCredit(){
-    // v2.2.2: credit is rendered discreetly in the top navigation.
+    // v2.2.3: credit is rendered discreetly in the top navigation.
     document.querySelectorAll('.musiclab-credit-fixed,.footerCredit').forEach(el=>el.remove());
   }
   function ensureSummary(){
