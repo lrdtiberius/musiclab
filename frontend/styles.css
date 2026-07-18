@@ -3335,3 +3335,159 @@ body.tagsMode #tagsView .tagTrackScroll td{
     min-height:34px!important;
   }
 }
+
+
+/* ============================================================
+   v2.3.1 - Album-Tags-Kachel und Compilation-Beschriftung
+   ============================================================ */
+
+@media (min-width:1050px){
+  /*
+   * Die Album-Tags-Zeile darf sich nach ihrem Inhalt richten.
+   * Dadurch werden Checkbox, Hilfetext und die untere Kartenkante
+   * nicht mehr durch feste Höhen oder overflow:hidden abgeschnitten.
+   */
+  #tagsView.appView.active{
+    grid-template-rows:72px auto minmax(0,1fr)!important;
+    height:calc(100dvh - 252px)!important;
+    min-height:0!important;
+    max-height:calc(100dvh - 252px)!important;
+    overflow:hidden!important;
+  }
+
+  #tagsView.appView.active > .tagEditor{
+    display:grid!important;
+    grid-template-columns:300px minmax(0,1fr)!important;
+    grid-template-rows:42px auto!important;
+    column-gap:14px!important;
+    row-gap:8px!important;
+    height:auto!important;
+    min-height:238px!important;
+    max-height:none!important;
+    overflow:visible!important;
+    padding:10px 10px 16px!important;
+    box-sizing:border-box!important;
+  }
+
+  #tagsView.appView.active > .tagEditor > .toolbar{
+    grid-column:1/-1!important;
+    grid-row:1!important;
+    height:42px!important;
+    min-height:42px!important;
+    max-height:42px!important;
+  }
+
+  #tagsView.appView.active > .tagEditor > .tagCoverRow{
+    grid-column:1!important;
+    grid-row:2!important;
+    height:auto!important;
+    min-height:166px!important;
+    max-height:none!important;
+    overflow:visible!important;
+    align-self:start!important;
+  }
+
+  #tagsView.appView.active > .tagEditor > .formgrid.compact.compilationAwareForm{
+    grid-column:2!important;
+    grid-row:2!important;
+    display:grid!important;
+    grid-template-columns:104px minmax(170px,1fr) 90px minmax(260px,1.15fr)!important;
+    grid-auto-rows:minmax(34px,auto)!important;
+    gap:8px 10px!important;
+    height:auto!important;
+    min-height:166px!important;
+    max-height:none!important;
+    overflow:visible!important;
+    align-content:start!important;
+    margin:0!important;
+  }
+
+  /* Die Compilation-Steuerung belegt die komplette rechte Formularhälfte. */
+  #tagsView.appView.active .compilationFullRow{
+    grid-column:3 / -1!important;
+    display:flex!important;
+    flex-direction:column!important;
+    justify-content:center!important;
+    align-items:stretch!important;
+    gap:4px!important;
+    width:100%!important;
+    min-width:0!important;
+    min-height:42px!important;
+    height:auto!important;
+    overflow:visible!important;
+  }
+
+  #tagsView.appView.active .tagCompilationCheck{
+    display:flex!important;
+    align-items:flex-start!important;
+    gap:8px!important;
+    width:100%!important;
+    min-width:0!important;
+    height:auto!important;
+    min-height:24px!important;
+    line-height:1.25!important;
+    white-space:normal!important;
+    overflow:visible!important;
+  }
+
+  #tagsView.appView.active .tagCompilationCheck span{
+    display:block!important;
+    min-width:0!important;
+    white-space:normal!important;
+    overflow:visible!important;
+    text-overflow:clip!important;
+  }
+
+  #tagsView.appView.active #tagCompilationHelp{
+    display:block!important;
+    width:100%!important;
+    max-width:none!important;
+    height:auto!important;
+    max-height:none!important;
+    white-space:normal!important;
+    overflow:visible!important;
+    line-height:1.3!important;
+  }
+
+  /* Der Titelbereich nutzt nur den tatsächlich verbleibenden Raum. */
+  #tagsView.appView.active > .tagTracksPanel{
+    min-height:0!important;
+    height:100%!important;
+    max-height:none!important;
+    overflow:hidden!important;
+    margin-top:0!important;
+  }
+
+  #tagsView.appView.active > .tagTracksPanel > .tagTrackScroll{
+    flex:1 1 0!important;
+    min-height:0!important;
+    height:auto!important;
+    max-height:none!important;
+    overflow:auto!important;
+    padding-bottom:10px!important;
+  }
+}
+
+/* Bei schmaleren Desktopfenstern darf der Checkboxtext umbrechen. */
+@media (min-width:1050px) and (max-width:1250px){
+  #tagsView.appView.active > .tagEditor{
+    grid-template-columns:270px minmax(0,1fr)!important;
+  }
+
+  #tagsView.appView.active > .tagEditor > .formgrid.compact.compilationAwareForm{
+    grid-template-columns:98px minmax(150px,1fr) 80px minmax(210px,1fr)!important;
+  }
+}
+
+/* Auf mobilen/schmalen Ansichten ebenfalls kein Abschneiden. */
+@media (max-width:1049px){
+  .compilationFullRow,
+  .tagCompilationCheck,
+  #tagCompilationHelp{
+    width:100%!important;
+    height:auto!important;
+    max-height:none!important;
+    white-space:normal!important;
+    overflow:visible!important;
+  }
+}

@@ -1,5 +1,5 @@
 const API='http://'+location.hostname+':8091/api';
-const APP_VERSION='2.3.0';
+const APP_VERSION='2.3.1';
 let coverCacheBust=Date.now();
 let selectedArtist=null, selectedAlbum=null, selectedTagFolder=null;
 let selectedUiKey=null; // v1.9.39: eindeutige visuelle Einzelauswahl für Listen und Album-Kacheln
@@ -2751,7 +2751,7 @@ document.addEventListener('DOMContentLoaded',()=>{
     return /\bAktiv\b/.test(card.innerText || '') || card.classList.contains('active') || card.classList.contains('is-active') || card.classList.contains('selected');
   }
   function updateCredit(){
-    // v2.3.0: credit is rendered discreetly in the top navigation.
+    // v2.3.1: credit is rendered discreetly in the top navigation.
     document.querySelectorAll('.musiclab-credit-fixed,.footerCredit').forEach(el=>el.remove());
   }
   function ensureSummary(){

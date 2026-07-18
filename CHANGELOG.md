@@ -1,6 +1,15 @@
 # Changelog
 
-## v2.3.0
+## v2.3.1
+
+- abgeschnittene Compilation-Beschriftung behoben
+- Compilation-Steuerung auf die komplette rechte Formularhälfte erweitert
+- feste Abschneidehöhen der Album-Tags-Kachel entfernt
+- untere Kartenkante und Hilfetexte vollständig sichtbar
+
+
+
+## v2.3.1
 
 - Compilation-Workflow an Apple Music angeglichen
 - echtes Compilation-Flag statt erzwungenem Albumartist-Text
@@ -11,7 +20,7 @@
 
 
 
-## v2.3.0
+## v2.3.1
 
 - kritischen Einstellungs-Synchronisationsfehler vor `Alles normalisieren` behoben
 - aktuelle UI-Werte werden vor der Vorschau automatisch gespeichert
@@ -21,7 +30,7 @@
 
 
 
-## v2.3.0
+## v2.3.1
 
 - fehlende Aktivierung von `body.tagsMode` behoben
 - bisher wirkungslose Tags-CSS-Regeln werden nun tatsächlich angewendet
@@ -30,7 +39,7 @@
 
 
 
-## v2.3.0
+## v2.3.1
 
 - endgültiger Höhenfix für Titel-Tags
 - Album-Tags auf feste kompakte Desktop-Höhe begrenzt
@@ -39,7 +48,7 @@
 
 
 
-## v2.3.0
+## v2.3.1
 
 - Tags-Layout komplett refaktoriert
 - Album-Tags auf echte Inhaltshöhe reduziert
@@ -50,7 +59,7 @@
 
 
 
-## v2.3.0
+## v2.3.1
 
 - Album-Tags-Layout auf Desktop kompakter angeordnet
 - Cover und Albumfelder nebeneinander
@@ -59,7 +68,7 @@
 
 
 
-## v2.3.0
+## v2.3.1
 
 - echte Dateikonflikte statt vorhandener Ordner zählen
 - Konflikte sicher überspringen, keine automatischen Duplikatnamen
@@ -70,7 +79,7 @@
 
 
 
-## v2.3.0
+## v2.3.1
 
 - Albuminterpret bei Samplern automatisch `Verschiedene Interpreten`
 - individuelles Interpret-Feld während der Samplerkennzeichnung gesperrt
@@ -81,7 +90,7 @@
 
 
 
-## v2.3.0
+## v2.3.1
 
 - Cover-Auswahl und Cover-Löschen getrennt
 - robuste JPEG-Konvertierung
@@ -91,7 +100,7 @@
 
 
 
-## v2.3.0
+## v2.3.1
 
 - Titel-Tags nutzen die vollständige verbleibende Fensterhöhe
 - altes Main-Grid im Tags-Modus neutralisiert
@@ -100,7 +109,7 @@
 
 
 
-## v2.3.0
+## v2.3.1
 
 - exakte, case-sensitive Auswahl von Interpreten im Tag-Editor
 - falsche Schreibweisen bleiben gezielt bearbeitbar
@@ -109,21 +118,21 @@
 - kompakterer Album-Tags-Bereich
 
 
-## v2.3.0
+## v2.3.1
 
 - Titel-Tabelle auf der Tags-Seite vergrößert
 - größere Eingabefelder und Schrift für Titel, Interpret, Track und Disc
 - verbleibender Platz nach unten wird besser genutzt
 - kompaktere Darstellung bei niedrigen Browserfenstern
 
-## v2.3.0
+## v2.3.1
 
 - Checkbox „Album als Verschiedene Interpreten anzeigen“ auf der Tags-Seite
 - schreibt Album Artist und Compilation-Flag in unterstützte Formate
 - individuelle Titelinterpreten bleiben erhalten
 - markierte Alben erscheinen gebündelt unter „Verschiedene Interpreten“
 
-## v2.3.0
+## v2.3.1
 
 - schnelle Wiederherstellung aller vorhandenen Backups
 - Vorschau mit Dateianzahl, Größe und fehlenden Backups
@@ -131,7 +140,7 @@
 - Backups bleiben nach der Wiederherstellung bestehen
 - Analysewerte der wiederhergestellten Titel werden sicher zurückgesetzt
 
-## v2.3.0
+## v2.3.1
 - sichere statische Pegelanpassung statt dynamischem loudnorm bei der Normalisierung
 - einstellbare LUFS-Toleranz (Standard ±1,5 LUFS)
 - nur Titel außerhalb der Toleranz werden verändert
