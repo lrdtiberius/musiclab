@@ -56,7 +56,7 @@ except Exception:
 Image = PILImage
 
 SCHEMA_VERSION = 25
-APP_VERSION = "2.3.1"
+APP_VERSION = "2.5.8"
 
 
 LOG_TZ = os.getenv("TZ") or os.getenv("LOG_TZ") or "Europe/Berlin"
@@ -1085,12 +1085,65 @@ def selected_rows(artist: Optional[str], album: Optional[str]):
         return [dict(r) for r in con.execute(sql, args).fetchall()]
 
 
-def analysis_worker(artist: Optional[str] = None, album: Optional[str] = None):
+def missing_analysis_rows(artist: Optional[str] = None, album: Optional[str] = None):
+    """Titel ohne vollständige, erfolgreiche Lautheitsanalyse."""
+    clauses = [
+        "("
+        "a.track_id IS NULL "
+        "OR COALESCE(a.status,'')!='ok' "
+        "OR a.input_i IS NULL "
+        "OR a.input_tp IS NULL "
+        "OR a.input_lra IS NULL "
+        "OR a.input_thresh IS NULL"
+        ")"
+    ]
+    args = []
+
+    if artist:
+        clauses.append("COALESCE(t.artist,'')=?")
+        args.append(artist)
+    if album:
+        clauses.append("COALESCE(t.album,'')=?")
+        args.append(album)
+
+    sql = f"""
+        SELECT t.*
+        FROM tracks t
+        LEFT JOIN analysis a ON a.track_id=t.id
+        WHERE {' AND '.join(clauses)}
+        ORDER BY COALESCE(t.artist,''), COALESCE(t.album,''), t.disc, t.track, t.path
+    """
+    with db() as con:
+        return con.execute(sql, args).fetchall()
+
+
+def analysis_worker(
+    artist: Optional[str] = None,
+    album: Optional[str] = None,
+    only_missing: bool = False,
+):
     init_db()
-    rows = selected_rows(artist, album)
+    rows = (
+        missing_analysis_rows(artist, album)
+        if only_missing
+        else selected_rows(artist, album)
+    )
     workers = analysis_parallelism()
-    begin_job("analysis", len(rows), f"Analyse läuft ({workers} parallel)")
-    add_log(f"Analyse gestartet: {len(rows)} Titel, parallel: {workers}")
+    mode_label = "Fehlende Analyse" if only_missing else "Analyse"
+
+    begin_job(
+        "analysis_missing" if only_missing else "analysis",
+        len(rows),
+        f"{mode_label} läuft ({workers} parallel)",
+    )
+    add_log(
+        f"{mode_label} gestartet: {len(rows)} Titel, parallel: {workers}"
+    )
+
+    if not rows:
+        add_log(f"{mode_label}: keine passenden Titel gefunden")
+        finish_job(f"{mode_label}: nichts zu tun")
+        return
 
     def work(row):
         return row, analyze_track_file(get_music_root() / row["path"])
@@ -1116,11 +1169,18 @@ def analysis_worker(artist: Optional[str] = None, album: Optional[str] = None):
                 con.commit()
 
     if stop_requested():
-        add_log(f"Analyse abgebrochen: {state['done']}/{state['total']} Titel, Fehler {state['errors']}", True)
-        finish_job("Analyse abgebrochen", True)
+        add_log(
+            f"{mode_label} abgebrochen: "
+            f"{state['done']}/{state['total']} Titel, Fehler {state['errors']}",
+            True,
+        )
+        finish_job(f"{mode_label} abgebrochen", True)
     else:
-        add_log(f"Analyse fertig: {state['done']}/{state['total']} Titel, Fehler {state['errors']}")
-        finish_job("Analyse fertig")
+        add_log(
+            f"{mode_label} fertig: "
+            f"{state['done']}/{state['total']} Titel, Fehler {state['errors']}"
+        )
+        finish_job(f"{mode_label} fertig")
 
 
 def normalization_plan(before: dict, settings: dict) -> dict:
@@ -2585,7 +2645,41 @@ def scan():
 @app.post("/api/analyze")
 def analyze(artist: Optional[str] = None, album: Optional[str] = None):
     if not state["running"]:
-        threading.Thread(target=analysis_worker, kwargs={"artist": artist, "album": album}, daemon=True).start()
+        threading.Thread(
+            target=analysis_worker,
+            kwargs={"artist": artist, "album": album, "only_missing": False},
+            daemon=True,
+        ).start()
+    return state
+
+
+@app.get("/api/analyze_missing_preview")
+def analyze_missing_preview():
+    rows = missing_analysis_rows()
+    examples = [
+        {
+            "artist": str(r["artist"] or ""),
+            "album": str(r["album"] or ""),
+            "title": str(r["title"] or Path(r["path"]).stem),
+            "path": str(r["path"]),
+        }
+        for r in rows[:12]
+    ]
+    return {
+        "count": len(rows),
+        "examples": examples,
+        "can_start": bool(rows),
+    }
+
+
+@app.post("/api/analyze_missing")
+def analyze_missing():
+    if not state["running"]:
+        threading.Thread(
+            target=analysis_worker,
+            kwargs={"only_missing": True},
+            daemon=True,
+        ).start()
     return state
 
 
@@ -3489,7 +3583,7 @@ def _media_rows():
     with db() as con:
         return [dict(r) for r in con.execute(
             """
-            SELECT t.id,t.artist,t.albumartist,t.compilation,t.album,t.title,t.track_raw,t.track_number,t.track_total,t.disc_raw,t.disc_number,t.disc_total,t.genre,t.year,t.duration,t.codec,t.bitrate,t.sample_rate,t.channels,t.path,t.filename,
+            SELECT t.id,t.artist,t.albumartist,t.compilation,t.album,t.title,t.track_raw,t.track_number,t.track_total,t.disc_raw,t.disc_number,t.disc_total,t.genre,t.year,t.compilation,t.albumartist,t.duration,t.codec,t.bitrate,t.sample_rate,t.channels,t.path,t.filename,
             a.input_i,a.input_tp,a.input_lra,a.status AS analysis_status
             FROM tracks t LEFT JOIN analysis a ON a.track_id=t.id
             ORDER BY t.artist COLLATE NOCASE, t.album COLLATE NOCASE, COALESCE(t.disc_number,1), COALESCE(t.track_number,9999), t.title COLLATE NOCASE, t.path COLLATE NOCASE
@@ -4092,7 +4186,7 @@ def get_tracks_by_folder(folder: str, artist: Optional[str] = None, genre: Optio
     with db() as con:
         rows = [dict(r) for r in con.execute(
             """
-            SELECT t.id,t.artist,t.album,t.title,t.track_raw,t.track_number,t.track_total,t.disc_raw,t.disc_number,t.disc_total,t.genre,t.year,t.duration,t.codec,t.bitrate,t.sample_rate,t.channels,t.path,t.filename,
+            SELECT t.id,t.artist,t.album,t.title,t.track_raw,t.track_number,t.track_total,t.disc_raw,t.disc_number,t.disc_total,t.genre,t.year,t.compilation,t.albumartist,t.duration,t.codec,t.bitrate,t.sample_rate,t.channels,t.path,t.filename,
             a.input_i,a.input_tp,a.input_lra,a.status AS analysis_status
             FROM tracks t LEFT JOIN analysis a ON a.track_id=t.id
             ORDER BY COALESCE(t.disc_number,1), COALESCE(t.track_number,9999), t.title COLLATE NOCASE, t.path COLLATE NOCASE
@@ -4100,10 +4194,20 @@ def get_tracks_by_folder(folder: str, artist: Optional[str] = None, genre: Optio
         ).fetchall()]
     out = []
     virtual_album = ""
+    virtual_artist = ""
     if folder.startswith("__album__:"):
         virtual_album = folder[len("__album__:"):].strip().lower()
+    elif folder.startswith("__artist__:"):
+        virtual_artist = folder[len("__artist__:"):].strip()
+        artist_exact = ""
     for r in rows:
-        if virtual_album:
+        if virtual_artist:
+            if virtual_artist == "Verschiedene Interpreten":
+                if not (int(r.get("compilation") or 0) == 1):
+                    continue
+            elif (r.get("artist") or "").strip() != virtual_artist:
+                continue
+        elif virtual_album:
             if (r.get("album") or "Unbekanntes Album").strip().lower() != virtual_album:
                 continue
         elif parent_folder_key(r.get("path") or "") != folder:
@@ -4154,6 +4258,73 @@ def get_years():
         rows = con.execute("SELECT DISTINCT year FROM tracks WHERE year IS NOT NULL AND TRIM(year)<>'' ORDER BY year COLLATE NOCASE DESC").fetchall()
         return [r["year"] for r in rows]
 
+
+
+
+@app.get("/api/library/tracks_export.csv")
+def export_all_tracks_csv():
+    """Export the complete library as an Excel-friendly semicolon CSV."""
+    with db() as con:
+        rows = [dict(r) for r in con.execute(
+            """
+            SELECT artist,title,track_number,track_total,album,disc_number,disc_total,
+                   genre,year,compilation,filename,path
+            FROM tracks
+            ORDER BY artist COLLATE NOCASE, album COLLATE NOCASE,
+                     COALESCE(disc_number,1), COALESCE(track_number,9999),
+                     title COLLATE NOCASE, path COLLATE NOCASE
+            """
+        ).fetchall()]
+
+    out = io.StringIO()
+    writer = csv.writer(out, delimiter=";", lineterminator="\n", quoting=csv.QUOTE_MINIMAL)
+    writer.writerow([
+        "Interpret", "Titel", "Tracknummer", "Tracks gesamt", "Album",
+        "CD", "CDs gesamt", "Genre", "Jahr", "Verschiedene Interpreten",
+        "Dateiname", "Pfad"
+    ])
+    for row in rows:
+        writer.writerow([
+            row.get("artist") or "",
+            row.get("title") or "",
+            row.get("track_number") or "",
+            row.get("track_total") or "",
+            row.get("album") or "",
+            row.get("disc_number") or "",
+            row.get("disc_total") or "",
+            row.get("genre") or "",
+            row.get("year") or "",
+            "x" if int(row.get("compilation") or 0) == 1 else "",
+            row.get("filename") or "",
+            row.get("path") or "",
+        ])
+
+    filename = "musiclab_tracks_" + time.strftime("%Y-%m-%d_%H-%M-%S") + ".csv"
+    add_log(f"[CSV] Vollständige Bibliothek exportiert: {len(rows)} Titel")
+    # UTF-8 BOM makes umlauts display correctly in German Excel installations.
+    return Response(
+        content="\ufeff" + out.getvalue(),
+        media_type="text/csv; charset=utf-8",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
+@app.get("/api/tag_grid")
+def get_tag_grid():
+    """Return the complete tag-editing grid in a stable, deterministic order."""
+    with db() as con:
+        rows = [dict(r) for r in con.execute(
+            """
+            SELECT t.id,t.artist,t.albumartist,t.album,t.title,t.track_raw,t.track_number,t.track_total,
+                   t.disc_raw,t.disc_number,t.disc_total,t.genre,t.year,t.compilation,t.duration,t.codec,
+                   t.bitrate,t.sample_rate,t.channels,t.path,t.filename
+            FROM tracks t
+            ORDER BY t.artist COLLATE NOCASE, t.album COLLATE NOCASE,
+                     COALESCE(t.disc_number,1), COALESCE(t.track_number,9999),
+                     t.title COLLATE NOCASE, t.path COLLATE NOCASE
+            """
+        ).fetchall()]
+    return rows
 
 @app.post("/api/tags/update")
 def update_tags(payload: dict):

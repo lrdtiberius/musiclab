@@ -3491,3 +3491,479 @@ body.tagsMode #tagsView .tagTrackScroll td{
     overflow:visible!important;
   }
 }
+
+
+/* ============================================================
+   v2.3.2 - Kachelüberlappung und neue Analyse-Schaltfläche
+   ============================================================ */
+
+.analyzeMissingButton{
+  white-space:nowrap!important;
+}
+
+/*
+ * Die Album-Tags-Kachel erhält eine echte dreizeilige Innenstruktur:
+ * 1. Werkzeugleiste
+ * 2. Cover + Formular
+ * 3. optionale Disc-Summen
+ * Dadurch bleiben "Discs von" und Hilfetexte innerhalb der Kachel.
+ */
+@media (min-width:1050px){
+  #tagsView.appView.active{
+    grid-template-rows:72px auto minmax(0,1fr)!important;
+    gap:12px!important;
+    height:calc(100dvh - 252px)!important;
+    max-height:calc(100dvh - 252px)!important;
+    min-height:0!important;
+    overflow:hidden!important;
+  }
+
+  #tagsView.appView.active > .tagEditor{
+    display:grid!important;
+    grid-template-columns:300px minmax(0,1fr)!important;
+    grid-template-rows:42px auto auto!important;
+    column-gap:14px!important;
+    row-gap:8px!important;
+    height:auto!important;
+    min-height:258px!important;
+    max-height:none!important;
+    overflow:hidden!important;
+    padding:10px 10px 14px!important;
+    box-sizing:border-box!important;
+    align-content:start!important;
+  }
+
+  #tagsView.appView.active > .tagEditor > .toolbar{
+    grid-column:1 / -1!important;
+    grid-row:1!important;
+  }
+
+  #tagsView.appView.active > .tagEditor > .tagCoverRow{
+    grid-column:1!important;
+    grid-row:2!important;
+    height:auto!important;
+    min-height:176px!important;
+    max-height:none!important;
+    overflow:visible!important;
+    align-self:start!important;
+  }
+
+  #tagsView.appView.active > .tagEditor > .formgrid.compact.compilationAwareForm{
+    grid-column:2!important;
+    grid-row:2!important;
+    display:grid!important;
+    grid-template-columns:104px minmax(170px,1fr) 90px minmax(260px,1.15fr)!important;
+    grid-auto-rows:minmax(34px,auto)!important;
+    gap:8px 10px!important;
+    height:auto!important;
+    min-height:176px!important;
+    max-height:none!important;
+    overflow:visible!important;
+    align-content:start!important;
+    margin:0!important;
+  }
+
+  #tagsView.appView.active > .tagEditor > .discTotalsBox{
+    grid-column:2!important;
+    grid-row:3!important;
+    display:block!important;
+    width:100%!important;
+    height:auto!important;
+    min-height:0!important;
+    max-height:none!important;
+    margin:0!important;
+    overflow:visible!important;
+  }
+
+  #tagsView.appView.active .compilationFullRow,
+  #tagsView.appView.active #tagCompilationHelp{
+    height:auto!important;
+    min-height:0!important;
+    max-height:none!important;
+    overflow:visible!important;
+  }
+
+  #tagsView.appView.active > .tagTracksPanel{
+    min-height:0!important;
+    height:100%!important;
+    max-height:none!important;
+    overflow:hidden!important;
+    margin:0!important;
+  }
+
+  #tagsView.appView.active > .tagTracksPanel > .tagTrackScroll{
+    flex:1 1 0!important;
+    min-height:0!important;
+    height:auto!important;
+    overflow:auto!important;
+    padding-bottom:10px!important;
+  }
+}
+
+/* Die zusätzliche Taste bleibt auch bei mittleren Breiten brauchbar. */
+@media (max-width:1320px){
+  header{
+    gap:6px!important;
+  }
+  header > button{
+    padding-left:10px!important;
+    padding-right:10px!important;
+  }
+  .analyzeMissingButton{
+    font-size:12px!important;
+  }
+}
+\n\n/* v2.3.3 - Header-Aktionsleiste */\nheader{display:grid!important;grid-template-columns:auto minmax(0,1fr)!important;grid-template-rows:auto auto auto!important;align-items:center!important;gap:8px 12px!important;padding:10px 12px!important;box-sizing:border-box!important;}\nheader>h1{grid-column:1!important;grid-row:1!important;margin:0!important;white-space:nowrap!important;}\n.headerActions{grid-column:2!important;grid-row:1!important;display:flex!important;align-items:center!important;gap:8px!important;min-width:0!important;flex-wrap:nowrap!important;overflow-x:auto!important;scrollbar-width:none!important;}\n.headerActions::-webkit-scrollbar{display:none!important;}\n.headerActions>button{flex:0 0 auto!important;white-space:nowrap!important;margin:0!important;min-height:36px!important;}\n.headerStatus{grid-column:1/-1!important;grid-row:2!important;display:flex!important;align-items:center!important;gap:10px!important;min-width:0!important;width:100%!important;}\n.headerStatus .bar{flex:1 1 auto!important;min-width:160px!important;}\n.viewTabs{grid-column:1/-1!important;grid-row:3!important;display:flex!important;justify-content:flex-end!important;align-items:center!important;gap:6px!important;min-width:0!important;overflow-x:auto!important;white-space:nowrap!important;scrollbar-width:none!important;}\n.viewTabs::-webkit-scrollbar{display:none!important;}\n#btnStop{order:5!important;min-width:64px!important;}\n@media(max-width:1350px){header{grid-template-columns:1fr!important;grid-template-rows:auto auto auto auto!important;}header>h1{grid-column:1!important;grid-row:1!important}.headerActions{grid-column:1!important;grid-row:2!important;width:100%!important}.headerStatus{grid-column:1!important;grid-row:3!important}.viewTabs{grid-column:1!important;grid-row:4!important;justify-content:flex-start!important}.headerActions>button{font-size:13px!important;padding:8px 12px!important}}\n@media(max-width:1050px){.headerActions{gap:6px!important}.headerActions>button{font-size:12px!important;padding:7px 10px!important}}\n
+
+/* v2.3.4 - kompakter Analyse-Button */
+.analyzeMissingButton{
+  padding-left:10px!important;
+  padding-right:10px!important;
+  min-width:auto!important;
+  white-space:nowrap!important;
+}
+@media (max-width:1350px){
+  .analyzeMissingButton{padding-left:8px!important;padding-right:8px!important;}
+}
+
+/* ============================================================
+   v2.5.0 - kompakte Interpreten-Sammelansicht im Tag-Editor
+   ============================================================ */
+@media (min-width:1050px){
+  #tagsView.appView.active.aggregateArtistMode{
+    grid-template-rows:72px 142px minmax(0,1fr)!important;
+  }
+
+  #tagsView.appView.active.aggregateArtistMode > .tagEditor{
+    display:grid!important;
+    grid-template-columns:minmax(0,1fr)!important;
+    grid-template-rows:42px auto!important;
+    min-height:142px!important;
+    height:142px!important;
+    padding:10px 14px!important;
+    overflow:hidden!important;
+  }
+
+  #tagsView.appView.active.aggregateArtistMode > .tagEditor > .toolbar{
+    grid-column:1!important;
+    grid-row:1!important;
+  }
+
+  #tagsView.appView.active.aggregateArtistMode > .tagEditor > .tagCoverRow,
+  #tagsView.appView.active.aggregateArtistMode > .tagEditor > .discTotalsBox{
+    display:none!important;
+  }
+
+  #tagsView.appView.active.aggregateArtistMode > .tagEditor > .formgrid.compact.compilationAwareForm{
+    grid-column:1!important;
+    grid-row:2!important;
+    display:grid!important;
+    grid-template-columns:150px minmax(280px,620px) minmax(0,1fr)!important;
+    grid-template-rows:38px!important;
+    gap:10px!important;
+    min-height:38px!important;
+    height:38px!important;
+    margin:0!important;
+    overflow:visible!important;
+    align-items:center!important;
+  }
+
+  /* In der Sammelansicht wird ausschließlich der Album-Tag gemeinsam geändert. */
+  #tagsView.appView.active.aggregateArtistMode > .tagEditor > .formgrid.compact.compilationAwareForm > *{
+    display:none!important;
+  }
+  #tagsView.appView.active.aggregateArtistMode > .tagEditor > .formgrid.compact.compilationAwareForm > :nth-child(4),
+  #tagsView.appView.active.aggregateArtistMode > .tagEditor > .formgrid.compact.compilationAwareForm > :nth-child(5){
+    display:block!important;
+  }
+  #tagsView.appView.active.aggregateArtistMode > .tagEditor > .formgrid.compact.compilationAwareForm > :nth-child(4){
+    grid-column:1!important;
+  }
+  #tagsView.appView.active.aggregateArtistMode > .tagEditor > .formgrid.compact.compilationAwareForm > :nth-child(5){
+    grid-column:2!important;
+    width:100%!important;
+  }
+  #tagsView.appView.active.aggregateArtistMode > .tagEditor > .formgrid.compact.compilationAwareForm::after{
+    content:'Ändert nur den Album-Tag aller angezeigten Titel. Titel und Interpret bleiben einzeln bearbeitbar.';
+    grid-column:3!important;
+    color:var(--muted);
+    font-size:12px;
+    line-height:1.3;
+  }
+}
+
+/* MusicLab v2.5.0 – tabellarischer Tag-Editor */
+body:has(#tagsView.active) .workbenchLayout>aside{display:none}
+body:has(#tagsView.active) .workbenchLayout{grid-template-columns:minmax(0,1fr)}
+.tagGridPage{min-width:0}.tagGridHeader{display:flex;align-items:center;justify-content:space-between;gap:16px}.tagGridHeaderActions{display:flex;align-items:center;gap:10px}.changePill{padding:7px 11px;border-radius:999px;background:var(--surface2);color:var(--muted);font-size:12px}.changePill.dirty{color:#ffd36a;background:rgba(255,190,70,.12)}
+.tagGridToolbar{display:flex;gap:10px;align-items:center;margin-top:12px;padding:12px}.tagGridToolbar>input[type=search]{flex:1;min-width:220px}.checkChip{display:inline-flex;align-items:center;gap:7px;white-space:nowrap;padding:7px 10px;border-radius:10px;background:var(--surface2);font-size:12px}.tagGridWorkspace{display:grid;grid-template-columns:minmax(0,1fr) 300px;gap:12px;margin-top:12px;min-height:620px}.tagGridMain{min-width:0;padding:0;overflow:hidden}.tagGridScroll{overflow:auto;height:calc(100vh - 310px);min-height:500px}.tagGridTable{width:max-content;min-width:100%;border-collapse:separate;border-spacing:0}.tagGridTable th,.tagGridTable td{border-bottom:1px solid var(--border);padding:6px;vertical-align:middle}.tagGridTable thead{position:sticky;top:0;z-index:4;background:var(--panel)}.tagGridTable thead tr:first-child th{top:0}.tagGridTable .columnFilters th{position:sticky;top:36px;background:var(--panel);padding-top:3px;padding-bottom:7px}.columnFilters input,.columnFilters select{width:100%;min-width:70px;padding:6px 7px;font-size:11px}.tagGridTable td input[type=text],.tagGridTable td input:not([type]){width:100%;min-width:90px;padding:7px 8px}.tagGridTable td:nth-child(3) input{min-width:150px}.tagGridTable td:nth-child(4) input{min-width:180px}.tagGridTable td:nth-child(6) input{min-width:180px}.tagGridTable td:nth-child(8) input{min-width:120px}.tagGridTable .pathCell{max-width:320px;min-width:220px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:var(--muted);font-size:11px}.tagGridTable tr.selected{background:rgba(78,155,255,.08)}.tagGridTable tr.changed{box-shadow:inset 3px 0 #f3b34a}.selectCol{width:34px}.coverCol{width:46px}.compCol{width:110px;text-align:center}.miniCover{width:32px;height:32px;border-radius:5px;object-fit:cover;display:block;background:var(--surface2);cursor:pointer}.miniCoverFallback{display:grid;place-items:center;width:32px;height:32px;border-radius:5px;background:var(--surface2);cursor:pointer}.tagGridFooter{display:flex;justify-content:space-between;padding:10px 12px;color:var(--muted);font-size:12px}.tagBulkBar{display:flex;align-items:center;gap:8px;padding:10px 12px;border-bottom:1px solid var(--border);background:var(--surface2)}.tagBulkBar input{max-width:150px}.tagPropertyPanel{padding:14px;overflow:auto;height:calc(100vh - 286px);min-height:524px}.propertyHead{display:flex;justify-content:space-between;align-items:center}.propertyEmpty{color:var(--muted);font-size:13px;line-height:1.5;padding:30px 6px;text-align:center}.propertyCover{width:100%;box-sizing:border-box;margin:8px 0 12px}.tagPropertyList{display:grid;grid-template-columns:70px 1fr;gap:8px 10px;font-size:12px}.tagPropertyList dt{color:var(--muted)}.tagPropertyList dd{margin:0;word-break:break-word}.hidden{display:none!important}.tagPropertyPanel.collapsed{display:none}.tagGridWorkspace:has(.tagPropertyPanel.collapsed){grid-template-columns:minmax(0,1fr)}
+@media(max-width:1100px){.tagGridWorkspace{grid-template-columns:minmax(0,1fr)}.tagPropertyPanel{height:auto;min-height:0}.tagGridToolbar{flex-wrap:wrap}}
+/* v2.5.1: performante Tag-Tabelle mit Seitennavigation */
+.tagGridPager{display:flex;align-items:center;gap:8px}.tagGridPager button{padding:5px 9px;font-size:11px}.tagGridLoading{text-align:center;padding:40px!important;color:var(--muted)}.tagGridTable tr.focused{outline:1px solid rgba(100,175,255,.55);outline-offset:-1px}
+
+/* v2.5.2: Tag-Seite nutzt die verfügbare Höhe vollständig und scrollt zuverlässig */
+#tagsView.appView.active.tagGridPage{
+  display:grid;
+  grid-template-rows:auto auto minmax(0,1fr);
+  gap:10px;
+  height:100%;
+  min-height:0;
+  overflow:hidden;
+  align-content:stretch;
+}
+#tagsView.appView.active.tagGridPage > .tagsHeader,
+#tagsView.appView.active.tagGridPage > .tagGridToolbar{
+  margin:0;
+  min-height:0;
+}
+#tagsView.appView.active.tagGridPage > .tagGridToolbar{
+  align-self:start;
+}
+#tagsView.appView.active.tagGridPage > .tagGridWorkspace{
+  margin:0;
+  min-height:0;
+  height:auto;
+  overflow:hidden;
+  align-self:stretch;
+}
+#tagsView.appView.active .tagGridMain{
+  display:flex;
+  flex-direction:column;
+  min-height:0;
+  height:100%;
+}
+#tagsView.appView.active .tagGridScroll{
+  flex:1 1 auto;
+  height:auto;
+  min-height:0;
+  overflow:auto;
+  overscroll-behavior:contain;
+  scrollbar-gutter:stable;
+}
+#tagsView.appView.active .tagGridFooter{
+  flex:0 0 auto;
+}
+#tagsView.appView.active .tagPropertyPanel{
+  height:auto;
+  min-height:0;
+  max-height:none;
+  overflow:auto;
+}
+@media(max-width:1100px){
+  #tagsView.appView.active.tagGridPage{overflow:auto;height:auto;min-height:100%}
+  #tagsView.appView.active.tagGridPage > .tagGridWorkspace{overflow:visible}
+  #tagsView.appView.active .tagGridMain{min-height:520px}
+  #tagsView.appView.active .tagGridScroll{min-height:420px}
+}
+
+/* v2.5.3: Backup-Bereich in zwei gleichwertige Kacheln teilen */
+.settingsStack{display:grid;grid-template-rows:1fr 1fr;gap:12px;min-height:100%}
+.settingsStack>.settingsBlock{min-height:0}
+.csvBackupBox{display:flex;flex-direction:column;gap:10px;align-items:flex-start}
+@media(max-width:900px){.settingsStack{grid-template-rows:auto auto}}
+
+/* v2.5.6: Tag-Arbeitsbereich kompakter, hoeher und direkt unter der Filterleiste */
+#tagsView.appView.active.tagGridPage{
+  grid-template-rows:max-content max-content minmax(0,1fr)!important;
+  align-content:stretch!important;
+  gap:8px!important;
+  height:100%!important;
+}
+#tagsView.appView.active.tagGridPage>.tagsHeader{
+  padding:10px 12px!important;
+}
+#tagsView.appView.active.tagGridPage>.tagGridToolbar{
+  padding:9px 12px!important;
+  margin:0!important;
+}
+#tagsView.appView.active.tagGridPage>.tagGridWorkspace{
+  grid-row:3!important;
+  align-self:stretch!important;
+  align-items:stretch!important;
+  min-height:0!important;
+  height:100%!important;
+  margin:0!important;
+}
+#tagsView.appView.active .tagGridMain,
+#tagsView.appView.active .tagPropertyPanel{
+  height:100%!important;
+  min-height:0!important;
+  align-self:stretch!important;
+}
+#tagsView.appView.active .tagGridScroll{
+  flex:1 1 0!important;
+  min-height:0!important;
+  height:0!important;
+}
+#tagsView.appView.active .tagGridTable thead{
+  z-index:6;
+}
+@media(max-width:1100px){
+  #tagsView.appView.active.tagGridPage{height:auto!important;overflow:auto!important}
+  #tagsView.appView.active.tagGridPage>.tagGridWorkspace{height:auto!important}
+  #tagsView.appView.active .tagGridScroll{height:auto!important;min-height:440px!important}
+}
+
+/* v2.5.6: kompakte professionelle Datentabelle */
+#tagsView.appView.active.tagGridPage{grid-template-rows:max-content max-content minmax(0,1fr)!important;gap:6px!important;padding-bottom:0!important}
+#tagsView.appView.active.tagGridPage>.tagsHeader{padding:7px 10px!important}
+#tagsView.appView.active .tagsHeader h2{font-size:20px;margin-bottom:1px}
+#tagsView.appView.active .tagsHeader .small{font-size:11px;line-height:1.25}
+#tagsView.appView.active.tagGridPage>.tagGridToolbar{padding:7px 10px!important}
+.tagGridWorkspace{grid-template-columns:minmax(0,1fr) 280px;gap:8px!important}
+.tagGridWorkspace:has(.tagPropertyPanel.collapsed){grid-template-columns:minmax(0,1fr)!important}
+.propertyToggle{display:inline-flex}.propertyToggle.active{box-shadow:inset 0 0 0 1px var(--accent)}
+.tagGridTable th,.tagGridTable td{padding:4px 6px;height:34px}
+.tagGridTable tbody td{font-size:12px;white-space:nowrap}
+.tagGridTable tbody tr:hover{background:rgba(255,255,255,.035)}
+.editableCell,.numberCell{cursor:text;min-width:92px;max-width:230px;overflow:hidden;text-overflow:ellipsis}
+.editableCell span,.numberCell span{display:block;overflow:hidden;text-overflow:ellipsis}
+.editableCell.editing,.numberCell.editing{padding:2px 4px}
+.cellEditor{width:100%;min-width:70px!important;padding:5px 6px!important;font-size:12px!important;box-sizing:border-box}
+.numberCell{min-width:42px;max-width:56px;text-align:right}.totalCell,.totalCol{width:42px;min-width:42px;text-align:right;color:var(--muted)}
+.yearCell{min-width:58px;max-width:72px}.compCol{width:92px}.pathCell{max-width:260px;min-width:160px}
+.miniCover,.miniCoverFallback{width:28px;height:28px}.coverCol{width:38px}
+.columnFilters input,.columnFilters select{padding:4px 6px;font-size:10px}
+.tagGridFooter{padding:6px 10px}.tagBulkBar{padding:7px 10px}
+.tagPropertyPanel{padding:10px}.tagPropertyPanel.collapsed{display:none!important}
+@media(max-width:1100px){.propertyToggle{display:none}.tagPropertyPanel{display:none!important}}
+
+/* v2.5.7: Tag-Arbeitsbereich ohne vertikalen Leerraum - robustes Flex-Layout */
+body.tagsMode main{
+  padding-bottom:0!important;
+}
+#tagsView.appView.active.tagGridPage{
+  display:flex!important;
+  flex-direction:column!important;
+  height:100%!important;
+  min-height:0!important;
+  gap:6px!important;
+  overflow:hidden!important;
+}
+#tagsView.appView.active.tagGridPage > .tagsHeader,
+#tagsView.appView.active.tagGridPage > .tagGridToolbar{
+  flex:0 0 auto!important;
+  margin:0!important;
+}
+#tagsView.appView.active.tagGridPage > .tagGridWorkspace{
+  flex:1 1 0!important;
+  display:grid!important;
+  min-height:0!important;
+  height:auto!important;
+  margin:0!important;
+  align-self:auto!important;
+  align-items:stretch!important;
+  overflow:hidden!important;
+}
+#tagsView.appView.active .tagGridMain{
+  display:flex!important;
+  flex-direction:column!important;
+  min-height:0!important;
+  height:auto!important;
+  overflow:hidden!important;
+}
+#tagsView.appView.active .tagGridScroll{
+  flex:1 1 0!important;
+  height:auto!important;
+  min-height:0!important;
+  overflow:auto!important;
+}
+#tagsView.appView.active .tagPropertyPanel{
+  height:auto!important;
+  min-height:0!important;
+  overflow:auto!important;
+}
+@media(max-width:1100px){
+  #tagsView.appView.active.tagGridPage{
+    height:auto!important;
+    min-height:100%!important;
+    overflow:auto!important;
+  }
+  #tagsView.appView.active.tagGridPage > .tagGridWorkspace{
+    flex:none!important;
+    height:auto!important;
+    overflow:visible!important;
+  }
+  #tagsView.appView.active .tagGridScroll{
+    min-height:440px!important;
+    height:auto!important;
+  }
+}
+
+/* v2.5.8: Tags-Arbeitsbereich wird garantiert direkt unter der Filterleiste aufgespannt.
+   Absolute Positionierung beseitigt die durch alte Grid/Flex-Regeln verursachte Leerzone. */
+body.tagsMode #tagsView.appView.active.tagGridPage{
+  position:relative!important;
+  display:block!important;
+  height:100%!important;
+  min-height:0!important;
+  overflow:hidden!important;
+  padding:0!important;
+}
+body.tagsMode #tagsView.appView.active.tagGridPage > .tagsHeader{
+  position:absolute!important;
+  top:0!important;
+  left:0!important;
+  right:0!important;
+  height:68px!important;
+  min-height:68px!important;
+  max-height:68px!important;
+  margin:0!important;
+}
+body.tagsMode #tagsView.appView.active.tagGridPage > .tagGridToolbar{
+  position:absolute!important;
+  top:74px!important;
+  left:0!important;
+  right:0!important;
+  height:52px!important;
+  min-height:52px!important;
+  max-height:52px!important;
+  margin:0!important;
+}
+body.tagsMode #tagsView.appView.active.tagGridPage > .tagGridWorkspace{
+  position:absolute!important;
+  top:132px!important;
+  left:0!important;
+  right:0!important;
+  bottom:0!important;
+  width:auto!important;
+  height:auto!important;
+  min-height:0!important;
+  max-height:none!important;
+  margin:0!important;
+  display:grid!important;
+  align-items:stretch!important;
+  align-content:stretch!important;
+  overflow:hidden!important;
+}
+body.tagsMode #tagsView.appView.active .tagGridMain,
+body.tagsMode #tagsView.appView.active .tagPropertyPanel{
+  height:100%!important;
+  min-height:0!important;
+  max-height:100%!important;
+  align-self:stretch!important;
+}
+body.tagsMode #tagsView.appView.active .tagGridMain{
+  display:grid!important;
+  grid-template-rows:auto minmax(0,1fr) auto!important;
+}
+body.tagsMode #tagsView.appView.active .tagGridScroll{
+  grid-row:2!important;
+  width:100%!important;
+  height:100%!important;
+  min-height:0!important;
+  max-height:none!important;
+  overflow:auto!important;
+}
+body.tagsMode #tagsView.appView.active .tagGridFooter{
+  grid-row:3!important;
+}
+@media(max-height:760px){
+  body.tagsMode #tagsView.appView.active.tagGridPage > .tagsHeader{
+    height:60px!important;min-height:60px!important;max-height:60px!important;
+  }
+  body.tagsMode #tagsView.appView.active.tagGridPage > .tagGridToolbar{
+    top:66px!important;height:48px!important;min-height:48px!important;max-height:48px!important;
+  }
+  body.tagsMode #tagsView.appView.active.tagGridPage > .tagGridWorkspace{top:120px!important;}
+}

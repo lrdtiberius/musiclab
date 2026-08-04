@@ -1,152 +1,37 @@
+# MusicLab v2.5.8
+
+- Tag-Tabelle verwendet jetzt ein robustes Flex-Layout.
+- Der große vertikale Leerraum zwischen Filterleiste und Tabelle wurde entfernt.
+- Tabelle und Eigenschaftenbereich beginnen direkt unter der Filterleiste und nutzen die restliche Höhe.
+- Scrollbereich und Fußzeile bleiben vollständig erreichbar.
+
 # Changelog
 
-## v2.3.1
 
-- abgeschnittene Compilation-Beschriftung behoben
-- Compilation-Steuerung auf die komplette rechte Formularhälfte erweitert
-- feste Abschneidehöhen der Album-Tags-Kachel entfernt
-- untere Kartenkante und Hilfetexte vollständig sichtbar
+## v2.5.8
 
+- Tag-Tabelle beginnt nun garantiert direkt unter der Filterleiste.
+- Der Arbeitsbereich wird per fester Ober-/Unterkante über die gesamte verbleibende Fensterhöhe aufgespannt.
+- Alte Grid- und Flex-Regeln können keinen großen Leerraum mehr erzeugen.
+- Tabelle, Fußzeile und Eigenschaftenleiste bleiben vollständig erreichbar und separat scrollbar.
 
+## 2.5.8
+- Tag-Tabelle als ruhige Datentabelle: Bearbeitung per Doppelklick statt permanenter Eingabefelder.
+- Track- und CD-Nummern werden in Nummer und Gesamtzahl getrennt dargestellt.
+- Eigenschaftenleiste ist standardmäßig eingeklappt und kann bei Bedarf geöffnet werden.
+- Kompakter Kopfbereich und deutlich größere nutzbare Tabellenfläche.
+- Änderungsanzeige nennt Änderungen, Umbenennungen und Verschiebungen getrennt.
+- Cover sind anklickbar; Doppelklick öffnet die Bildauswahl.
 
-## v2.3.1
+## 2.5.8 - Tag-Editor stabilisiert
 
-- Compilation-Workflow an Apple Music angeglichen
-- echtes Compilation-Flag statt erzwungenem Albumartist-Text
-- leerer Albumartist bei Compilations erlaubt
-- individuelle Track-Interpreten bleiben erhalten
-- virtuelle Anzeige und Sortierung unter Verschiedene Interpreten
-- verständlichere Tags-Oberfläche
+- Inline-Bearbeitung für Dateien mit Apostrophen oder Sonderzeichen im Pfad repariert.
+- Änderungszähler und Hervorhebung reagieren nun auch bei diesen Titeln zuverlässig.
+- Cover-Entfernung an aktive Tabellenzeile bzw. explizite Mehrfachauswahl gebunden.
+- Unklare oder leere Cover-Auswahl wird verhindert.
+- Tag-Arbeitsbereich nach oben gezogen und bis zum unteren Rand vergrößert.
+- Handbuch und Versionsangaben aktualisiert.
 
+## 2.5.4 - CSV-Export zuverlässig repariert
 
-
-## v2.3.1
-
-- kritischen Einstellungs-Synchronisationsfehler vor `Alles normalisieren` behoben
-- aktuelle UI-Werte werden vor der Vorschau automatisch gespeichert
-- Vorschau und Worker verwenden denselben Snapshot
-- Sicherheitsabbruch bei abweichendem Prüfcode
-- verbindliche Werte im Bestätigungsdialog und Protokoll
-
-
-
-## v2.3.1
-
-- fehlende Aktivierung von `body.tagsMode` behoben
-- bisher wirkungslose Tags-CSS-Regeln werden nun tatsächlich angewendet
-- direkter CSS-Fallback für das aktive Tags-View
-- Titel-Tags sichtbar und dauerhaft vergrößert
-
-
-
-## v2.3.1
-
-- endgültiger Höhenfix für Titel-Tags
-- Album-Tags auf feste kompakte Desktop-Höhe begrenzt
-- Tags-Seite direkt an Viewport-Höhe gekoppelt
-- ältere konkurrierende min-height-Regeln zuverlässig überschrieben
-
-
-
-## v2.3.1
-
-- Tags-Layout komplett refaktoriert
-- Album-Tags auf echte Inhaltshöhe reduziert
-- Titel-Tags füllt den gesamten restlichen Fensterplatz
-- kompakteres Cover- und Formularlayout
-- sticky Tabellenkopf
-- responsive Anpassung für niedrige und schmale Fenster
-
-
-
-## v2.3.1
-
-- Album-Tags-Layout auf Desktop kompakter angeordnet
-- Cover und Albumfelder nebeneinander
-- Titel-Tags-Bereich deutlich vergrößert
-- Fensterhöhe wird zuverlässiger ausgenutzt
-
-
-
-## v2.3.1
-
-- echte Dateikonflikte statt vorhandener Ordner zählen
-- Konflikte sicher überspringen, keine automatischen Duplikatnamen
-- idempotente Sortiervorschau
-- detaillierte Vorschau-Statistik
-- Sortierungslog vollständig repariert
-- Sortier-CSV enthält Verschiebungen und Konflikte
-
-
-
-## v2.3.1
-
-- Albuminterpret bei Samplern automatisch `Verschiedene Interpreten`
-- individuelles Interpret-Feld während der Samplerkennzeichnung gesperrt
-- Sampler-Sortierung nach Albumartist statt Titelartist
-- präzise Anzeige tatsächlich verschobener Dateien
-- falsche Meldung zu bereits vorhandenen Albumordnern behoben
-- bereits Apple-kompatible JPEG-Cover werden nicht erneut eingebettet
-
-
-
-## v2.3.1
-
-- Cover-Auswahl und Cover-Löschen getrennt
-- robuste JPEG-Konvertierung
-- Covervorschau erst nach erfolgreichem Upload
-- größere Titel-Tags-Fläche
-- identische Protokollfilter in Safari
-
-
-
-## v2.3.1
-
-- Titel-Tags nutzen die vollständige verbleibende Fensterhöhe
-- altes Main-Grid im Tags-Modus neutralisiert
-- alle Protokollfilter mit identischer Breite und Höhe
-- keine Größenänderung beim Umschalten der Filter
-
-
-
-## v2.3.1
-
-- exakte, case-sensitive Auswahl von Interpreten im Tag-Editor
-- falsche Schreibweisen bleiben gezielt bearbeitbar
-- Signatur dezent in die obere Navigation verschoben
-- deutlich größerer Titel-Tags-Bereich
-- kompakterer Album-Tags-Bereich
-
-
-## v2.3.1
-
-- Titel-Tabelle auf der Tags-Seite vergrößert
-- größere Eingabefelder und Schrift für Titel, Interpret, Track und Disc
-- verbleibender Platz nach unten wird besser genutzt
-- kompaktere Darstellung bei niedrigen Browserfenstern
-
-## v2.3.1
-
-- Checkbox „Album als Verschiedene Interpreten anzeigen“ auf der Tags-Seite
-- schreibt Album Artist und Compilation-Flag in unterstützte Formate
-- individuelle Titelinterpreten bleiben erhalten
-- markierte Alben erscheinen gebündelt unter „Verschiedene Interpreten“
-
-## v2.3.1
-
-- schnelle Wiederherstellung aller vorhandenen Backups
-- Vorschau mit Dateianzahl, Größe und fehlenden Backups
-- je Datei wird das neueste Backup verwendet
-- Backups bleiben nach der Wiederherstellung bestehen
-- Analysewerte der wiederhergestellten Titel werden sicher zurückgesetzt
-
-## v2.3.1
-- sichere statische Pegelanpassung statt dynamischem loudnorm bei der Normalisierung
-- einstellbare LUFS-Toleranz (Standard ±1,5 LUFS)
-- nur Titel außerhalb der Toleranz werden verändert
-- positive Verstärkung wird ohne Limiter am True-Peak-Ziel begrenzt
-- CSV-Export der vollständigen Normalisierungs-Vorschau
-- bestehende Scan-, Tag-, Cover- und Layoutverbesserungen bleiben erhalten
-
-## v2.0.1
-- Benutzerhandbuch und bereinigtes Release-Paket
+- Vollständiger Bibliotheksexport wird direkt vom Backend geladen und validiert.
