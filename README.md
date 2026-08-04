@@ -1,12 +1,15 @@
-# MusicLab v2.5.8
+# MusicLab v2.6.1
 
 MusicLab analysiert, normalisiert und verwaltet eine lokale Musikbibliothek.
 
-## Neu in 2.5.8
+## Neu in v2.6.1
 
-- Eingaben in Titeln mit Apostrophen und Sonderzeichen werden zuverlässig als Änderung erkannt.
-- Cover entfernen nutzt eindeutig die aktive Zeile oder die markierten Titel.
-- Die Tag-Tabelle beginnt direkt unter der Filterleiste und nutzt die verfügbare Höhe besser.
-- Tabelle und Eigenschaftenleiste scrollen weiterhin unabhängig.
+- Sortierung über die Spaltenüberschriften der Tag-Tabelle.
+- Aufsteigend, absteigend oder unsortiert per wiederholtem Klick.
+- Mehrfachsortierung mit Shift-Klick.
+- Numerische Sortierung für Track, Gesamttracks, CD, Gesamt-CDs und Jahr.
+- Sortierung über die vollständige gefilterte Bibliothek, nicht nur die aktuelle Seite.
+- Sortierung bleibt beim Filtern, Aktualisieren und Blättern erhalten.
+- Vergrößerter Tabellenbereich bis fast an den unteren Fensterrand.
 
-Vollständige Anleitung: `MusicLab_Benutzerhandbuch_v2.5.8.pdf`
+Vollständige Anleitung: `MusicLab_Benutzerhandbuch_v2.6.1.pdf`

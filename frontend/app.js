@@ -1,5 +1,5 @@
 const API='http://'+location.hostname+':8091/api';
-const APP_VERSION='2.5.8';
+const APP_VERSION='2.6.1';
 let coverCacheBust=Date.now();
 let selectedArtist=null, selectedAlbum=null, selectedTagFolder=null;
 let selectedUiKey=null; // v1.9.39: eindeutige visuelle Einzelauswahl für Listen und Album-Kacheln
@@ -3219,7 +3219,7 @@ async function restoreAllBackups(){
 }
 
 
-/* MusicLab v2.5.8 – tabellarischer Tag-Editor */
+/* MusicLab v2.6.1 – tabellarischer Tag-Editor mit Mehrfachsortierung */
 let tagGridRows=[];
 let tagGridOriginal=new Map();
 let tagGridSelected=new Set();
@@ -3227,6 +3227,7 @@ let tagGridFocusedPath='';
 let tagGridPage=1;
 let tagGridPageSize=100;
 let tagGridRenderTimer=null;
+let tagGridSorts=(()=>{try{const saved=JSON.parse(localStorage.getItem('musiclabTagGridSorts')||'[]');return Array.isArray(saved)?saved.filter(x=>x&&x.key&&['asc','desc'].includes(x.direction)):[]}catch(_){return []}})();
 
 function tagGridKey(path){return String(path||'');}
 function tagGridEncodePath(path){return encodeURIComponent(tagGridKey(path)).replace(/'/g,'%27');}
@@ -3254,16 +3255,65 @@ function scheduleTagGridRender(resetPage=true){
 function tagGridFilters(){
   const out={};document.querySelectorAll('.columnFilters [data-filter]').forEach(el=>out[el.dataset.filter]=String(el.value||'').trim().toLowerCase());return out;
 }
+function tagGridSortValue(row,key){
+  const track=tagGridNumberParts(row.tracknumber),disc=tagGridNumberParts(row.discnumber);
+  if(key==='trackNumber')return track.number===''?null:Number(track.number);
+  if(key==='trackTotal')return track.total===''?null:Number(track.total);
+  if(key==='discNumber')return disc.number===''?null:Number(disc.number);
+  if(key==='discTotal')return disc.total===''?null:Number(disc.total);
+  if(key==='year'){
+    const m=String(row.year||'').match(/\d{4}/);return m?Number(m[0]):null;
+  }
+  if(key==='compilation')return row.compilation?1:0;
+  return String(row[key]??'').trim();
+}
+function compareTagGridValues(a,b,key,direction){
+  const av=tagGridSortValue(a,key),bv=tagGridSortValue(b,key);
+  const aMissing=av===null||av==='',bMissing=bv===null||bv==='';
+  if(aMissing||bMissing){if(aMissing&&bMissing)return 0;return aMissing?1:-1;}
+  let cmp=0;
+  if(typeof av==='number'&&typeof bv==='number')cmp=av-bv;
+  else cmp=String(av).localeCompare(String(bv),'de',{numeric:true,sensitivity:'base'});
+  return direction==='desc'?-cmp:cmp;
+}
+function sortedTagGridRows(rows){
+  if(!tagGridSorts.length)return rows;
+  return rows.map((row,index)=>({row,index})).sort((a,b)=>{
+    for(const sort of tagGridSorts){const cmp=compareTagGridValues(a.row,b.row,sort.key,sort.direction);if(cmp)return cmp;}
+    return a.index-b.index;
+  }).map(x=>x.row);
+}
+function toggleTagGridSort(event,key){
+  const additive=!!event.shiftKey;
+  const existing=tagGridSorts.find(x=>x.key===key);
+  let next=null;
+  if(!existing)next='asc';else if(existing.direction==='asc')next='desc';
+  if(!additive)tagGridSorts=[];
+  else tagGridSorts=tagGridSorts.filter(x=>x.key!==key);
+  if(next)tagGridSorts.push({key,direction:next});
+  try{localStorage.setItem('musiclabTagGridSorts',JSON.stringify(tagGridSorts));}catch(_){}
+  tagGridPage=1;renderTagGrid();
+}
+function updateTagGridSortHeaders(){
+  document.querySelectorAll('.tagGridTable th[data-sort]').forEach(th=>{
+    const idx=tagGridSorts.findIndex(x=>x.key===th.dataset.sort),sort=idx>=0?tagGridSorts[idx]:null;
+    th.classList.toggle('sorted',!!sort);th.classList.toggle('sortAsc',sort?.direction==='asc');th.classList.toggle('sortDesc',sort?.direction==='desc');
+    th.setAttribute('aria-sort',sort?(sort.direction==='asc'?'ascending':'descending'):'none');
+    const indicator=th.querySelector('.sortIndicator');if(indicator)indicator.innerHTML=sort?`${sort.direction==='asc'?'▲':'▼'}${tagGridSorts.length>1?`<sup>${idx+1}</sup>`:''}`:'↕';
+    th.title='Klicken: sortieren · erneut klicken: Richtung wechseln · Shift+Klick: weitere Sortierspalte';
+  });
+}
 function filteredTagGridRows(){
   const global=String(document.getElementById('tagGridSearch')?.value||'').trim().toLowerCase();
   const filters=tagGridFilters(), onlyChanged=!!document.getElementById('tagOnlyChanged')?.checked, onlyMissing=!!document.getElementById('tagOnlyMissing')?.checked;
-  return tagGridRows.filter(r=>{
+  const filtered=tagGridRows.filter(r=>{
     if(onlyChanged&&!tagGridIsChanged(r))return false;
     if(onlyMissing&&r.artist&&r.title&&r.album&&r.genre&&r.year)return false;
     const vals={artist:r.artist,title:r.title,track:r.tracknumber,album:r.album,disc:r.discnumber,genre:r.genre,year:r.year,path:r.path,compilation:r.compilation?'1':'0'};
     if(global&&!Object.values(vals).join(' ').toLowerCase().includes(global))return false;
     return Object.entries(filters).every(([k,v])=>!v||String(vals[k]??'').toLowerCase().includes(v));
   });
+  return sortedTagGridRows(filtered);
 }
 function tagGridNumberParts(value){const m=String(value||'').trim().match(/^(\d*)\s*(?:\/\s*(\d*))?$/);return m?{number:m[1]||'',total:m[2]||''}:{number:String(value||''),total:''};}
 function tagGridTextCell(encodedPath,key,value,extra=''){
@@ -3315,7 +3365,7 @@ function renderTagGrid(){
   const prev=document.getElementById('tagGridPrev');if(prev)prev.disabled=tagGridPage<=1;
   const next=document.getElementById('tagGridNext');if(next)next.disabled=tagGridPage>=pages;
   const selectAll=document.getElementById('tagGridSelectAll');if(selectAll){selectAll.checked=rows.length>0&&rows.every(r=>tagGridSelected.has(tagGridKey(r.path)));selectAll.indeterminate=rows.some(r=>tagGridSelected.has(tagGridKey(r.path)))&&!selectAll.checked;}
-  updateTagGridBulkBar();updateTagGridDirtyState();
+  updateTagGridBulkBar();updateTagGridDirtyState();updateTagGridSortHeaders();
 }
 function beginNumberEdit(event,td,encodedPath,kind,part,value){event.stopPropagation();if(td.querySelector('input'))return;td.classList.add('editing');td.innerHTML=`<input class="cellEditor numberEditor" inputmode="numeric" value="${escAttr(value)}">`;const i=td.querySelector('input');i.focus();i.select();i.addEventListener('blur',()=>editTagGridNumberPart(encodedPath,kind,part,i.value),{once:true});i.addEventListener('keydown',e=>{if(e.key==='Enter')i.blur();});}
 

@@ -1,37 +1,31 @@
-# MusicLab v2.5.8
+# MusicLab Changelog
 
-- Tag-Tabelle verwendet jetzt ein robustes Flex-Layout.
-- Der große vertikale Leerraum zwischen Filterleiste und Tabelle wurde entfernt.
-- Tabelle und Eigenschaftenbereich beginnen direkt unter der Filterleiste und nutzen die restliche Höhe.
-- Scrollbereich und Fußzeile bleiben vollständig erreichbar.
+## v2.6.1
 
-# Changelog
+### Tag-Tabelle
 
+- Sortierung per Klick auf Interpret, Titel, Track, Track-Gesamtzahl, Album, CD, CD-Gesamtzahl, Genre, Jahr, "Verschiedene Interpreten" und Pfad.
+- Drei Zustände je Spalte: aufsteigend, absteigend und keine Sortierung.
+- Mehrfachsortierung mit Shift-Klick; kleine Zahlen zeigen die Reihenfolge der Sortierkriterien.
+- Track-, CD- und Jahreswerte werden numerisch sortiert.
+- Leere Werte bleiben unabhängig von der Sortierrichtung am Ende.
+- Die Sortierung gilt für alle gefilterten Titel, nicht nur für die sichtbare Seite.
+- Sortierung bleibt bei Filtern, Aktualisieren und Seitenwechsel erhalten und wird lokal im Browser gespeichert.
+
+### Oberfläche
+
+- Die Tabellenkachel nutzt den verbleibenden Platz bis fast an den unteren Rand.
+- Sortierbare Überschriften besitzen klare Hover- und Aktivzustände.
+- Tabellenkopf, Filterzeile, Scrollbereich und Seitennavigation bleiben erreichbar.
 
 ## v2.5.8
 
-- Tag-Tabelle beginnt nun garantiert direkt unter der Filterleiste.
-- Der Arbeitsbereich wird per fester Ober-/Unterkante über die gesamte verbleibende Fensterhöhe aufgespannt.
-- Alte Grid- und Flex-Regeln können keinen großen Leerraum mehr erzeugen.
-- Tabelle, Fußzeile und Eigenschaftenleiste bleiben vollständig erreichbar und separat scrollbar.
+- Tag-Arbeitsbereich wird direkt unter der Filterleiste aufgespannt.
+- Tabelle und Eigenschaftenbereich nutzen die restliche Fensterhöhe.
+- Scrollbereich und Fußzeile bleiben vollständig erreichbar.
 
-## 2.5.8
-- Tag-Tabelle als ruhige Datentabelle: Bearbeitung per Doppelklick statt permanenter Eingabefelder.
-- Track- und CD-Nummern werden in Nummer und Gesamtzahl getrennt dargestellt.
-- Eigenschaftenleiste ist standardmäßig eingeklappt und kann bei Bedarf geöffnet werden.
-- Kompakter Kopfbereich und deutlich größere nutzbare Tabellenfläche.
-- Änderungsanzeige nennt Änderungen, Umbenennungen und Verschiebungen getrennt.
-- Cover sind anklickbar; Doppelklick öffnet die Bildauswahl.
+## v2.5.6
 
-## 2.5.8 - Tag-Editor stabilisiert
-
-- Inline-Bearbeitung für Dateien mit Apostrophen oder Sonderzeichen im Pfad repariert.
-- Änderungszähler und Hervorhebung reagieren nun auch bei diesen Titeln zuverlässig.
-- Cover-Entfernung an aktive Tabellenzeile bzw. explizite Mehrfachauswahl gebunden.
-- Unklare oder leere Cover-Auswahl wird verhindert.
-- Tag-Arbeitsbereich nach oben gezogen und bis zum unteren Rand vergrößert.
-- Handbuch und Versionsangaben aktualisiert.
-
-## 2.5.4 - CSV-Export zuverlässig repariert
-
-- Vollständiger Bibliotheksexport wird direkt vom Backend geladen und validiert.
+- Ruhige Datentabelle mit Bearbeitung per Doppelklick.
+- Track- und CD-Nummern werden getrennt von der Gesamtzahl angezeigt.
+- Einklappbare Eigenschaftenleiste und kompakterer Kopfbereich.

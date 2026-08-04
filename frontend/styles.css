@@ -3890,7 +3890,7 @@ body.tagsMode main{
   }
 }
 
-/* v2.5.8: Tags-Arbeitsbereich wird garantiert direkt unter der Filterleiste aufgespannt.
+/* v2.6.1: Tags-Arbeitsbereich wird garantiert direkt unter der Filterleiste aufgespannt.
    Absolute Positionierung beseitigt die durch alte Grid/Flex-Regeln verursachte Leerzone. */
 body.tagsMode #tagsView.appView.active.tagGridPage{
   position:relative!important;
@@ -3967,3 +3967,16 @@ body.tagsMode #tagsView.appView.active .tagGridFooter{
   }
   body.tagsMode #tagsView.appView.active.tagGridPage > .tagGridWorkspace{top:120px!important;}
 }
+
+
+/* v2.6.1: Spaltensortierung und maximaler Tabellenraum */
+.tagGridTable th.sortableHeader{cursor:pointer;user-select:none;white-space:nowrap;transition:background .12s,color .12s}
+.tagGridTable th.sortableHeader:hover{background:rgba(96,165,250,.09);color:var(--text)}
+.tagGridTable th.sortableHeader.sorted{color:#8ec5ff;background:rgba(96,165,250,.10)}
+.sortIndicator{display:inline-flex;align-items:flex-start;min-width:18px;margin-left:4px;color:var(--muted);font-size:10px;line-height:1}
+.sortableHeader.sorted .sortIndicator{color:#8ec5ff;font-weight:800}
+.sortIndicator sup{font-size:8px;margin-left:1px;top:-.2em;position:relative}
+body.tagsMode #tagsView.appView.active.tagGridPage > .tagGridWorkspace{bottom:2px!important}
+body.tagsMode #tagsView.appView.active .tagGridMain{border-bottom-left-radius:14px;border-bottom-right-radius:14px}
+body.tagsMode #tagsView.appView.active .tagGridScroll{min-height:0!important}
+body.tagsMode main{padding-bottom:0!important;margin-bottom:0!important}

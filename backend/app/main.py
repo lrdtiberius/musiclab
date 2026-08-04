@@ -56,7 +56,7 @@ except Exception:
 Image = PILImage
 
 SCHEMA_VERSION = 25
-APP_VERSION = "2.5.8"
+APP_VERSION = "2.6.1"
 
 
 LOG_TZ = os.getenv("TZ") or os.getenv("LOG_TZ") or "Europe/Berlin"

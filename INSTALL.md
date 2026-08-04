@@ -1,4 +1,4 @@
-# Installation MusicLab v2.5.8
+# Installation MusicLab v2.6.1
 
 1. Vorhandenen Ordner `/volume1/docker/musiclab/data` sichern und beibehalten.
 2. Dateien aus diesem Paket in `/volume1/docker/musiclab` kopieren.
