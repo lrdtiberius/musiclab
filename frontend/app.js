@@ -1,5 +1,6 @@
 const API='http://'+location.hostname+':8091/api';
-const APP_VERSION='2.6.1';
+const APP_VERSION='2.7.2';
+const COMPILATION_ALBUM_ARTIST='Verschiedene Interpreten';
 let coverCacheBust=Date.now();
 let selectedArtist=null, selectedAlbum=null, selectedTagFolder=null;
 let selectedUiKey=null; // v1.9.39: eindeutige visuelle Einzelauswahl für Listen und Album-Kacheln
@@ -367,7 +368,11 @@ async function loadSettings(){
   truePeak.value=s.true_peak || '-1.5';
   lra.value=s.lra || '11';
   backupMode.value=s.backup_mode || 'on';
-  parallelAnalysis.value=s.parallel_analysis || '2';
+  const analysisMode=s.parallel_analysis || 'auto';
+  if(!Array.from(parallelAnalysis.options).some(o=>o.value===analysisMode)){
+    parallelAnalysis.add(new Option(analysisMode==='auto'?'Automatisch':analysisMode,analysisMode));
+  }
+  parallelAnalysis.value=analysisMode;
   if(typeof parallelNormalize!=='undefined') parallelNormalize.value=s.parallel_normalize || '2';
   if(typeof normalizeTolerance!=='undefined') normalizeTolerance.value=s.normalize_tolerance_lufs || '1.5';
   if(typeof normalizeTolerancePage!=='undefined') normalizeTolerancePage.value=s.normalize_tolerance_lufs || '1.5';
@@ -1802,12 +1807,12 @@ function syncCompilationAlbumArtist(fromLoad=false){
     if(current){
       artist.dataset.singleArtist=current;
     }
-    artist.value='';
+    artist.value=COMPILATION_ALBUM_ARTIST;
     artist.disabled=true;
-    artist.placeholder='Durch Compilation-Flag ersetzt';
-    artist.title='Wie in Apple Music: Das Album wird über das Compilation-Flag gruppiert. Die individuellen Titelinterpreten bleiben erhalten.';
+    artist.placeholder=COMPILATION_ALBUM_ARTIST;
+    artist.title='Für Apple Music werden Compilation-Flag und ein gemeinsamer Albuminterpret geschrieben. Die individuellen Titelinterpreten bleiben erhalten.';
     if(help){
-      help.textContent='Die Titelinterpreten bleiben unverändert. MusicLab zeigt das Album virtuell als „Verschiedene Interpreten“ an.';
+      help.textContent='Die Titelinterpreten bleiben unverändert. Zusätzlich werden Compilation-Flag und der gemeinsame Albuminterpret „Verschiedene Interpreten“ geschrieben.';
     }
   }else{
     artist.disabled=false;
@@ -1886,9 +1891,9 @@ async function applyTagChanges(){
   if(!rows.length){alert('Kein Album ausgewählt.');return;}
   const artist=document.getElementById('tagAlbumArtist')?.value||'';
   const compilation=!!document.getElementById('tagCompilation')?.checked;
-  // Compilation wird über das echte Flag markiert. Der Albumartist darf
-  // wie in Apple Music leer bleiben.
-  const albumartist=compilation?'':artist;
+  // Für zuverlässige Gruppierung in Apple Music werden sowohl das echte
+  // Compilation-Flag als auch ein einheitlicher Albuminterpret geschrieben.
+  const albumartist=compilation?COMPILATION_ALBUM_ARTIST:artist;
   const aggregateArtist=!!(selectedTagFolder && String(selectedTagFolder).startsWith('__artist__:'));
   const albumInput=(document.getElementById('tagAlbumName')?.value||'').trim();
   const album=albumInput;
@@ -2120,7 +2125,7 @@ function setTagCoverPreviewFromFile(file){
   return url;
 }
 
-async function removeCurrentTagCover(){
+async function _legacyRemoveCurrentTagCover1(){
   const focused=tagGridRows.find(r=>tagGridKey(r.path)===tagGridFocusedPath);
   const selectedPaths=[...tagGridSelected].filter(Boolean);
   const paths=selectedPaths.length ? selectedPaths : (focused ? [focused.path] : []);
@@ -2146,7 +2151,7 @@ async function removeCurrentTagCover(){
   }finally{setTagActionBusy(false);}
 }
 
-async function uploadTagCover(){
+async function _legacyUploadTagCover1(){
   const inp=document.getElementById('tagCoverInput');
   const file=inp?.files?.[0];
   if(!file) return;
@@ -2953,6 +2958,33 @@ async function reembedAllCoversApple(){
 }
 
 
+async function repairCompilationsApple(){
+  let previewText='Alle bereits als Zusammenstellung markierten Titel erhalten zusätzlich einen einheitlichen Albuminterpreten.';
+  try{
+    const pv=await j(API+'/compilations/repair_preview');
+    if(pv && pv.ok!==false){
+      const examples=(pv.examples||[]).slice(0,5).map(x=>`- ${x.album||'Unbekanntes Album'} (${x.tracks} Titel)`).join('\n');
+      previewText=`Zusammenstellungen: ${pv.albums}\nTitel: ${pv.tracks}\nGemeinsamer Albuminterpret: ${pv.albumartist}\n\n${examples}${pv.albums>5?'\n...':''}`;
+    }
+  }catch(e){
+    previewText='Vorschau konnte nicht geladen werden. Der Reparaturjob kann trotzdem gestartet werden.';
+  }
+
+  if(!confirm(`Zusammenstellungen für Apple Music reparieren?\n\n${previewText}\n\nDie individuellen Titelinterpreten bleiben unverändert.`)) return;
+
+  try{
+    status.textContent='Apple-Music-Zusammenstellungen werden repariert...';
+    if(progressText) progressText.textContent='Compilation-Tags werden vorbereitet...';
+    await j(API+'/compilations/repair_all',{method:'POST'});
+    setAppView('protocol');
+    setTimeout(poll, 300);
+    setTimeout(poll, 1200);
+  }catch(e){
+    alert('Zusammenstellungen konnten nicht repariert werden:\n'+e.message);
+  }
+}
+
+
 async function exportAppleCoverMissingReport(){
   try{
     const rep=await j(API+'/covers/missing_report');
@@ -3006,7 +3038,7 @@ async function removeAllEmbeddedCovers(){
 
 
 
-async function removeCurrentTagCover(){
+async function _legacyRemoveCurrentTagCover2(){
   try{
     const paths = (typeof visibleTagPaths==='function') ? visibleTagPaths() : [];
     let folder = selectedTagFolder || '';
@@ -3116,7 +3148,7 @@ function collectVisibleTagPathsForCoverRemoval(){
   return Array.from(out);
 }
 
-removeCurrentTagCover = async function(){
+async function _legacyRemoveCurrentTagCover3(){
   try{
     const paths = collectVisibleTagPathsForCoverRemoval();
     let folder = selectedTagFolder || '';
@@ -3236,7 +3268,7 @@ function tagGridDisplayNumber(row, kind){
   return row.disc_raw || (row.disc_number ? String(row.disc_number)+(row.disc_total?'/'+row.disc_total:'') : '');
 }
 function tagGridSnapshot(row){return {artist:String(row.artist||''),title:String(row.title||''),tracknumber:tagGridDisplayNumber(row,'track'),album:String(row.album||''),discnumber:tagGridDisplayNumber(row,'disc'),genre:String(row.genre||''),year:String(row.year||''),compilation:!!Number(row.compilation||0),albumartist:String(row.albumartist||'')};}
-function tagGridIsChanged(row){const o=tagGridOriginal.get(tagGridKey(row.path));if(!o)return false;return ['artist','title','tracknumber','album','discnumber','genre','year','compilation'].some(k=>String(o[k]??'')!==String(row[k]??''));}
+function tagGridIsChanged(row){if(row?._forceAppleCompilationRepair)return true;const o=tagGridOriginal.get(tagGridKey(row.path));if(!o)return false;return ['artist','title','tracknumber','album','discnumber','genre','year','compilation'].some(k=>String(o[k]??'')!==String(row[k]??''));}
 function updateTagGridDirtyState(){
   const changed=tagGridRows.filter(tagGridIsChanged);
   let renameCount=0,moveCount=0;
@@ -3384,6 +3416,11 @@ function openTagProperties(){toggleTagProperties(true);}
 function toggleTagGridRow(encodedPath,checked){
   const p=decodeURIComponent(encodedPath);checked?tagGridSelected.add(p):tagGridSelected.delete(p);
   const tr=[...document.querySelectorAll('#tagTracks tr[data-path]')].find(x=>x.dataset.path===p);if(tr)tr.classList.toggle('selected',checked);
+  if(checked && !tagGridFocusedPath){
+    tagGridFocusedPath=p;
+    document.querySelectorAll('#tagTracks tr').forEach(x=>x.classList.toggle('focused',x===tr));
+    updateTagPropertyPanel(tagGridRows.find(r=>tagGridKey(r.path)===p)||null);
+  }
   updateTagGridBulkBar();
 }
 function toggleTagGridAll(checked){
@@ -3396,7 +3433,7 @@ function applyBulkTagValues(){
   if(!tagGridSelected.size)return;
   const album=document.getElementById('bulkAlbum')?.value.trim(),genre=document.getElementById('bulkGenre')?.value.trim(),year=document.getElementById('bulkYear')?.value.trim(),comp=!!document.getElementById('bulkCompilation')?.checked;
   if(!album&&!genre&&!year&&!comp){alert('Bitte mindestens einen Wert eingeben oder „Verschiedene Interpreten“ aktivieren.');return;}
-  tagGridRows.forEach(r=>{if(!tagGridSelected.has(tagGridKey(r.path)))return;if(album)r.album=album;if(genre)r.genre=genre;if(year)r.year=year;if(comp)r.compilation=true;});renderTagGrid();
+  tagGridRows.forEach(r=>{if(!tagGridSelected.has(tagGridKey(r.path)))return;if(album)r.album=album;if(genre)r.genre=genre;if(year)r.year=year;if(comp){r.compilation=true;r._forceAppleCompilationRepair=true;}});renderTagGrid();
 }
 function resetTagGridFilters(){const s=document.getElementById('tagGridSearch');if(s)s.value='';document.querySelectorAll('.columnFilters [data-filter]').forEach(el=>el.value='');['tagOnlyChanged','tagOnlyMissing'].forEach(id=>{const e=document.getElementById(id);if(e)e.checked=false;});tagGridPage=1;renderTagGrid();}
 function updateTagPropertyPanel(row){
@@ -3427,7 +3464,7 @@ async function applyTagChanges(){
   changed.forEach(r=>{const o=tagGridOriginal.get(tagGridKey(r.path));if(!o)return;if(o.title!==r.title)renameCount++;if(o.artist!==r.artist||o.album!==r.album||o.compilation!==r.compilation)moveCount++;});
   const msg=`${changed.length} Titel ändern\n${renameCount} Datei${renameCount===1?'':'en'} umbenennen\n${moveCount} Datei${moveCount===1?'':'en'} möglicherweise in einen anderen Ordner verschieben\n\nBestehende Dateien werden nicht überschrieben. Fortfahren?`;
   if(!confirm(msg))return;
-  const updates=changed.map(r=>({path:r.path,artist:String(r.artist||'').trim(),title:String(r.title||'').trim(),tracknumber:String(r.tracknumber||'').trim(),album:String(r.album||'').trim(),discnumber:String(r.discnumber||'').trim(),genre:String(r.genre||'').trim(),year:String(r.year||'').trim(),compilation:!!r.compilation,albumartist:r.compilation?'':String(r.artist||'').trim()}));
+  const updates=changed.map(r=>({path:r.path,artist:String(r.artist||'').trim(),title:String(r.title||'').trim(),tracknumber:String(r.tracknumber||'').trim(),album:String(r.album||'').trim(),discnumber:String(r.discnumber||'').trim(),genre:String(r.genre||'').trim(),year:String(r.year||'').trim(),compilation:!!r.compilation,albumartist:r.compilation?COMPILATION_ALBUM_ARTIST:String(r.artist||'').trim(),force_compilation_repair:!!r._forceAppleCompilationRepair}));
   setTagActionBusy(true,'Tags und Dateipfade werden aktualisiert…');
   try{
     const res=await j(API+'/tags/update',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({updates,sort_files:true})});
@@ -3435,7 +3472,7 @@ async function applyTagChanges(){
   }catch(e){alert('Änderungen konnten nicht vollständig gespeichert werden:\n'+e.message);}finally{setTagActionBusy(false);}
 }
 
-async function uploadTagCover(){
+async function _legacyUploadTagCover2(){
   const inp=document.getElementById('tagCoverInput'),file=inp?.files?.[0];if(!file)return;
   const focused=tagGridRows.find(r=>tagGridKey(r.path)===tagGridFocusedPath);if(!focused){alert('Bitte zuerst einen Titel auswählen.');inp.value='';return;}
   const selected=tagGridSelected.size?[...tagGridSelected]:[focused.path];
@@ -3481,5 +3518,153 @@ async function exportTrackLibraryCsv(){
     alert('CSV-Export fehlgeschlagen:\n'+(error?.message||error));
   }finally{
     if(button){button.disabled=false;button.textContent=oldText;}
+  }
+}
+
+
+/* ============================================================
+   MusicLab v2.7.2 - canonical cover selection + Apple compilation
+   ============================================================ */
+function tagCoverTargetSelection(){
+  const rows=Array.isArray(tagGridRows)?tagGridRows:[];
+  const selectedPaths=(tagGridSelected && tagGridSelected.size)
+    ? [...tagGridSelected].filter(p=>rows.some(r=>tagGridKey(r.path)===tagGridKey(p)))
+    : [];
+
+  let representative=null;
+  if(selectedPaths.length){
+    representative=rows.find(r=>tagGridKey(r.path)===tagGridKey(selectedPaths[0]))||null;
+    return {paths:selectedPaths, representative, mode:'selection'};
+  }
+
+  representative=rows.find(r=>tagGridKey(r.path)===tagGridKey(tagGridFocusedPath))||null;
+  if(!representative) return {paths:[], representative:null, mode:'none'};
+
+  const album=String(representative.album||'').trim();
+  const year=String(representative.year||'').trim();
+  const compilation=!!representative.compilation;
+  const albumArtist=String(representative.albumartist||representative.artist||'').trim().toLocaleLowerCase('de');
+  const artist=String(representative.artist||'').trim().toLocaleLowerCase('de');
+
+  const paths=rows.filter(r=>{
+    if(String(r.album||'').trim()!==album) return false;
+    if(compilation){
+      if(!r.compilation) return false;
+      if(year && String(r.year||'').trim() && String(r.year||'').trim()!==year) return false;
+      return true;
+    }
+    const rAlbumArtist=String(r.albumartist||r.artist||'').trim().toLocaleLowerCase('de');
+    const rArtist=String(r.artist||'').trim().toLocaleLowerCase('de');
+    return rAlbumArtist===albumArtist || rArtist===artist;
+  }).map(r=>tagGridKey(r.path)).filter(Boolean);
+
+  return {paths:[...new Set(paths)], representative, mode:'album'};
+}
+
+function tagCoverTargetLabel(target){
+  const n=target?.paths?.length||0;
+  if(target?.mode==='selection') return `${n} ausgewählte Titel`;
+  const album=String(target?.representative?.album||'').trim();
+  return album ? `Album „${album}“ (${n} Titel)` : `${n} Titel`;
+}
+
+async function removeCurrentTagCover(){
+  const target=tagCoverTargetSelection();
+  if(!target.paths.length){
+    alert('Bitte zuerst mindestens einen Titel auswählen oder einen Titel fokussieren.');
+    return;
+  }
+  if(!confirm(`Eingebettetes Cover aus den Tags entfernen?\n\nBetroffen: ${tagCoverTargetLabel(target)}\n\nOrdnercover wie cover.jpg/folder.jpg bleiben erhalten.`)) return;
+
+  try{
+    setTagActionBusy(true,'Cover wird aus den ausgewählten Tags entfernt…');
+    const res=await j(API+'/tags/cover/remove',{
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({paths:target.paths})
+    });
+    coverCacheBust=Date.now();
+    const msg=`Cover aus Tags entfernt: ${res.changed||0}/${res.checked||target.paths.length} Dateien geändert`
+      +(res.errors?.length?` · Fehler: ${res.errors.length}`:'');
+    if(status) status.textContent=msg;
+    if(progressText) progressText.textContent=msg;
+    const info=document.getElementById('tagCoverInfo');if(info)info.textContent=msg;
+    renderTagGrid();
+    if(target.representative) updateTagPropertyPanel(target.representative);
+    if(res.errors?.length) alert(msg+'\n'+res.errors.join('\n'));
+  }catch(e){
+    alert('Cover konnte nicht entfernt werden:\n'+e.message);
+  }finally{
+    setTagActionBusy(false);
+  }
+}
+
+async function uploadTagCover(){
+  const inp=document.getElementById('tagCoverInput');
+  const file=inp?.files?.[0];
+  if(!file) return;
+
+  const looksLikeImage=String(file.type||'').startsWith('image/') || /\.(jpe?g|png|webp|gif|bmp|heic|heif)$/i.test(String(file.name||''));
+  if(!looksLikeImage){
+    alert('Bitte eine Bilddatei auswählen.');
+    inp.value='';
+    return;
+  }
+
+  const target=tagCoverTargetSelection();
+  if(!target.paths.length){
+    alert('Bitte zuerst mindestens einen Titel auswählen oder einen Titel fokussieren.');
+    inp.value='';
+    return;
+  }
+
+  if(!confirm(`Cover Apple-kompatibel einbetten?\n\nBetroffen: ${tagCoverTargetLabel(target)}\n\nDas Bild wird als JPEG normalisiert und in die ausgewählten Audiodateien eingebettet.`)){
+    inp.value='';
+    return;
+  }
+
+  try{
+    setTagActionBusy(true,'Cover wird konvertiert, eingebettet und geprüft…');
+    const data=await new Promise((resolve,reject)=>{
+      const reader=new FileReader();
+      reader.onload=()=>resolve(String(reader.result||''));
+      reader.onerror=()=>reject(new Error('Die Bilddatei konnte nicht gelesen werden.'));
+      reader.readAsDataURL(file);
+    });
+    if(!data || !data.includes(',')) throw new Error('Die Bilddatei konnte nicht als Datenstrom gelesen werden.');
+
+    const res=await j(API+'/tags/cover',{
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({
+        paths:target.paths,
+        filename:file.name,
+        content_type:file.type||'',
+        data
+      })
+    });
+
+    coverCacheBust=Date.now();
+    const total=Number(res.total||target.paths.length);
+    const updated=Number(res.updated||0);
+    const verified=Number(res.verified||0);
+    const folderFiles=(res.folder_files||[]).length;
+    const msg=`Cover gespeichert: ${updated}/${total} eingebettet · ${verified}/${total} geprüft`
+      +(folderFiles?` · Ordnercover: ${folderFiles}`:'')
+      +(res.errors?.length?` · Fehler: ${res.errors.length}`:'');
+    if(status) status.textContent=msg;
+    if(progressText) progressText.textContent=msg;
+    const info=document.getElementById('tagCoverInfo');if(info)info.textContent=msg;
+    renderTagGrid();
+    if(target.representative) updateTagPropertyPanel(target.representative);
+    if(res.errors?.length || verified<updated){
+      alert(msg+(res.errors?.length?'\n'+res.errors.join('\n'):''));
+    }
+  }catch(e){
+    coverCacheBust=Date.now();
+    alert('Cover konnte nicht gespeichert werden:\n'+e.message);
+  }finally{
+    setTagActionBusy(false);
+    inp.value='';
   }
 }

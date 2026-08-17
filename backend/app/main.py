@@ -32,7 +32,7 @@ from fastapi import FastAPI, HTTPException, Response, Request
 from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
 from mutagen import File as MutagenFile
-from mutagen.id3 import ID3, APIC, TCMP, ID3NoHeaderError
+from mutagen.id3 import ID3, APIC, TCMP, TPE2, ID3NoHeaderError
 from mutagen.mp4 import MP4, MP4Cover
 from mutagen.flac import FLAC, Picture
 
@@ -46,6 +46,10 @@ DB_PATH = Path(os.getenv("DB_PATH", "/data/musiclab.sqlite"))
 LOG_DIR = Path(os.getenv("LOG_DIR", str(DB_PATH.parent / "logs")))
 LOG_PATH = LOG_DIR / "musiclab.log"
 LOG_MAX_BYTES = int(os.getenv("LOG_MAX_BYTES", str(10 * 1024 * 1024)))
+COMPILATION_ALBUM_ARTIST = (
+    os.getenv("COMPILATION_ALBUM_ARTIST", "Verschiedene Interpreten").strip()
+    or "Verschiedene Interpreten"
+)
 AUDIO_EXTS = {".mp3", ".m4a", ".mp4", ".aac", ".alac", ".flac", ".ogg", ".oga", ".opus", ".wav", ".aiff", ".aif"}
 EXTS = AUDIO_EXTS
 try:
@@ -55,8 +59,8 @@ except Exception:
 
 Image = PILImage
 
-SCHEMA_VERSION = 25
-APP_VERSION = "2.6.1"
+SCHEMA_VERSION = 26
+APP_VERSION = "2.7.2"
 
 
 LOG_TZ = os.getenv("TZ") or os.getenv("LOG_TZ") or "Europe/Berlin"
@@ -231,6 +235,9 @@ def init_db():
                 input_lra REAL,
                 input_thresh REAL,
                 target_offset REAL,
+                momentary_max REAL,
+                shortterm_max REAL,
+                sample_peak REAL,
                 analyzed_at REAL,
                 status TEXT NOT NULL DEFAULT 'ok',
                 error TEXT,
@@ -238,6 +245,10 @@ def init_db():
             )
             """
         )
+        analysis_cols = {r["name"] for r in con.execute("PRAGMA table_info(analysis)").fetchall()}
+        for col in ("momentary_max", "shortterm_max", "sample_peak"):
+            if col not in analysis_cols:
+                con.execute(f"ALTER TABLE analysis ADD COLUMN {col} REAL")
         con.execute(
             """
             CREATE TABLE IF NOT EXISTS settings (
@@ -319,7 +330,7 @@ def default_settings_dict():
         "true_peak": "-1.5",
         "lra": "11",
         "backup_mode": "on",
-        "parallel_analysis": "2",
+        "parallel_analysis": "auto",
         "parallel_normalize": "2",
         "normalize_tolerance_lufs": "1.5",
         "music_root": str(DEFAULT_MUSIC_ROOT),
@@ -576,43 +587,155 @@ def compilation_flag(tags) -> bool:
     text = str(raw or "").strip().lower()
     return text in {"1", "true", "yes", "on", "y"}
 
-def write_compilation_tag(path: Path, enabled: bool) -> None:
-    """Write a real compilation flag where the container format supports it."""
+def _tag_text(value) -> str:
+    if isinstance(value, (list, tuple)):
+        value = value[0] if value else ""
+    return str(value or "").strip()
+
+
+def write_compilation_tag(
+    path: Path,
+    enabled: bool,
+    albumartist: Optional[str] = None,
+) -> None:
+    """Write Apple-compatible compilation metadata using native tags.
+
+    Apple recommends both the compilation flag and a common Album Artist for
+    multi-artist albums. Track Artist is deliberately left untouched.
+    """
     suffix = path.suffix.lower()
+    common_albumartist = str(
+        albumartist if albumartist is not None
+        else (COMPILATION_ALBUM_ARTIST if enabled else "")
+    ).strip()
+
+    if suffix == ".mp3":
+        try:
+            tags = ID3(path)
+        except ID3NoHeaderError:
+            tags = ID3()
+        tags.delall("TCMP")
+        if enabled:
+            tags.add(TCMP(encoding=3, text=["1"]))
+        if common_albumartist:
+            tags.delall("TPE2")
+            tags.add(TPE2(encoding=3, text=[common_albumartist]))
+        tags.save(path, v2_version=3)
+        return
+
+    if suffix in {".m4a", ".mp4", ".aac", ".alac"}:
+        audio = MP4(path)
+        if audio.tags is None:
+            audio.add_tags()
+        if enabled:
+            audio.tags["cpil"] = [True]
+        elif "cpil" in audio.tags:
+            del audio.tags["cpil"]
+        if common_albumartist:
+            audio.tags["aART"] = [common_albumartist]
+        audio.save()
+        return
+
+    if suffix == ".flac":
+        audio = FLAC(path)
+        if common_albumartist:
+            audio["albumartist"] = [common_albumartist]
+        if enabled:
+            audio["compilation"] = ["1"]
+        else:
+            try:
+                del audio["compilation"]
+            except Exception:
+                pass
+        audio.save()
+        return
+
+    if suffix in {".ogg", ".oga", ".opus"} and OggVorbis is not None:
+        audio = OggVorbis(path)
+        if common_albumartist:
+            audio["albumartist"] = [common_albumartist]
+        if enabled:
+            audio["compilation"] = ["1"]
+        else:
+            try:
+                del audio["compilation"]
+            except Exception:
+                pass
+        audio.save()
+        return
+
+    # Generic fallback for additional formats supported by Mutagen.
+    audio = MutagenFile(path, easy=True)
+    if audio is not None:
+        if common_albumartist:
+            audio["albumartist"] = [common_albumartist]
+        if enabled:
+            try:
+                audio["compilation"] = ["1"]
+            except Exception:
+                pass
+        else:
+            for key in ("compilation", "cpil"):
+                try:
+                    if key in audio:
+                        del audio[key]
+                except Exception:
+                    pass
+        audio.save()
+
+
+def verify_apple_compilation_metadata(
+    path: Path,
+    enabled: bool,
+    expected_albumartist: str,
+) -> Optional[bool]:
+    """Verify the native compilation flag and common Album Artist.
+
+    Returns None for formats where MusicLab cannot reliably verify the native
+    representation. This avoids false errors for uncommon containers.
+    """
+    suffix = path.suffix.lower()
+    wanted_artist = fold_ascii(expected_albumartist)
     try:
         if suffix == ".mp3":
-            try:
-                tags = ID3(path)
-            except ID3NoHeaderError:
-                tags = ID3()
-            tags.delall("TCMP")
-            if enabled:
-                tags.add(TCMP(encoding=3, text=["1"]))
-            tags.save(path, v2_version=3)
-            return
+            tags = ID3(path)
+            flags = [str(x).strip().lower() for f in tags.getall("TCMP") for x in getattr(f, "text", [])]
+            albumartists = [str(x).strip() for f in tags.getall("TPE2") for x in getattr(f, "text", [])]
+            flag_ok = any(x in {"1", "true", "yes", "on"} for x in flags)
+            artist_ok = any(fold_ascii(x) == wanted_artist for x in albumartists)
+            return (flag_ok and artist_ok) if enabled else (not flag_ok)
+
         if suffix in {".m4a", ".mp4", ".aac", ".alac"}:
             audio = MP4(path)
-            if enabled:
-                audio["cpil"] = [True]
-            elif "cpil" in audio:
-                del audio["cpil"]
-            audio.save()
-            return
-        audio = MutagenFile(path, easy=True)
-        if audio is not None:
-            if enabled:
-                audio["compilation"] = ["1"]
-            else:
-                for key in ("compilation", "cpil"):
-                    try:
-                        if key in audio: del audio[key]
-                    except Exception:
-                        pass
-            audio.save()
+            tags = audio.tags or {}
+            raw_flag = tags.get("cpil") or []
+            if not isinstance(raw_flag, (list, tuple)):
+                raw_flag = [raw_flag]
+            flag_ok = any(bool(x) for x in raw_flag)
+            albumartists = tags.get("aART") or []
+            if not isinstance(albumartists, (list, tuple)):
+                albumartists = [albumartists]
+            artist_ok = any(fold_ascii(x) == wanted_artist for x in albumartists)
+            return (flag_ok and artist_ok) if enabled else (not flag_ok)
+
+        if suffix == ".flac":
+            audio = FLAC(path)
+            flags = audio.get("compilation", [])
+            albumartists = audio.get("albumartist", [])
+            flag_ok = any(str(x).strip().lower() in {"1", "true", "yes", "on"} for x in flags)
+            artist_ok = any(fold_ascii(x) == wanted_artist for x in albumartists)
+            return (flag_ok and artist_ok) if enabled else (not flag_ok)
+
+        if suffix in {".ogg", ".oga", ".opus"} and OggVorbis is not None:
+            audio = OggVorbis(path)
+            flags = audio.get("compilation", [])
+            albumartists = audio.get("albumartist", [])
+            flag_ok = any(str(x).strip().lower() in {"1", "true", "yes", "on"} for x in flags)
+            artist_ok = any(fold_ascii(x) == wanted_artist for x in albumartists)
+            return (flag_ok and artist_ok) if enabled else (not flag_ok)
     except Exception:
-        # The Album Artist tag still marks the album correctly even if a
-        # format has no writable compilation flag.
-        return
+        return False
+    return None
 
 def scan_file(path: Path, root: Optional[Path] = None) -> Optional[dict]:
     root = root or get_music_root()
@@ -723,11 +846,18 @@ def finish_job(message: str, stopped: bool = False):
 
 
 def analysis_parallelism() -> int:
+    cpu_count = os.cpu_count() or 2
     try:
-        v = int(get_settings().get("parallel_analysis", "2"))
+        worker_cap = int(os.getenv("ANALYSIS_MAX_WORKERS", "8"))
     except Exception:
-        v = 2
-    return max(1, min(v, 6))
+        worker_cap = 8
+    worker_cap = max(1, min(worker_cap, 16))
+    try:
+        raw = str(get_settings().get("parallel_analysis", "auto")).strip().lower()
+        v = min(cpu_count, worker_cap) if raw == "auto" else int(raw)
+    except Exception:
+        v = min(cpu_count, worker_cap)
+    return max(1, min(v, worker_cap))
 
 
 def reset_stop() -> None:
@@ -762,6 +892,9 @@ def selected_unanalyzed_rows(limit: Optional[int] = None):
     sql = """
         SELECT t.id,t.path,t.title,t.artist,t.album FROM tracks t
         LEFT JOIN analysis a ON a.track_id=t.id AND a.status='ok'
+            AND a.momentary_max IS NOT NULL
+            AND a.shortterm_max IS NOT NULL
+            AND a.sample_peak IS NOT NULL
         WHERE a.track_id IS NULL
         ORDER BY t.artist COLLATE NOCASE, t.album COLLATE NOCASE, COALESCE(t.disc_number,1), COALESCE(t.track_number,9999), t.title COLLATE NOCASE
     """
@@ -1000,6 +1133,45 @@ def parse_loudnorm_json(stderr: str) -> Optional[dict]:
     return None
 
 
+def _finite_db(value: str) -> Optional[float]:
+    """Convert an ffmpeg dB value, excluding silence markers and NaN."""
+    try:
+        result = float(value)
+        return result if result == result and abs(result) != float("inf") else None
+    except (TypeError, ValueError):
+        return None
+
+
+def parse_extended_loudness(stderr: str) -> dict:
+    """Extract maximum momentary, short-term and sample peak values."""
+    momentary = []
+    shortterm = []
+    sample_peaks = []
+    for line in (stderr or "").splitlines():
+        frame = re.search(
+            r"\bM:\s*(-?(?:inf|nan|\d+(?:\.\d+)?))\s+S:\s*(-?(?:inf|nan|\d+(?:\.\d+)?))",
+            line,
+            re.IGNORECASE,
+        )
+        if frame:
+            m_value = _finite_db(frame.group(1))
+            s_value = _finite_db(frame.group(2))
+            if m_value is not None:
+                momentary.append(m_value)
+            if s_value is not None:
+                shortterm.append(s_value)
+        peak = re.search(r"\bPeak level dB:\s*(-?(?:inf|nan|\d+(?:\.\d+)?))", line, re.IGNORECASE)
+        if peak:
+            value = _finite_db(peak.group(1))
+            if value is not None:
+                sample_peaks.append(value)
+    return {
+        "momentary_max": max(momentary) if momentary else None,
+        "shortterm_max": max(shortterm) if shortterm else None,
+        "sample_peak": max(sample_peaks) if sample_peaks else None,
+    }
+
+
 def concise_ffmpeg_error(stderr: str, returncode: int) -> str:
     text = stderr or ""
     interesting = []
@@ -1024,10 +1196,17 @@ def concise_ffmpeg_error(stderr: str, returncode: int) -> str:
 
 def analyze_track_file(path: Path) -> dict:
     cmd = [
-        "ffmpeg", "-hide_banner", "-nostats",
+        "ffmpeg", "-hide_banner", "-nostats", "-loglevel", "info", "-threads", "1",
         "-i", str(path),
-        "-map", "0:a:0",
-        "-af", "loudnorm=print_format=json",
+        "-filter_complex_threads", "1",
+        "-filter_complex",
+        (
+            "[0:a:0]asplit=3[loud][r128][peak];"
+            "[loud]loudnorm=print_format=json[loud_out];"
+            "[r128]ebur128=peak=true:framelog=info[r128_out];"
+            "[peak]astats=metadata=0:reset=0[peak_out]"
+        ),
+        "-map", "[loud_out]", "-map", "[r128_out]", "-map", "[peak_out]",
         "-f", "null", "-"
     ]
     res = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=600)
@@ -1037,13 +1216,15 @@ def analyze_track_file(path: Path) -> dict:
     # ffmpeg can write lots of stderr on success. A valid loudnorm JSON block is
     # considered success even if stderr contains metadata or warnings.
     if data:
-        return {
+        result = {
             "input_i": float(data["input_i"]),
             "input_tp": float(data["input_tp"]),
             "input_lra": float(data["input_lra"]),
             "input_thresh": float(data["input_thresh"]),
             "target_offset": float(data.get("target_offset", 0)),
         }
+        result.update(parse_extended_loudness(stderr))
+        return result
 
     raise RuntimeError(concise_ffmpeg_error(stderr, res.returncode))
 
@@ -1052,11 +1233,11 @@ def upsert_analysis(con, track_id: int, result: Optional[dict], error: Optional[
     if result:
         con.execute(
             """
-            INSERT INTO analysis(track_id,input_i,input_tp,input_lra,input_thresh,target_offset,analyzed_at,status,error)
-            VALUES(?,?,?,?,?,?,?,'ok',NULL)
-            ON CONFLICT(track_id) DO UPDATE SET input_i=excluded.input_i,input_tp=excluded.input_tp,input_lra=excluded.input_lra,input_thresh=excluded.input_thresh,target_offset=excluded.target_offset,analyzed_at=excluded.analyzed_at,status='ok',error=NULL
+            INSERT INTO analysis(track_id,input_i,input_tp,input_lra,input_thresh,target_offset,momentary_max,shortterm_max,sample_peak,analyzed_at,status,error)
+            VALUES(?,?,?,?,?,?,?,?,?,?,'ok',NULL)
+            ON CONFLICT(track_id) DO UPDATE SET input_i=excluded.input_i,input_tp=excluded.input_tp,input_lra=excluded.input_lra,input_thresh=excluded.input_thresh,target_offset=excluded.target_offset,momentary_max=excluded.momentary_max,shortterm_max=excluded.shortterm_max,sample_peak=excluded.sample_peak,analyzed_at=excluded.analyzed_at,status='ok',error=NULL
             """,
-            (track_id, result["input_i"], result["input_tp"], result["input_lra"], result["input_thresh"], result["target_offset"], time.time()),
+            (track_id, result["input_i"], result["input_tp"], result["input_lra"], result["input_thresh"], result["target_offset"], result.get("momentary_max"), result.get("shortterm_max"), result.get("sample_peak"), time.time()),
         )
     else:
         con.execute(
@@ -1094,7 +1275,10 @@ def missing_analysis_rows(artist: Optional[str] = None, album: Optional[str] = N
         "OR a.input_i IS NULL "
         "OR a.input_tp IS NULL "
         "OR a.input_lra IS NULL "
-        "OR a.input_thresh IS NULL"
+        "OR a.input_thresh IS NULL "
+        "OR a.momentary_max IS NULL "
+        "OR a.shortterm_max IS NULL "
+        "OR a.sample_peak IS NULL "
         ")"
     ]
     args = []
@@ -1111,7 +1295,8 @@ def missing_analysis_rows(artist: Optional[str] = None, album: Optional[str] = N
         FROM tracks t
         LEFT JOIN analysis a ON a.track_id=t.id
         WHERE {' AND '.join(clauses)}
-        ORDER BY COALESCE(t.artist,''), COALESCE(t.album,''), t.disc, t.track, t.path
+        ORDER BY COALESCE(t.artist,''), COALESCE(t.album,''),
+                 COALESCE(t.disc_number,1), COALESCE(t.track_number,9999), t.path
     """
     with db() as con:
         return con.execute(sql, args).fetchall()
@@ -2915,6 +3100,134 @@ def api_music_root_check_alias(path: Optional[str] = None):
     return check_music_root(path)
 
 
+@app.get("/api/compilations/repair_preview")
+def api_compilation_repair_preview():
+    """Show how many already marked compilations need the Apple repair."""
+    with db() as con:
+        row = con.execute(
+            """
+            SELECT COUNT(*) AS tracks, COUNT(DISTINCT LOWER(TRIM(album))) AS albums
+            FROM tracks
+            WHERE COALESCE(compilation, 0)=1
+            """
+        ).fetchone()
+        examples = [dict(r) for r in con.execute(
+            """
+            SELECT album, COUNT(*) AS tracks
+            FROM tracks
+            WHERE COALESCE(compilation, 0)=1
+            GROUP BY LOWER(TRIM(album))
+            ORDER BY album COLLATE NOCASE
+            LIMIT 8
+            """
+        ).fetchall()]
+    return {
+        "ok": True,
+        "tracks": int(row["tracks"] or 0),
+        "albums": int(row["albums"] or 0),
+        "albumartist": COMPILATION_ALBUM_ARTIST,
+        "examples": examples,
+    }
+
+
+def repair_compilation_tags_worker():
+    """Repair existing compilations for reliable grouping in Apple Music.
+
+    Individual track artists stay untouched. Every marked compilation gets the
+    same Album Artist plus the native compilation flag for its file format.
+    """
+    init_db()
+    with db() as con:
+        rows = [dict(r) for r in con.execute(
+            """
+            SELECT path, album
+            FROM tracks
+            WHERE COALESCE(compilation, 0)=1
+            ORDER BY album COLLATE NOCASE, path COLLATE NOCASE
+            """
+        ).fetchall()]
+
+    state.update({
+        "running": True,
+        "stop": False,
+        "mode": "compilation_repair_all",
+        "done": 0,
+        "total": len(rows),
+        "current": "",
+        "message": "Apple-Music-Zusammenstellungen werden vorbereitet...",
+        "errors": 0,
+        "recent_errors": [],
+    })
+    add_log("Apple-Music-Zusammenstellungen reparieren gestartet: %s Titel" % len(rows))
+    root = get_music_root().resolve()
+    updated = 0
+    errors = []
+
+    with db() as con:
+        for idx, row in enumerate(rows, start=1):
+            if state.get("stop"):
+                break
+            rel = str(row.get("path") or "").strip().lstrip("/")
+            state.update({
+                "done": idx - 1,
+                "current": rel,
+                "message": "Zusammenstellungen reparieren: %s/%s · %s" % (idx, len(rows), rel),
+            })
+            try:
+                p = (root / rel).resolve()
+                if not p.is_relative_to(root) or not p.exists() or not p.is_file():
+                    raise FileNotFoundError(rel)
+                audio = MutagenFile(p, easy=True)
+                if audio is None:
+                    raise ValueError("Datei kann nicht gelesen werden")
+                audio["albumartist"] = [COMPILATION_ALBUM_ARTIST]
+                audio.save()
+                write_compilation_tag(p, True, COMPILATION_ALBUM_ARTIST)
+                verified = verify_apple_compilation_metadata(p, True, COMPILATION_ALBUM_ARTIST)
+                if verified is False:
+                    raise RuntimeError("Apple-Compilation-Metadaten konnten nicht verifiziert werden")
+                st = p.stat()
+                con.execute(
+                    "UPDATE tracks SET albumartist=?, compilation=1, size=?, mtime=? WHERE path=?",
+                    (COMPILATION_ALBUM_ARTIST, st.st_size, st.st_mtime, rel),
+                )
+                updated += 1
+            except Exception as e:
+                msg = "%s: %s" % (rel, e)
+                errors.append(msg)
+                add_log("Compilation-Reparatur Fehler: " + msg, True)
+            state.update({
+                "done": idx,
+                "errors": len(errors),
+                "recent_errors": errors[-8:],
+            })
+        con.commit()
+
+    stopped = bool(state.get("stop"))
+    message = (
+        "Compilation-Reparatur gestoppt: %s/%s Titel aktualisiert"
+        if stopped else
+        "Compilation-Reparatur fertig: %s/%s Titel aktualisiert"
+    ) % (updated, len(rows))
+    state.update({
+        "running": False,
+        "mode": "idle",
+        "current": "",
+        "message": message,
+        "errors": len(errors),
+        "recent_errors": errors[-8:],
+    })
+    add_log(message + (", Fehler %s" % len(errors) if errors else ""), bool(errors))
+
+
+@app.post("/api/compilations/repair_all")
+def api_compilation_repair_all():
+    if state.get("running"):
+        return state
+    threading.Thread(target=repair_compilation_tags_worker, daemon=True).start()
+    return {"ok": True, "started": True, "state": state}
+
+
 
 
 def reembed_all_covers_worker():
@@ -2965,12 +3278,15 @@ def reembed_all_covers_worker():
             albums_with_cover += 1
             jpg = normalize_cover_for_apple(raw, 1200)
 
-            album_dir = files[0].parent
-            try:
-                (album_dir / "cover.jpg").write_bytes(jpg)
-                (album_dir / "folder.jpg").write_bytes(jpg)
-            except Exception as e:
-                errors.append("%s: Ordnercover Fehler: %s" % (rel_dir, e))
+            # Bei noch nicht physisch zusammengeführten Compilations liegen die
+            # Titel eventuell in mehreren Ordnern. Alle beteiligten Ordner
+            # erhalten dasselbe Fallback-Cover.
+            for album_dir in _cover_folder_candidates(files):
+                try:
+                    (album_dir / "cover.jpg").write_bytes(jpg)
+                    (album_dir / "folder.jpg").write_bytes(jpg)
+                except Exception as e:
+                    errors.append("%s: Ordnercover Fehler (%s): %s" % (rel_dir, album_dir.name, e))
 
             local_updated = 0
             local_verified = 0
@@ -3119,9 +3435,10 @@ def api_cover_detection_stats(limit: int = 50):
 
 def group_audio_files_by_musiclab_album():
     """Gruppiert für den Cover-Job wie MusicLabs Albumansicht/Medienlogik:
-    primär nach Albumname, nicht nach Interpret+Album.
-    Dadurch werden Sampler wie Bravo Hits/Future Trance nicht pro Track-Künstler
-    als einzelne angeblich coverlose Alben gezählt.
+    Compilations primär nach Albumname, normale Alben dagegen nach
+    Albuminterpret+Album. Dadurch werden Sampler nicht pro Titelinterpret
+    aufgeteilt, gleichnamige reguläre Alben verschiedener Künstler erhalten aber
+    nicht versehentlich dasselbe Cover.
     """
     root = get_music_root()
     groups = {}
@@ -3146,8 +3463,17 @@ def group_audio_files_by_musiclab_album():
                 key = "__unknown__:" + str(fp.parent.relative_to(root))
                 display = "%s — %s" % ((d.get("artist") or fp.parent.parent.name or "Unbekannter Interpret"), album)
             else:
-                key = album.lower()
-                display = album
+                compilation = bool(int(d.get("compilation") or 0))
+                albumartist = str(
+                    d.get("albumartist") or d.get("album_artist")
+                    or d.get("artist") or "Unbekannter Interpret"
+                ).strip()
+                if compilation:
+                    key = "__compilation__:" + fold_ascii(album)
+                    display = album
+                else:
+                    key = "__album__:" + fold_ascii(albumartist) + ":" + fold_ascii(album)
+                    display = "%s — %s" % (albumartist, album)
 
             g = groups.setdefault(key, {"display": display, "files": []})
             g["files"].append(fp)
@@ -3156,14 +3482,10 @@ def group_audio_files_by_musiclab_album():
             out = {}
             for key, g in groups.items():
                 files = sorted(g["files"])
-                artists = set()
-                try:
-                    for fp in files:
-                        # Aus DB-Zeilen wäre schöner, aber Anzeige reicht als Albumname.
-                        pass
-                except Exception:
-                    pass
-                out[g["display"]] = files
+                display = g["display"]
+                if display in out:
+                    display = "%s [%s]" % (display, len(out) + 1)
+                out[display] = files
             return out
     except Exception as e:
         try:
@@ -3584,7 +3906,7 @@ def _media_rows():
         return [dict(r) for r in con.execute(
             """
             SELECT t.id,t.artist,t.albumartist,t.compilation,t.album,t.title,t.track_raw,t.track_number,t.track_total,t.disc_raw,t.disc_number,t.disc_total,t.genre,t.year,t.compilation,t.albumartist,t.duration,t.codec,t.bitrate,t.sample_rate,t.channels,t.path,t.filename,
-            a.input_i,a.input_tp,a.input_lra,a.status AS analysis_status
+            a.input_i,a.input_tp,a.input_lra,a.momentary_max,a.shortterm_max,a.sample_peak,a.status AS analysis_status
             FROM tracks t LEFT JOIN analysis a ON a.track_id=t.id
             ORDER BY t.artist COLLATE NOCASE, t.album COLLATE NOCASE, COALESCE(t.disc_number,1), COALESCE(t.track_number,9999), t.title COLLATE NOCASE, t.path COLLATE NOCASE
             """
@@ -4187,7 +4509,7 @@ def get_tracks_by_folder(folder: str, artist: Optional[str] = None, genre: Optio
         rows = [dict(r) for r in con.execute(
             """
             SELECT t.id,t.artist,t.album,t.title,t.track_raw,t.track_number,t.track_total,t.disc_raw,t.disc_number,t.disc_total,t.genre,t.year,t.compilation,t.albumartist,t.duration,t.codec,t.bitrate,t.sample_rate,t.channels,t.path,t.filename,
-            a.input_i,a.input_tp,a.input_lra,a.status AS analysis_status
+            a.input_i,a.input_tp,a.input_lra,a.momentary_max,a.shortterm_max,a.sample_peak,a.status AS analysis_status
             FROM tracks t LEFT JOIN analysis a ON a.track_id=t.id
             ORDER BY COALESCE(t.disc_number,1), COALESCE(t.track_number,9999), t.title COLLATE NOCASE, t.path COLLATE NOCASE
             """
@@ -4237,7 +4559,7 @@ def get_tracks(album: str, artist: Optional[str] = None):
         return [dict(r) for r in con.execute(
             f"""
             SELECT t.id,t.artist,t.album,t.title,t.track_raw,t.track_number,t.track_total,t.disc_raw,t.disc_number,t.disc_total,t.genre,t.year,t.duration,t.codec,t.bitrate,t.sample_rate,t.channels,t.path,t.filename,
-            a.input_i,a.input_tp,a.input_lra,a.status AS analysis_status
+            a.input_i,a.input_tp,a.input_lra,a.momentary_max,a.shortterm_max,a.sample_peak,a.status AS analysis_status
             FROM tracks t LEFT JOIN analysis a ON a.track_id=t.id
             {where}
             ORDER BY t.artist COLLATE NOCASE, COALESCE(t.disc_number,1), COALESCE(t.track_number,9999), t.title COLLATE NOCASE, t.path COLLATE NOCASE
@@ -4394,14 +4716,13 @@ def update_tags(payload: dict):
                         changed[src] = val
                 is_compilation = bool(item.get("compilation"))
 
-                # Wie in Apple Music:
-                # - Compilation wird über das echte Compilation-Flag markiert.
-                # - Die individuellen Track-Interpreten bleiben erhalten.
-                # - Albumartist darf bei Compilations leer bleiben.
-                # MusicLab zeigt solche Alben trotzdem als "Verschiedene Interpreten"
-                # an, ohne diesen Text zwingend in die Datei-Tags zu schreiben.
+                # Apple Music gruppiert Zusammenstellungen am zuverlässigsten,
+                # wenn sowohl das echte Compilation-Flag als auch ein identischer
+                # Albuminterpret gesetzt sind. Nur das Flag zu schreiben und den
+                # Albuminterpreten zu leeren kann das Album nach Titelinterpreten
+                # aufspalten.
                 if is_compilation:
-                    albumartist_value = str(item.get("albumartist") or "").strip()
+                    albumartist_value = COMPILATION_ALBUM_ARTIST
                 else:
                     albumartist_value = str(
                         item.get("albumartist") or item.get("artist") or ""
@@ -4419,7 +4740,13 @@ def update_tags(payload: dict):
                 changed["albumartist"] = albumartist_value
                 changed["compilation"] = 1 if is_compilation else 0
                 audio.save()
-                write_compilation_tag(p, is_compilation)
+                write_compilation_tag(p, is_compilation, albumartist_value)
+                if is_compilation:
+                    verified = verify_apple_compilation_metadata(
+                        p, True, albumartist_value or COMPILATION_ALBUM_ARTIST
+                    )
+                    if verified is False:
+                        raise RuntimeError("Apple-Compilation-Metadaten konnten nicht verifiziert werden")
 
                 current_rel = rel
                 current_path = p
@@ -5165,14 +5492,21 @@ def find_album_cover_source(album_files):
     if not album_files:
         return None
 
-    album_dir = album_files[0].parent
-
-    folder_cover = find_folder_cover_file(album_dir)
-    if folder_cover:
-        try:
-            return folder_cover.read_bytes()
-        except Exception:
-            pass
+    # Compilations können noch in mehreren Künstlerordnern liegen. Deshalb
+    # jedes beteiligte Verzeichnis nach einem Ordnercover durchsuchen.
+    seen_dirs = set()
+    for fp in album_files:
+        album_dir = fp.parent
+        key = str(album_dir)
+        if key in seen_dirs:
+            continue
+        seen_dirs.add(key)
+        folder_cover = find_folder_cover_file(album_dir)
+        if folder_cover:
+            try:
+                return folder_cover.read_bytes()
+            except Exception:
+                pass
 
     for fp in album_files:
         try:
@@ -5334,6 +5668,11 @@ async def api_tags_cover(request: Request):
         raise HTTPException(status_code=413, detail="Coverdatei ist größer als 30 MiB")
 
     jpg = _apple_jpeg_cover(raw, 1200)
+    if not jpg or not bytes(jpg).startswith(b"\xff\xd8\xff"):
+        raise HTTPException(
+            status_code=400,
+            detail="Cover konnte nicht zuverlässig nach JPEG konvertiert werden",
+        )
     mime = "image/jpeg"
     mp4_format = MP4Cover.FORMAT_JPEG
     flac_pic_type = 3

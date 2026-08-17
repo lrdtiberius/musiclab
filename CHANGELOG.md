@@ -1,4 +1,30 @@
+## v2.7.2
+
+- Cover hinzufügen/entfernen im Tag-Grid repariert
+- Mehrfachauswahl für Cover-Aktionen korrigiert
+- Apple-Compilation-Metadaten nativ und verifiziert geschrieben
+- erneutes Compilation-Anwenden erzwingt Apple-Reparatur
+- strengere JPEG-Prüfung vor dem Einbetten
+
 # MusicLab Changelog
+
+## v2.7.1
+
+- Apple-Music-Zusammenstellungen schreiben jetzt zusätzlich zum Compilation-Flag einen einheitlichen Albuminterpreten, ohne die Titelinterpreten zu verändern.
+- Neuer Wartungsjob repariert die Tags bereits markierter Zusammenstellungen gesammelt.
+- Der Cover-Wartungsjob findet Ordnercover über alle beteiligten Compilation-Ordner und bettet das gemeinsame Cover in jeden unterstützten Titel ein.
+- Gleichnamige reguläre Alben verschiedener Künstler werden bei der Cover-Wartung getrennt behandelt.
+- Parallele Normalisierung kann nun auch mit 6 oder 8 Workern gewählt werden.
+
+## v2.7.0
+
+### Lautstärkeanalyse
+
+- Kombinierte EBU-R128-, Loudnorm- und Sample-Peak-Analyse pro Titel.
+- Zusätzliche Messwerte für maximales Momentary LUFS, maximales Short-Term LUFS und Sample Peak.
+- Automatische Parallelisierung passend zur verfügbaren CPU, standardmäßig auf acht Worker begrenzt.
+- FFmpeg arbeitet pro Analysejob mit einem Thread, um Überbelegung bei parallelen Titeln zu vermeiden.
+- Robuste Schema-Migration für bestehende MusicLab-Datenbanken.
 
 ## v2.6.1
 
